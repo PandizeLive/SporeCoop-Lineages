@@ -1176,3 +1176,19 @@ with ID96B24187 at +0C, blank model at +10, return mode01654C04 at +1C and
 context0116D51D at +90. After the normal co-op vote the host reported
 input_lock,paused, without a running cinematic. This request owns that
 pause; retain the actual outside-frame pause-menu check before submitting.
+
+### Reserved-seat military vehicle combat (Steam/GOG 2024, BUG-9072)
+
+The cached active executable's vehicle combatant vtable at `0x01474CE8`
+points to `0x00CAB6F0` at +0x18. The receiver is the vehicle's +0x508
+combatant. The native +0x58 getter (`0x00BFCC50`) reads combatant+0x2C
+in Civilization. The current HP field is combatant+0x38. Direct damage
+qualification uses real military vehicles and the original vtable entry.
+`coop.civ` reports the native getter as `max_hp` for comparison with the
+host and the guest mirror.
+
+The turret has a separate combatant vtable at `0x01466C28`. Its +0x18 slot
+points to `0x00BD0660`; the prologue subtracts 0x588 from the receiver
+and checks incoming attackers for the turret type 0x0436F315. This is a
+disassembly finding. A placed city turret and a live native shot are still
+needed to establish the multiplayer damage path.

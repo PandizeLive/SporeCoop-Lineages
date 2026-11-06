@@ -1,4 +1,5 @@
 #include "squadron.h"
+#include "vehicle_health.h"
 
 #include <algorithm>
 #include <array>
@@ -123,13 +124,7 @@ static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept, g_content_checke
 static bool g_applying;
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
 
-struct ShipScale {
-    uint32_t serial;
-    float factor, native_max, scaled_max;
-    float before_save_hp = 0, before_save_max = 0;
-    bool seen = true;
-};
-static std::unordered_map<void*,ShipScale> g_ship_scales;
+static std::unordered_map<void*,VehicleHealthScale> g_ship_scales;
 static unsigned g_save_depth;
 
 static bool enemy_ship(void* u, uint32_t own_pol)
@@ -143,17 +138,6 @@ static bool enemy_ship(void* u, uint32_t own_pol)
     if ((type == 2 || type == 4 || type == 5) && mission && skg::readable(mission,0x7C) &&
         F<uint32_t>(mission,0x78) == 0xA4B0A2DF) return true;
     return spaceext::enemy_empire(pol);
-}
-
-static void normalize_ship(void* u, const ShipScale& scale)
-{
-    float& max_hp = F<float>(u,kMaxHp);
-    float& hp = F<float>(u,kHp);
-    bool full = hp == max_hp;
-    // Keep the exact base when possible. Another mod can legitimately alter
-    // max HP during combat, including the native Armada contract's bonus.
-    max_hp = max_hp == scale.scaled_max ? scale.native_max : max_hp / scale.factor;
-    hp = full ? max_hp : hp / scale.factor;
 }
 
 static void scale_local_ships(const std::vector<void*>& live)
@@ -173,7 +157,7 @@ static void scale_local_ships(const std::vector<void*>& live)
             if (factor != 1.f) previous->second.seen = true;
             continue;
         }
-        if (old != 1.f) normalize_ship(u,previous->second);
+        if (old != 1.f) previous->second.normalize(F<float>(u,kHp),F<float>(u,kMaxHp));
         if (factor != 1.f) {
             float native_max = F<float>(u,kMaxHp);
             F<float>(u,kMaxHp) *= factor;
@@ -191,14 +175,8 @@ static void convert_live_ships(bool to_native)
         auto i = g_ship_scales.find(u);
         if (i == g_ship_scales.end() || i->second.serial != game::object_serial(u)) continue;
         auto& scale = i->second;
-        if (to_native) {
-            scale.before_save_hp = F<float>(u,kHp);
-            scale.before_save_max = F<float>(u,kMaxHp);
-            normalize_ship(u,scale);
-        } else {
-            F<float>(u,kHp) = scale.before_save_hp;
-            F<float>(u,kMaxHp) = scale.before_save_max;
-        }
+        if (to_native) scale.before_save(F<float>(u,kHp),F<float>(u,kMaxHp));
+        else scale.after_save(F<float>(u,kHp),F<float>(u,kMaxHp));
     }
 }
 

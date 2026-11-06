@@ -1,8 +1,8 @@
 # SporeCoop Duo private test build
 
-The current local combat checkpoint is 0.7.3.6-duo12-dev. Use the same build
-on every machine. Duo 12 adds the Cell combat receipt used to synchronize
-fractional damage with the host.
+The current local combat build is 0.7.3.6-duo13-dev. Use the same build
+on every machine. Duo 13 includes the hostile military vehicle’s maximum HP
+in Civilization snapshots.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct
@@ -132,7 +132,7 @@ and enemy_damage_per_extra_founder. Existing reserved campaigns retain
 their saved percentages. The intended combat coverage includes hostile combatants
 from Cell through Space, including hostile Civ vehicles, armed defenses and
 enemy spacecraft. Initial live checks cover Cell predators, Creature enemies,
-Tribal fighters, and pirate ships in a colony raid.
+Tribal fighters, military vehicles in Civilization, and pirate ships in a colony raid.
 In newly reserved campaigns, Creature hunger drains 2.5% faster per extra
 reserved founder (7.5% faster at four seats). Set hunger_basis_points_per_extra_founder
 in the campaign section to configure new planets, where 250 means 2.5%.
@@ -476,7 +476,17 @@ damage per extra seat. A four-seat test with two games measured an engaged
 Creature enemy at 10.5 HP instead of six, and a two-point hit dealt 2.6.
 A Tribal rival with 162 native HP had 283.5 on both peers and a four-point hit
 dealt 5.2 to a founder. These checks cover creatures and rival Tribal fighters.
-The original fixture preceded Space combat support. Civ combat remains open.
+In a disposable Civilization campaign with two connected games and four seats
+reserved, a ten-point rival military vehicle hit dealt 11.5 HP to the other
+founder's vehicle. A military design with a native 361.765 HP maximum reached
+524.559 HP on both peers. The host kept the boosted maximum after saving
+and returned to the native maximum on disconnect. An offline cold load
+recovered the same vehicle ID and its wound, about 145 HP out of 361.765.
+The ten-point comparison invokes the native damage function directly. In a
+separate cold run, the engine carried out a rival attack order against the
+partner's vehicle and its HP fell from 361.765 to 338.338. The fixture placed
+the vehicles together and issued the order programmatically. City turrets
+and issuing that battle through the regular controls need separate checks.
 
 On QuartetTribe the solo host had one native village. The read-only terrain
 probe found 23 more compatible positions for four founders and twenty rivals

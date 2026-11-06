@@ -23,6 +23,7 @@
 #include "creations.h"
 #include "founders.h"
 #include "world.h"
+#include "vehicle_health.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -35,6 +36,8 @@ static Ctx C;
 static bool g_ok;
 static founders::Roster g_founder_nations;
 static bool g_auto_founders = true;
+// Before this world's roster is known, a returning partner can look like an NPC.
+static bool g_combat_roster_ready;
 static bool g_founder_spawned;
 static bool g_founder_control = true;
 static bool g_offline_control, g_offline_selection_ready, g_command_refresh;
@@ -48,9 +51,10 @@ COOP_FIX("civ.founder_control", "BUG-9054", g_founder_control,
 // ---- layout (docs/re/civ.md) ----
 // game addresses that are not functions (vtable, return addresses): resolved by name in init()
 static uintptr_t a_VehicleVt, a_PlannerAddBuildingRet, a_GrowthRetBudget, a_GrowthRetNew;
-constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVHp = 0x540, kVLoco = 0xB1C,
+constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0xA0, kVMaxHp = 0x534, kVHp = 0x540, kVLoco = 0xB1C,
                     kVPurpose = 0xB20, kVDead = 0xBCD, kPol = 0x30,
                     kVOrders = 0xB68;
+constexpr size_t kVehicleSnapshotBytes = 45;
 constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C, kCityCiv = 0x590,
                     kCityCapture = 0x748, // + 4: capturing political id
                     kCityBuildings = 0x340, kBuildingState = 0x120 + 0x34; // combatant state, 2 = destroyed
@@ -210,7 +214,7 @@ struct GV {
     uint32_t pol = 0;
     net::Vec3 pos;
     net::Quat rot;
-    float hp = 0;
+    float hp = 0, scaled_max = 0;
     double seen = 0;
     net::VelocityEstimate est; // vehicles snapshots carry no velocity
     bool listed = false;       // seen in the game's vehicle list (a new one joins it a little later)
@@ -953,6 +957,147 @@ static uint8_t player_of_combatant(void* att)
 
 static uint8_t role(uint8_t p) { return C.role_of && p != 0xFF ? C.role_of(p) : 0; }
 
+static uintptr_t a_Relationships, a_RelationshipMap, a_RelationshipData;
+
+static unsigned relationship_flags(uint32_t a, uint32_t b)
+{
+    void* manager = a_Relationships ? skg::cdecl_call<void*>(a_Relationships) : nullptr;
+    if (!manager || !a_RelationshipMap || !a_RelationshipData) return 0;
+    void* map = thiscall<void*>(a_RelationshipMap,manager,a,b);
+    void* record = map ? thiscall<void*>(a_RelationshipData,manager,map,a,b) : nullptr;
+    return record ? F<uint32_t>(record,4) : 0;
+}
+
+static bool team_faction(uint32_t faction)
+{
+    void* home = player_civ();
+    return (home && faction == pol_of(home)) || g_founder_nations.contains_faction(faction);
+}
+
+// A military vehicle can enter combat before its nation declares war.
+struct VehicleHealth {
+    VehicleHealthScale scale;
+    uint32_t faction, opponent;
+    bool attacked_before_war = false;
+};
+static std::unordered_map<void*,VehicleHealth> g_vehicle_health;
+static unsigned g_health_save_depth;
+
+static void restore_vehicle(void* v, VehicleHealthScale& scale)
+{
+    scale.normalize(F<float>(v,kVHp),F<float>(v,kVMaxHp));
+}
+
+static void scale_vehicle(void* v, float factor, uint32_t opponent)
+{
+    if (g_health_save_depth) return;
+    const auto serial = game::object_serial(v);
+    auto it = g_vehicle_health.find(v);
+    if (it != g_vehicle_health.end()) {
+        auto& previous = it->second;
+        if (previous.scale.serial == serial) {
+            if (previous.scale.factor == factor && previous.faction == pol_of(v)) return;
+            restore_vehicle(v,previous.scale);
+        }
+        g_vehicle_health.erase(it);
+    }
+    float& max_hp = F<float>(v,kVMaxHp);
+    float& hp = F<float>(v,kVHp);
+    if (factor == 1.f || !serial || !(max_hp > 0) || !std::isfinite(max_hp) || !std::isfinite(hp)) return;
+    float native_max = max_hp;
+    hp *= factor;
+    max_hp *= factor;
+    g_vehicle_health.emplace(v,VehicleHealth{{serial,factor,native_max,max_hp},pol_of(v),opponent});
+}
+
+static void refresh_vehicle_health(const std::vector<void*>& live, const std::unordered_set<void*>& alive,
+                                   uint32_t home)
+{
+    std::erase_if(g_vehicle_health,[&](const auto& item) { return !alive.count(item.first); });
+    float factor = world::rules_for_current().enemy_health_percent() / 100.f;
+    if (factor == 1.f && g_vehicle_health.empty()) return;
+    // Several vehicles commonly share one faction. Query diplomacy once per pair per tick.
+    std::map<std::pair<uint32_t,uint32_t>,unsigned> relations;
+    auto flags = [&](uint32_t a, uint32_t b) {
+        auto [it, fresh] = relations.try_emplace({a,b},0);
+        if (fresh) it->second = relationship_flags(a,b);
+        return it->second;
+    };
+    for (auto* v : live) {
+        auto pol = pol_of(v);
+        uint32_t opponent = 0;
+        if (factor > 1.f && pol && F<int>(v,kVPurpose) == 0 && pol != home &&
+            !g_founder_nations.contains_faction(pol)) {
+            auto it = g_vehicle_health.find(v);
+            if (it != g_vehicle_health.end() && it->second.faction == pol &&
+                it->second.scale.serial == game::object_serial(v) && it->second.attacked_before_war) {
+                auto& last = it->second;
+                const unsigned relation = flags(pol,last.opponent);
+                if (relation & 3) last.attacked_before_war = false;
+                else opponent = last.opponent;
+            }
+            if (!opponent && home && (flags(pol,home) & 3) == 1) opponent = home;
+            for (const auto& founder : g_founder_nations.entries)
+                if (!opponent && founder.faction && (flags(pol,founder.faction) & 3) == 1)
+                    opponent = founder.faction;
+        }
+        scale_vehicle(v,opponent ? factor : 1.f,opponent);
+    }
+}
+
+static void convert_vehicle_health(bool saving)
+{
+    if (g_vehicle_health.empty() || !g_ok || !nm()) return;
+    for (void* v : all_vehicles()) {
+        auto it = g_vehicle_health.find(v);
+        if (it == g_vehicle_health.end() || it->second.scale.serial != game::object_serial(v)) continue;
+        auto& scale = it->second.scale;
+        if (saving) scale.before_save(F<float>(v,kVHp),F<float>(v,kVMaxHp));
+        else scale.after_save(F<float>(v,kVHp),F<float>(v,kVMaxHp));
+    }
+}
+void before_native_save() { if (++g_health_save_depth == 1) convert_vehicle_health(true); }
+void after_native_save() { if (g_health_save_depth && --g_health_save_depth == 0) convert_vehicle_health(false); }
+void clear_enemy_health()
+{
+    if (!g_health_save_depth) convert_vehicle_health(true);
+    g_vehicle_health.clear();
+}
+
+static float vehicle_damage(void* combat, float damage, uint32_t faction, void* attacker)
+{
+    if (!active() || !is_host() || !g_combat_roster_ready || !attacker || !faction || damage <= 0)
+        return damage;
+    auto* source = reinterpret_cast<void*>(uintptr_t(attacker) - 0x508);
+    auto* target = static_cast<uint8_t*>(combat) - 0x508;
+    if (!exists(source) || !exists(target) || pol_of(source) != faction || pol_of(target) == faction)
+        return damage;
+
+    const bool founder_source = team_faction(faction);
+    if (founder_source == team_faction(pol_of(target))) return damage;
+    void* rival = founder_source ? target : source;
+    const auto opponent = founder_source ? faction : pol_of(target);
+    if (F<int>(rival,kVPurpose) != 0) return damage;
+    const unsigned relation = relationship_flags(pol_of(rival),opponent);
+    if (relation & 2) return damage;
+
+    const auto rules = world::rules_for_current();
+    scale_vehicle(rival,rules.enemy_health_percent() / 100.f,opponent);
+    if (auto it = g_vehicle_health.find(rival); it != g_vehicle_health.end()) {
+        it->second.attacked_before_war = !(relation & 1);
+        it->second.opponent = opponent;
+    }
+    return founder_source ? damage : damage * (rules.enemy_damage_percent() / 100.f);
+}
+
+using VehicleDamage = int(SK_THISCALL*)(void*,float,uint32_t,int,const void*,void*);
+static VehicleDamage o_VehicleDamage;
+static int SK_THISCALL h_VehicleDamage(void* combat, float damage, uint32_t faction, int type,
+                                       const void* direction, void* attacker)
+{
+    return o_VehicleDamage(combat,vehicle_damage(combat,damage,faction,attacker),faction,type,direction,attacker);
+}
+
 // building / city hall TakeDamage (this = building+0x120): a military governor's vehicles hit harder;
 // the player is remembered for the capture damage the original adds
 using BTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
@@ -1333,6 +1478,12 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
             g_ai_spawn_ret[i] = H->sym(rets[i]);
     }
     H->hook_create(M, (void*)a_SpawnVehicle, (void*)h_SpawnVehicle, (void**)&o_SpawnVehicle);
+    a_Relationships = H->sym("Simulator::cRelationshipManager::Get");
+    a_RelationshipMap = H->sym("RelationshipManager_GetRelationshipMap");
+    a_RelationshipData = H->sym("RelationshipManager_GetRelationshipData");
+    if (uintptr_t damage = H->sym("SporeCoop::CivVehicle_TakeDamage"); damage &&
+        a_Relationships && a_RelationshipMap && a_RelationshipData)
+        H->hook_create(M,(void*)damage,(void*)h_VehicleDamage,(void**)&o_VehicleDamage);
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -1378,6 +1529,7 @@ static void founder_tick(double now)
         if (planet.empty() || !home) return;
         if (planet != g_founder_planet) {
             g_founder_planet = planet; g_founder_spawned = false; g_founder_nations = {};
+            g_combat_roster_ready = false;
         }
         auto report = [](const std::string& text) {
             if (text == g_founder_notice) return;
@@ -1411,6 +1563,7 @@ static void founder_tick(double now)
             bool restored = !key.instance;
             key = {saved.guest().species, 0x2B978C46, 0x40626200};
             g_founder_nations = saved;
+            g_combat_roster_ready = true;
             if (restored) {
                 if (C.sess->players().size() == 1) {
                     if (!world::save_game(error)) report(error);
@@ -1419,7 +1572,10 @@ static void founder_tick(double now)
             }
             return;
         }
-        if (!founders::read(planet, tribal)) return; // legacy/stage-chooser game
+        if (!founders::read(planet, tribal)) {
+            g_combat_roster_ready = true; // Legacy/stage-chooser game with one native nation.
+            return;
+        }
         if (!founders::read_outfits(planet, outfits, error)) { report(error); return; }
         auto host_key = F<creations::Key>(home, kNationSpecies);
         creations::Key guest_key{outfits.current(1), 0x2B978C46, 0x40626200};
@@ -1456,6 +1612,7 @@ static void founder_tick(double now)
         if (!founders::record(planet, pair, error, founders::Stage::Civilization)) { report(error); return; }
         F<creations::Key>(nation, kNationSpecies) = guest_key;
         g_founder_nations = pair;
+        g_combat_roster_ready = true;
         report("Both original species now have native Civilization capitals.");
         if (C.sess->players().size() == 1 && !world::save_game(error)) report(error);
         for (const auto& player : C.sess->players()) if (player.id)
@@ -1784,6 +1941,7 @@ static void host_tick(double now)
     g_host_cities = all_cities();
     auto vehicles = all_vehicles();
     std::unordered_set<void*> alive(vehicles.begin(), vehicles.end());
+    if (o_VehicleDamage && g_combat_roster_ready) refresh_vehicle_health(vehicles,alive,ppol);
     for (auto it = g_hv.begin(); it != g_hv.end();) {
         // a vehicle of another world (or another nation) at an address we knew: assigned anew
         bool gone = !alive.count(it->first);
@@ -1838,7 +1996,7 @@ static void host_tick(double now)
     // a city's buildings): ~1200 bytes with 9 cities and 24 vehicles, so with a grown planet the
     // guest got no cities, captures or the first 24 vehicles at all. The items are packed in order
     // (cities, spice nodes, one city's buildings, vehicles) into as many chunks as needed.
-    constexpr size_t kCityBytes = 25, kNodeBytes = 16, kVehBytes = 41, kHead = 14; // + u32 time (BUG-0122)
+    constexpr size_t kCityBytes = 25, kNodeBytes = 16, kHead = 14; // + u32 time (BUG-0122)
     const size_t kBudget = g_chunk_budget; // net::kMaxPacket - 48 (packet + message headers); tests: less
     std::vector<std::pair<net::Vec3, uint32_t>> nodes;
     if (g_cycle % 10 == 0)
@@ -1878,7 +2036,7 @@ static void host_tick(double now)
     if (bci != 0xFF)
         place(1 + 17 * blds.size()).bld = true;
     for (size_t i = 0; i < vehicles.size(); i++) {
-        Chunk& c = place(kVehBytes);
+        Chunk& c = place(kVehicleSnapshotBytes);
         if (c.v1 == c.v0)
             c.v0 = i;
         c.v1 = i + 1;
@@ -1930,6 +2088,7 @@ static void host_tick(double now)
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
             w.f32(F<float>(v, kVHp));
+            w.f32(g_vehicle_health.count(v) ? F<float>(v,kVMaxHp) : 0.f);
         }
         w.u32(net::now_ms()); // BUG-0122: the host's time of the snapshot (velocity on the guest)
         g_max_chunk = std::max<uint32_t>(g_max_chunk, (uint32_t)w.size());
@@ -2461,7 +2620,12 @@ static void guest_state(net::Reader& r)
     guest_nodes_and_buildings(r);
     double now = H->time_seconds();
     uint8_t n = r.u8();
-    double sent = net::snapshot_time(r, (size_t)n * 41); // 41 bytes per vehicle
+    // Duo 13 always includes the sender clock. Older snapshots omitted max HP
+    // and can also omit the clock. Reject truncated records before touching a mirror.
+    const size_t legacy_bytes = size_t(n) * 41;
+    const bool health = r.left() == size_t(n) * kVehicleSnapshotBytes + 4;
+    if (!health && r.left() != legacy_bytes + 4 && r.left() != legacy_bytes) return;
+    double sent = net::snapshot_time(r, health ? size_t(n) * kVehicleSnapshotBytes : legacy_bytes);
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
         GV m;
@@ -2469,19 +2633,21 @@ static void guest_state(net::Reader& r)
         m.pos.x = r.f32(); m.pos.y = r.f32(); m.pos.z = r.f32();
         m.rot.x = r.f32(); m.rot.y = r.f32(); m.rot.z = r.f32(); m.rot.w = r.f32();
         m.hp = r.f32();
-        if (!r.ok())
+        if (health) m.scaled_max = r.f32();
+        if (!r.ok() || !std::isfinite(m.hp) || !std::isfinite(m.scaled_max) || m.scaled_max < 0)
             return;
         g_cycle_ids.insert(id);
         auto& g = g_gv[id];
         void* v = g.v;
         g.owner = m.owner; g.pol = m.pol; g.purpose = m.purpose; g.loco = m.loco;
-        g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
+        g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.scaled_max = m.scaled_max; g.seen = now;
         // BUG-0186: a step faster than twice the vehicle's own top speed is a jump of the host's game
-        bool alive_v = v && game::object_alive(v) && !F<uint8_t>(v, kVDead);
+        bool alive_v = exists(v) && game::object_alive(v) && !F<uint8_t>(v, kVDead);
         g.est.max_speed = g_vel_cap_fix && alive_v ? 2.f * F<float>(v, 0x218) + 10.f : 0.f;
         g.est.max_ahead = g_extrap_fix ? kVehAhead : 0.4;
         g.est.update(m.pos, now, sent);
-        if (v && (!game::object_alive(v) || F<uint8_t>(v, kVDead))) {
+        if (v && !alive_v) {
+            g_vehicle_health.erase(v);
             g_gv_of.erase(v);
             g.v = v = nullptr;
             g.listed = false;
@@ -2531,7 +2697,8 @@ static void guest_state(net::Reader& r)
     }
     for (auto it = g_gv.begin(); it != g_gv.end();) {
         if (!g_cycle_ids.count(it->first)) {
-            if (it->second.v && game::object_alive(it->second.v) && !F<uint8_t>(it->second.v, kVDead)) {
+            g_vehicle_health.erase(it->second.v);
+            if (exists(it->second.v) && game::object_alive(it->second.v) && !F<uint8_t>(it->second.v, kVDead)) {
                 kill_local(it->second.v);
                 g_removed++;
             }
@@ -2557,12 +2724,13 @@ static void guest_tick(double now)
         drop_foreign_selection();
     }
     if (local_play()) {
+        clear_enemy_health();
         for (auto& [id, g] : g_gv)
             g.has_put = false;
         return; // the last states would stop every order for 3 s (StopMovement below)
     }
     for (auto& [id, g] : g_gv) {
-        if (!g.v || !game::object_alive(g.v) || now - g.seen > 3.0) {
+        if (!exists(g.v) || !game::object_alive(g.v) || now - g.seen > 3.0) {
             g.has_put = false;
             continue;
         }
@@ -2586,7 +2754,13 @@ static void guest_tick(double now)
         float pp[3] = {p.x, p.y, p.z}, q[4] = {g.rot.x, g.rot.y, g.rot.z, g.rot.w};
         vcall<void>(sp, 0xEC / 4); // StopMovement: the locomotion does not pull it back
         vcall<void>(sp, 0x44 / 4, (const float*)pp, (const float*)q); // Teleport
-        F<float>(g.v, kVHp) = g.hp;
+        if (!g_health_save_depth) {
+            auto it = g_vehicle_health.find(g.v);
+            float base = it != g_vehicle_health.end() && it->second.scale.serial == game::object_serial(g.v)
+                       ? it->second.scale.native_max : F<float>(g.v,kVMaxHp);
+            scale_vehicle(g.v, g.scaled_max > 0 && base > 0 ? g.scaled_max / base : 1.f, 0);
+            F<float>(g.v, kVHp) = g.hp;
+        }
         g.put = p;
         g.has_put = true;
     }
@@ -2707,11 +2881,13 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    clear_enemy_health();
     g_hud_samples = 0;
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
     g_founder_planet.clear();
+    g_combat_roster_ready = false;
     g_founder_notice.clear();
     g_offline_planet.clear();
     g_offline_control = false;
@@ -2750,12 +2926,14 @@ void on_world_change()
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
     g_founder_planet.clear();
+    g_combat_roster_ready = false;
     g_founder_nations = {};
     g_offline_planet.clear();
     g_offline_control = false;
     g_command_refresh = false;
     g_progress_queued = false;
     g_progress_poll = g_campaign_share_at = 0;
+    g_vehicle_health.clear(); // Old world objects have already been freed.
     g_world_resets++;
     caption_disarm();
     clear_coop_tables(false); // nothing to restore: the vehicles are gone
@@ -2929,9 +3107,10 @@ std::string list()
               oz = otype >= 0 ? *(float*)(ob + 12) : 0;
         snprintf(b, sizeof b,
                  "  veh #%u %p pol=%08X owner=%d purpose=%d loco=%d sel=%u hp=%.0f pos=(%.1f %.1f %.1f) order=%d "
-                 "opos=(%.1f %.1f %.1f)\n",
+                 "opos=(%.1f %.1f %.1f) max_hp=%.3f\n",
                  id, v, pol_of(v), o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco),
-                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz);
+                 F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz,
+                 vcall<float>((uint8_t*)v + 0x508, 0x58 / 4));
         out += b;
         auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
         if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)

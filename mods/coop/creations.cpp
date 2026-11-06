@@ -2,6 +2,7 @@
 #include "cellsync.h"
 #include "creature_hp.h"
 #include "squadron.h"
+#include "civ.h"
 
 #include <windows.h>
 
@@ -2373,6 +2374,7 @@ static void SK_THISCALL h_LoadPlanet(void* manager, const char16_t* name)
     world::native_campaign_loaded(campaign);
     cellsync::clear_cell_credit();
     creature_hp::clear_enemy_health();
+    civ::clear_enemy_health();
     squadron::clear_enemy_stats();
     o_LoadPlanet(manager, name);
 }

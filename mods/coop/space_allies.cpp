@@ -34,6 +34,7 @@
 #include "space_logic.h"
 #include "world.h"
 #include "squadron.h"
+#include "civ.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
@@ -682,9 +683,11 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     spaceext::note_save();
     const auto cell_stamp = cellsync::cell_save_stamp();
     creature_hp::before_native_save();
+    civ::before_native_save();
     squadron::before_native_save();
     o_Save(mgr, name, flag);
     squadron::after_native_save();
+    civ::after_native_save();
     creature_hp::after_native_save();
     // BUG-0225: the game wrote the file synchronously (<name>.tmp, then its own rename; the function
     // returns nothing, docs/re/space.md#space-owed-refund-identity). An empty name writes nothing.

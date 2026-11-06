@@ -11,7 +11,7 @@ versions: duo10-dev
 fixed_in:
 branch: duo-species
 commits:
-tests: tools/tests/duo_cell_reserved_food.py tools/tests/duo_creature_reserved_combat.py tools/tests/duo_tribal_reserved_combat.py
+tests: tools/tests/duo_cell_reserved_food.py tools/tests/duo_creature_reserved_combat.py tools/tests/duo_tribal_reserved_combat.py tools/tests/duo_civ_vehicle_combat.py
 signature: Extra founders can earn the same DNA several times faster
 docs: docs/DUO.md
 related: BUG-9069
@@ -22,4 +22,7 @@ engaged creature health and damage, and rival Tribal warrior health and damage.
 Still open are native Creature ally and extinction cards, editor refunds through
 the UI, and four simultaneous founders. Live pirate-raid checks now cover Space
 ship health and one scaled hit on each side. Cell whole-point bonuses use two
-independent carries. Civ vehicle and turret combat is still open.
+independent carries. A two-peer Civilization fixture measured a four-seat rival
+military hit at 11.5 instead of 10, mirrored its boosted maximum HP, and
+restored the base maximum on disconnect. Turret combat, ordinary player-issued
+combat, and four simultaneous founders still need their own runs.

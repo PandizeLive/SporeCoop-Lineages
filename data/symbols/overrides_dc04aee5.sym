@@ -567,3 +567,4 @@ SporeCoop::CellDamageCommit=0x00E7A817 ; verified Steam 3010a413 return of GetDa
 SporeCoop::CellAreaDamageCommit=0x00E71915 ; verified Steam 3010a413 return of GetDamageAmount immediately before native cell HP debit. Excludes two preview callers.
 SporeCoop::CellChunkACommit=0x00E7DE73 ; verified Steam 3010a413 return of GetDamageAmount immediately before native cell HP debit. Excludes two preview callers.
 SporeCoop::CellChunkBCommit=0x00E7DCCB ; verified Steam 3010a413 return of GetDamageAmount immediately before native cell HP debit. Excludes two preview callers.
+SporeCoop::CivVehicle_TakeDamage=0x00CAB6F0 ; verified vehicle combatant vtable 01474CE8 +18, this=vehicle+508, float damage, political ID, type, direction, attacker combatant, ret 14h (BUG-9072).

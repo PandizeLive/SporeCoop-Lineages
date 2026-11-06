@@ -40,6 +40,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
+void before_native_save();
+void after_native_save();
+void clear_enemy_health();
 void on_world_change(); // a load: the tables of game pointers are cleared (BUG-0059)
 // BUG-0223: once per frame at the top of on_frame (after game::stage_epoch_tick, before messages):
 // calls on_world_change when the Civ world changed; with civ.world_epoch off it does nothing and
