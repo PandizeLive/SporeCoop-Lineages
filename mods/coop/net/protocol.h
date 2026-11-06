@@ -87,6 +87,7 @@ enum MsgType : uint8_t {
     MSG_TRIBE_FOOD = 59, // host -> guest: NPC stores, bounded by world/faction/species/position
     MSG_TRIBE_PERFORMANCE = 61, // host -> guest: world/sequence, up to64 {member, native token, phase/request/ready, progress, round/total}
     MSG_TRIBE_OUTFIT = 62, // reliable: u8 begin/result/accepted, u32 world/token/previous/model; voted founders only
+    MSG_CIV_TURRETS = 67,  // host -> guest: one city wall layout, occupied slots and turret HP
     MSG_CELL_COMBAT = 66, // guest contact hit; host replies with any whole bonus for the same body
     MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
     MSG_TRIBE_COMBAT = 64, // reliable host snapshot: world, count, {member id, scaled native max HP}

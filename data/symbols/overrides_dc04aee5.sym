@@ -568,3 +568,6 @@ SporeCoop::CellAreaDamageCommit=0x00E71915 ; verified Steam 3010a413 return of G
 SporeCoop::CellChunkACommit=0x00E7DE73 ; verified Steam 3010a413 return of GetDamageAmount immediately before native cell HP debit. Excludes two preview callers.
 SporeCoop::CellChunkBCommit=0x00E7DCCB ; verified Steam 3010a413 return of GetDamageAmount immediately before native cell HP debit. Excludes two preview callers.
 SporeCoop::CivVehicle_TakeDamage=0x00CAB6F0 ; verified vehicle combatant vtable 01474CE8 +18, this=vehicle+508, float damage, political ID, type, direction, attacker combatant, ret 14h (BUG-9072).
+SporeCoop::CivTurret_TakeDamage=0x00BD0660 ; verified active build: combatant vtable 01466C28 +18, this=turret+588; ret 14h (BUG-9072).
+SporeCoop::CivCity_PlaceTurretSlot=0x00BE3AE0 ; verified active build: this=city; checks wall slot by index, creates 0436F342, assigns the free slot; ret 4 (BUG-9072).
+SporeCoop::CivCity_RemoveTurret=0x00BE21C0 ; verified active build: this=city, args turret and flag; removes from wall layout and city+354; ret 8 (BUG-9072).

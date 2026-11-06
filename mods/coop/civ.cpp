@@ -957,6 +957,7 @@ static uint8_t player_of_combatant(void* att)
 
 static uint8_t role(uint8_t p) { return C.role_of && p != 0xFF ? C.role_of(p) : 0; }
 
+static uintptr_t a_PlaceTurretSlot, a_RemoveTurret;
 static uintptr_t a_Relationships, a_RelationshipMap, a_RelationshipData;
 
 static unsigned relationship_flags(uint32_t a, uint32_t b)
@@ -980,34 +981,56 @@ struct VehicleHealth {
     uint32_t faction, opponent;
     bool attacked_before_war = false;
 };
-static std::unordered_map<void*,VehicleHealth> g_vehicle_health;
+using HealthMap = std::unordered_map<void*,VehicleHealth>;
+static HealthMap g_vehicle_health, g_turret_health;
+struct TurretHit {
+    uint32_t count = 0, turret = 0, victim = 0;
+    float base = 0, applied = 0;
+};
+static TurretHit g_last_rival_turret_hit;
 static unsigned g_health_save_depth;
 
-static void restore_vehicle(void* v, VehicleHealthScale& scale)
-{
-    scale.normalize(F<float>(v,kVHp),F<float>(v,kVMaxHp));
-}
-
-static void scale_vehicle(void* v, float factor, uint32_t opponent)
+static void scale_combatant(HealthMap& entries, void* object, uintptr_t combat, uint32_t faction,
+                            float factor, uint32_t opponent)
 {
     if (g_health_save_depth) return;
-    const auto serial = game::object_serial(v);
-    auto it = g_vehicle_health.find(v);
-    if (it != g_vehicle_health.end()) {
+    const auto serial = game::object_serial(object);
+    auto it = entries.find(object);
+    if (it != entries.end()) {
         auto& previous = it->second;
         if (previous.scale.serial == serial) {
-            if (previous.scale.factor == factor && previous.faction == pol_of(v)) return;
-            restore_vehicle(v,previous.scale);
+            if (previous.scale.factor == factor && previous.faction == faction) return;
+            previous.scale.normalize(F<float>(object,combat+0x38),F<float>(object,combat+0x2C));
         }
-        g_vehicle_health.erase(it);
+        entries.erase(it);
     }
-    float& max_hp = F<float>(v,kVMaxHp);
-    float& hp = F<float>(v,kVHp);
+    float& max_hp = F<float>(object,combat+0x2C);
+    float& hp = F<float>(object,combat+0x38);
     if (factor == 1.f || !serial || !(max_hp > 0) || !std::isfinite(max_hp) || !std::isfinite(hp)) return;
     float native_max = max_hp;
     hp *= factor;
     max_hp *= factor;
-    g_vehicle_health.emplace(v,VehicleHealth{{serial,factor,native_max,max_hp},pol_of(v),opponent});
+    entries.emplace(object,VehicleHealth{{serial,factor,native_max,max_hp},faction,opponent});
+}
+
+static void apply_mirror_health(HealthMap& entries, void* object, uintptr_t combat, uint32_t faction,
+                                float hp, float boosted_max)
+{
+    if (g_health_save_depth) return;
+    auto it = entries.find(object);
+    float base = it != entries.end() && it->second.scale.serial == game::object_serial(object)
+               ? it->second.scale.native_max : F<float>(object,combat+0x2C);
+    scale_combatant(entries,object,combat,faction,boosted_max > 0 && base > 0 ? boosted_max/base : 1.f,0);
+    F<float>(object,combat+0x38) = hp;
+}
+
+static void mark_engaged(HealthMap& entries, void* object, uint32_t opponent, unsigned relation)
+{
+    auto it = entries.find(object);
+    if (it != entries.end()) {
+        it->second.attacked_before_war = !(relation & 1);
+        it->second.opponent = opponent;
+    }
 }
 
 static void refresh_vehicle_health(const std::vector<void*>& live, const std::unordered_set<void*>& alive,
@@ -1015,7 +1038,7 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
 {
     std::erase_if(g_vehicle_health,[&](const auto& item) { return !alive.count(item.first); });
     float factor = world::rules_for_current().enemy_health_percent() / 100.f;
-    if (factor == 1.f && g_vehicle_health.empty()) return;
+    if (factor == 1.f && g_vehicle_health.empty() && g_turret_health.empty()) return;
     // Several vehicles commonly share one faction. Query diplomacy once per pair per tick.
     std::map<std::pair<uint32_t,uint32_t>,unsigned> relations;
     auto flags = [&](uint32_t a, uint32_t b) {
@@ -1023,13 +1046,12 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
         if (fresh) it->second = relationship_flags(a,b);
         return it->second;
     };
-    for (auto* v : live) {
-        auto pol = pol_of(v);
+    auto refresh = [&](HealthMap& entries, void* v, uintptr_t combat, uint32_t pol, bool armed) {
         uint32_t opponent = 0;
-        if (factor > 1.f && pol && F<int>(v,kVPurpose) == 0 && pol != home &&
+        if (factor > 1.f && pol && armed && pol != home &&
             !g_founder_nations.contains_faction(pol)) {
-            auto it = g_vehicle_health.find(v);
-            if (it != g_vehicle_health.end() && it->second.faction == pol &&
+            auto it = entries.find(v);
+            if (it != entries.end() && it->second.faction == pol &&
                 it->second.scale.serial == game::object_serial(v) && it->second.attacked_before_war) {
                 auto& last = it->second;
                 const unsigned relation = flags(pol,last.opponent);
@@ -1041,77 +1063,114 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
                 if (!opponent && founder.faction && (flags(pol,founder.faction) & 3) == 1)
                     opponent = founder.faction;
         }
-        scale_vehicle(v,opponent ? factor : 1.f,opponent);
+        scale_combatant(entries,v,combat,pol,opponent ? factor : 1.f,opponent);
+    };
+    for (auto* v : live) refresh(g_vehicle_health,v,0x508,pol_of(v),F<int>(v,kVPurpose) == 0);
+    for (auto& [object,entry] : g_turret_health) entry.scale.seen = false;
+    for (void* city : g_host_cities) {
+        for (void* turret : vec_of(static_cast<uint8_t*>(city)+kCityTurrets)) {
+            refresh(g_turret_health,turret,kTurretCombat,pol_of(city),F<int>(turret,kTurretCombat+0x34) != 2);
+            if (auto it = g_turret_health.find(turret); it != g_turret_health.end()) it->second.scale.seen = true;
+        }
     }
+    std::erase_if(g_turret_health,[](const auto& item) { return !item.second.scale.seen; });
 }
 
 static void convert_vehicle_health(bool saving)
 {
-    if (g_vehicle_health.empty() || !g_ok || !nm()) return;
-    for (void* v : all_vehicles()) {
-        auto it = g_vehicle_health.find(v);
-        if (it == g_vehicle_health.end() || it->second.scale.serial != game::object_serial(v)) continue;
+    if ((g_vehicle_health.empty() && g_turret_health.empty()) || !g_ok || !nm()) return;
+    auto convert = [&](HealthMap& entries, void* object, uintptr_t combat) {
+        auto it = entries.find(object);
+        if (it == entries.end() || it->second.scale.serial != game::object_serial(object)) return;
         auto& scale = it->second.scale;
-        if (saving) scale.before_save(F<float>(v,kVHp),F<float>(v,kVMaxHp));
-        else scale.after_save(F<float>(v,kVHp),F<float>(v,kVMaxHp));
-    }
+        auto& hp = F<float>(object,combat+0x38);
+        auto& max_hp = F<float>(object,combat+0x2C);
+        if (saving) scale.before_save(hp,max_hp);
+        else scale.after_save(hp,max_hp);
+    };
+    if (!g_vehicle_health.empty()) for (void* v : all_vehicles()) convert(g_vehicle_health,v,0x508);
+    if (!g_turret_health.empty()) for (void* city : all_cities())
+        for (void* turret : vec_of(static_cast<uint8_t*>(city)+kCityTurrets))
+            convert(g_turret_health,turret,kTurretCombat);
 }
 void before_native_save() { if (++g_health_save_depth == 1) convert_vehicle_health(true); }
 void after_native_save() { if (g_health_save_depth && --g_health_save_depth == 0) convert_vehicle_health(false); }
 void clear_enemy_health()
 {
     if (!g_health_save_depth) convert_vehicle_health(true);
+    g_turret_health.clear();
     g_vehicle_health.clear();
 }
 
 // A turret belongs to the city that currently lists it. Compare combatant
 // pointers before reading anything through an untyped native attacker.
-static bool city_turret(void* combat, uint32_t faction)
+static void* city_turret(void* combat, uint32_t faction)
 {
     for (void* city : all_cities()) {
         if (pol_of(city) != faction) continue;
         for (void* turret : vec_of(static_cast<uint8_t*>(city) + kCityTurrets))
-            if (static_cast<uint8_t*>(turret) + kTurretCombat == combat) return true;
+            if (static_cast<uint8_t*>(turret) + kTurretCombat == combat) return turret;
     }
-    return false;
+    return nullptr;
 }
 
-static float vehicle_damage(void* combat, float damage, uint32_t faction, void* attacker)
+struct CivCombatant {
+    void* object;
+    uint32_t faction;
+    bool turret;
+    bool armed() const { return turret || F<int>(object,kVPurpose) == 0; }
+};
+
+static CivCombatant attacking_unit(void* combat, uint32_t faction)
+{
+    void* vehicle = reinterpret_cast<void*>(uintptr_t(combat)-0x508);
+    if (exists(vehicle) && pol_of(vehicle) == faction) return {vehicle,faction,false};
+    return {city_turret(combat,faction),faction,true};
+}
+
+static float combat_damage(void* target_combat, bool target_turret, float damage, uint32_t faction, void* attacker)
 {
     if (!active() || !is_host() || !g_combat_roster_ready || !attacker || !faction || damage <= 0)
         return damage;
-    auto* source = reinterpret_cast<void*>(uintptr_t(attacker) - 0x508);
-    auto* target = static_cast<uint8_t*>(combat) - 0x508;
-    if (!exists(target) || pol_of(target) == faction) return damage;
-    const bool founder_source = team_faction(faction);
-    if (founder_source == team_faction(pol_of(target))) return damage;
-    if (!exists(source)) {
-        if (founder_source || !city_turret(attacker,faction) ||
-            (relationship_flags(faction,pol_of(target)) & 2)) return damage;
-        return damage * (world::rules_for_current().enemy_damage_percent() / 100.f);
-    }
-    if (pol_of(source) != faction) return damage;
-    void* rival = founder_source ? target : source;
-    const auto opponent = founder_source ? faction : pol_of(target);
-    if (F<int>(rival,kVPurpose) != 0) return damage;
-    const unsigned relation = relationship_flags(pol_of(rival),opponent);
-    if (relation & 2) return damage;
+    auto* object = static_cast<uint8_t*>(target_combat)-(target_turret ? kTurretCombat : 0x508);
+    if (!target_turret && !exists(object)) return damage;
+    void* owner = target_turret ? F<void*>(object,0x688) : object;
+    if (!owner || pol_of(owner) == faction) return damage;
+    CivCombatant target{object,pol_of(owner),target_turret};
+    const bool founder_shot = team_faction(faction);
+    if (founder_shot == team_faction(target.faction)) return damage;
+    const auto source = attacking_unit(attacker,faction);
+    if (!source.object || !source.armed() || (source.turret && target.turret)) return damage;
 
+    const auto& rival = founder_shot ? target : source;
+    const uint32_t opponent = founder_shot ? faction : target.faction;
+    if (!rival.armed()) return damage;
+    const auto relation = relationship_flags(rival.faction,opponent);
+    if (relation & 2) return damage;
     const auto rules = world::rules_for_current();
-    scale_vehicle(rival,rules.enemy_health_percent() / 100.f,opponent);
-    if (auto it = g_vehicle_health.find(rival); it != g_vehicle_health.end()) {
-        it->second.attacked_before_war = !(relation & 1);
-        it->second.opponent = opponent;
-    }
-    return founder_source ? damage : damage * (rules.enemy_damage_percent() / 100.f);
+    auto& entries = rival.turret ? g_turret_health : g_vehicle_health;
+    scale_combatant(entries,rival.object,rival.turret ? kTurretCombat : 0x508,
+                    rival.faction,rules.enemy_health_percent()/100.f,opponent);
+    mark_engaged(entries,rival.object,opponent,relation);
+    if (founder_shot) return damage;
+    const float applied = damage * (rules.enemy_damage_percent()/100.f);
+    if (source.turret)
+        g_last_rival_turret_hit = {g_last_rival_turret_hit.count+1,game::object_serial(source.object),
+                                   game::object_serial(target.object),damage,applied};
+    return applied;
 }
 
 using VehicleDamage = int(SK_THISCALL*)(void*,float,uint32_t,int,const void*,void*);
-static VehicleDamage o_VehicleDamage;
+static VehicleDamage o_VehicleDamage, o_TurretDamage;
 static int SK_THISCALL h_VehicleDamage(void* combat, float damage, uint32_t faction, int type,
                                        const void* direction, void* attacker)
 {
-    return o_VehicleDamage(combat,vehicle_damage(combat,damage,faction,attacker),faction,type,direction,attacker);
+    return o_VehicleDamage(combat,combat_damage(combat,false,damage,faction,attacker),faction,type,direction,attacker);
+}
+static int SK_THISCALL h_TurretDamage(void* combat, float damage, uint32_t faction, int type,
+                                      const void* direction, void* attacker)
+{
+    return o_TurretDamage(combat,combat_damage(combat,true,damage,faction,attacker),faction,type,direction,attacker);
 }
 
 // building / city hall TakeDamage (this = building+0x120): a military governor's vehicles hit harder;
@@ -1500,6 +1559,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (uintptr_t damage = H->sym("SporeCoop::CivVehicle_TakeDamage"); damage &&
         a_Relationships && a_RelationshipMap && a_RelationshipData)
         H->hook_create(M,(void*)damage,(void*)h_VehicleDamage,(void**)&o_VehicleDamage);
+    a_PlaceTurretSlot = H->sym("SporeCoop::CivCity_PlaceTurretSlot");
+    a_RemoveTurret = H->sym("SporeCoop::CivCity_RemoveTurret");
+    if (auto turret = H->sym("SporeCoop::CivTurret_TakeDamage"); turret && o_VehicleDamage)
+        H->hook_create(M,(void*)turret,(void*)h_TurretDamage,(void**)&o_TurretDamage);
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -1931,8 +1994,104 @@ static void movie_tick()
                  (g_fix_caption && (!g_fix_caption_only || g_caption_armed > 0) && C.sess->players().size() >= 2 ? " (or " + std::to_string((int)g_caption_wait) + " s)" : ""));
 }
 
+// Native wall slot identities are stable across a transferred planet. Send one
+// city's complete layout per turn so that a lost update repairs itself.
+struct TurretSlots {
+    uint8_t* first;
+    size_t count;
+    void* at(size_t i) const { return F<void*>(first+i*0x18,4); }
+};
+static TurretSlots turret_slots(void* city)
+{
+    constexpr uintptr_t slots = 0x4B4+0x50;
+    auto first = F<uintptr_t>(city,slots), end = F<uintptr_t>(city,slots+4);
+    if (!first || end < first || (end-first)%0x18 || (end-first)/0x18 > 32) return {};
+    return {reinterpret_cast<uint8_t*>(first),(end-first)/0x18};
+}
+static uint32_t g_turret_sequence;
+struct WallUpdate { uint32_t serial = 0, sequence = 0, missing = 0; };
+static std::unordered_map<void*,WallUpdate> g_wall_updates;
+
+static void send_turret_health(size_t ci)
+{
+    if (!o_TurretDamage || !g_combat_roster_ready || C.sess->players().size() < 2) return;
+    void* city = g_host_cities[ci];
+    const auto slots = turret_slots(city);
+    if (!slots.count) return;
+    uint32_t live = 0;
+    const auto listed = vec_of(static_cast<uint8_t*>(city)+kCityTurrets);
+    for (size_t i = 0; i < slots.count; ++i) {
+        void* t = slots.at(i);
+        if (t && std::find(listed.begin(),listed.end(),t) != listed.end() &&
+            F<int>(t,kTurretCombat+0x34) != 2) live |= 1u<<i;
+    }
+    net::Writer w;
+    w.u32(modes::current_world()); w.u32(++g_turret_sequence); w.u8(uint8_t(ci));
+    w.u32(pol_of(city)); w.u8(!team_faction(pol_of(city)));
+    const auto pos = city_pos(city);
+    w.f32(pos.x); w.f32(pos.y); w.f32(pos.z); w.u8(uint8_t(slots.count)); w.u32(live);
+    for (size_t i = 0; i < slots.count; ++i) if (live & (1u<<i)) {
+        void* t = slots.at(i);
+        w.f32(F<float>(t,kTurretCombat+0x38));
+        w.f32(g_turret_health.count(t) ? F<float>(t,kTurretCombat+0x2C) : 0.f);
+    }
+    for (const auto& player : C.sess->players()) if (player.id)
+        C.sess->send_unreliable_to(player.id,net::MSG_CIV_TURRETS,w);
+}
+
+static void receive_turret_health(net::Reader& r)
+{
+    if (g_health_save_depth || local_play() || !a_PlaceTurretSlot || !a_RemoveTurret) return;
+    auto world = r.u32(), sequence = r.u32();
+    auto ci = r.u8(); auto pol = r.u32(); auto rival = r.u8();
+    net::Vec3 pos{r.f32(),r.f32(),r.f32()};
+    auto count = r.u8(); auto live = r.u32();
+    if (!world || world != modes::current_world() || ci >= g_host_cities.size() ||
+        rival > 1 || count > 32 || (count < 32 && (live >> count))) return;
+    std::array<float,32> hp{}, max{};
+    for (size_t i = 0; i < count; ++i) if (live & (1u<<i)) {
+        hp[i] = r.f32(); max[i] = r.f32();
+        if (!std::isfinite(hp[i]) || hp[i] < 0 || !std::isfinite(max[i]) || max[i] < 0) return;
+    }
+    if (!r.ok() || r.left()) return;
+    const auto cities = all_cities();
+    void* city = g_host_cities[ci];
+    if (!city || std::find(cities.begin(),cities.end(),city) == cities.end() ||
+        pol_of(city) != pol || !(net::dist(city_pos(city),pos) < 5.f)) return;
+    const auto slots = turret_slots(city);
+    if (!slots.count || slots.count != count) return;
+    auto& last = g_wall_updates[city];
+    auto serial = game::object_serial(city);
+    if (last.serial == serial && int32_t(sequence-last.sequence) <= 0) return;
+    if (last.serial != serial) last = {};
+    uint32_t missing = 0;
+    const auto listed = vec_of(static_cast<uint8_t*>(city)+kCityTurrets);
+    for (size_t i = 0; i < count; ++i) {
+        void* turret = slots.at(i);
+        if (turret && std::find(listed.begin(),listed.end(),turret) == listed.end()) continue;
+        uint32_t bit = 1u<<i;
+        if (!(live & bit)) {
+            if (rival && turret) {
+                missing |= bit;
+                if (last.missing & bit) {
+                    g_turret_health.erase(turret);
+                    thiscall<void>(a_RemoveTurret,city,turret,1);
+                }
+            }
+            continue;
+        }
+        if (!turret && rival && thiscall<bool>(a_PlaceTurretSlot,city,int(i))) {
+            const auto updated = turret_slots(city);
+            if (updated.count == count) turret = updated.at(i);
+        }
+        if (turret) apply_mirror_health(g_turret_health,turret,kTurretCombat,pol,hp[i],max[i]);
+    }
+    last = {serial,sequence,missing};
+}
+
 static void host_tick(double now)
 {
+    if (g_health_save_depth) return; // Never broadcast the temporary native save values.
     trade_tick(now);
     boost_tick(now);
     movie_tick();
@@ -2021,6 +2180,7 @@ static void host_tick(double now)
     // what the incremental messages missed (a capture clears the ruins, ...)
     size_t bci = g_host_cities.empty() ? 0xFF : g_cycle % g_host_cities.size();
     std::vector<void*> blds;
+    if (bci != 0xFF) send_turret_health(bci);
     if (bci != 0xFF)
         for (void* bl : vec_of((uint8_t*)g_host_cities[bci] + kCityBuildings))
             if (type_for_noun(game::noun_id(bl)) && blds.size() < 32)
@@ -2770,13 +2930,7 @@ static void guest_tick(double now)
         float pp[3] = {p.x, p.y, p.z}, q[4] = {g.rot.x, g.rot.y, g.rot.z, g.rot.w};
         vcall<void>(sp, 0xEC / 4); // StopMovement: the locomotion does not pull it back
         vcall<void>(sp, 0x44 / 4, (const float*)pp, (const float*)q); // Teleport
-        if (!g_health_save_depth) {
-            auto it = g_vehicle_health.find(g.v);
-            float base = it != g_vehicle_health.end() && it->second.scale.serial == game::object_serial(g.v)
-                       ? it->second.scale.native_max : F<float>(g.v,kVMaxHp);
-            scale_vehicle(g.v, g.scaled_max > 0 && base > 0 ? g.scaled_max / base : 1.f, 0);
-            F<float>(g.v, kVHp) = g.hp;
-        }
+        apply_mirror_health(g_vehicle_health,g.v,0x508,g.pol,g.hp,g.scaled_max);
         g.put = p;
         g.has_put = true;
     }
@@ -2867,6 +3021,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     prune_gone();
     if (type == net::MSG_CIV_STATE && is_guest())
         guest_state(r);
+    else if (type == net::MSG_CIV_TURRETS && is_guest() && from == 0)
+        receive_turret_health(r);
     else if (type == net::MSG_CIV_CMD && is_host())
         host_command(from, r);
     else if (type == net::MSG_CIV_BUILD && is_guest())
@@ -2902,6 +3058,8 @@ void on_session_end()
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
+    g_last_rival_turret_hit = {};
+    g_wall_updates.clear();
     g_founder_planet.clear();
     g_combat_roster_ready = false;
     g_founder_notice.clear();
@@ -2941,6 +3099,8 @@ void on_world_change()
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
+    g_last_rival_turret_hit = {};
+    g_wall_updates.clear();
     g_founder_planet.clear();
     g_combat_roster_ready = false;
     g_founder_nations = {};
@@ -2949,6 +3109,7 @@ void on_world_change()
     g_command_refresh = false;
     g_progress_queued = false;
     g_progress_poll = g_campaign_share_at = 0;
+    g_turret_health.clear();
     g_vehicle_health.clear(); // Old world objects have already been freed.
     g_world_resets++;
     caption_disarm();
@@ -3192,6 +3353,13 @@ bool founder_space_ready()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() == 1 && a[0] == "defenses") {
+        char buf[160];
+        const auto& hit = g_last_rival_turret_hit;
+        snprintf(buf,sizeof buf,"Rival turret hits %u, turret %08X, victim %08X, damage %.3f -> %.3f",
+                 hit.count,hit.turret,hit.victim,hit.base,hit.applied);
+        return buf;
+    }
     if (!a.empty() && a[0] == "offline_control") {
         if (!active() || !is_host() || !g_founder_nations.guest().faction)
             return "Open the founder campaign on the host to change offline control.";

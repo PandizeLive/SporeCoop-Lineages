@@ -151,3 +151,6 @@ SporeCoop::CellAreaDamageCommit ; Fractional Cell combat bonuses are unavailable
 SporeCoop::CellChunkACommit ; Fractional Cell combat bonuses are unavailable on this frozen build (BUG-9072)
 SporeCoop::CellChunkBCommit ; Fractional Cell combat bonuses are unavailable on this frozen build (BUG-9072)
 SporeCoop::CivVehicle_TakeDamage ; Civilization vehicle combat scaling is unavailable on the frozen build (BUG-9072)
+SporeCoop::CivTurret_TakeDamage ; Armed city defense synchronization is unavailable on the frozen build (BUG-9072)
+SporeCoop::CivCity_PlaceTurretSlot ; Armed city defense synchronization is unavailable on the frozen build (BUG-9072)
+SporeCoop::CivCity_RemoveTurret ; Armed city defense synchronization is unavailable on the frozen build (BUG-9072)

@@ -1195,7 +1195,14 @@ and checks incoming attackers for the turret type 0x0436F315. The city helper at
 combatant vtable matched the in-game instance. The native damage entry
 measured ten points offline and 11.5 on four-seat rules against a founder
 vehicle. Its guest mirror received the same wound. The test supplies the
-turret as the attacker. Autonomous turret targeting needs its own check.
+turret as the attacker. A separate run loaded the wounded turret cold and
+issued an attack order to a nearby founder vehicle. The turret's native weapon
+targeted that vehicle and its damage entry received 3.0 and applied 3.45.
+Both object serials matched the fixture. The active build’s indexed placement
+routine at `0x00BE3AE0` rejects occupied or missing slots, then calls the
+constructor. Removal at `0x00BE21C0` detaches the turret from its layout and
+city list. A two-peer test added a second rival turret to a free wall slot
+during play, verified it on the guest and removed it from both.
 
 The [ModAPI city header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cCity.h)
 documents the city's turret list and wall layout.

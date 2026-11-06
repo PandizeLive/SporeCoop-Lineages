@@ -1,8 +1,8 @@
-# SporeCoop Duo private test build
+# SporeCoop Lineages private test build
 
-The current local combat build is 0.7.3.6-duo13-dev. Use the same build
-on every machine. Duo 13 includes the hostile military vehicle’s maximum HP
-in Civilization snapshots.
+The current local combat build is 0.7.3.6-duo14-dev. Use the same build
+on every machine. Duo 14 synchronizes Civilization military vehicle health
+and armed city defenses, including the wall slot of a newly placed rival turret.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct
@@ -487,8 +487,15 @@ separate cold run, the engine carried out a rival attack order against the
 partner's vehicle and its HP fell from 361.765 to 338.338. The fixture placed
 the vehicles together and issued the order programmatically. A native rival
 wall turret also dealt 11.5 damage instead of ten to a founder vehicle in a
-two-peer test. Turret durability, autonomous targeting, and issuing the
-vehicle battle through regular controls need separate checks.
+two-peer test. The same turret rose from 600 to 870 maximum HP. Its wound,
+a second turret placed during play, and that turret's removal reached the
+guest. Leaving restored the first turret to 600. The host owns rival wall
+placements. Founder city construction continues to use its existing controls.
+After a cold restart, that turret kept its wall slot and 579.31 HP out of
+600. On rehosting, the turret automatically fired on an attacking founder
+vehicle. The native three-point shot applied 3.45 damage. These combat runs
+issued vehicle orders through the native command routine. A battle initiated
+with ordinary mouse controls is a separate check.
 
 On QuartetTribe the solo host had one native village. The read-only terrain
 probe found 23 more compatible positions for four founders and twenty rivals
