@@ -1189,6 +1189,13 @@ host and the guest mirror.
 
 The turret has a separate combatant vtable at `0x01466C28`. Its +0x18 slot
 points to `0x00BD0660`; the prologue subtracts 0x588 from the receiver
-and checks incoming attackers for the turret type 0x0436F315. This is a
-disassembly finding. A placed city turret and a live native shot are still
-needed to establish the multiplayer damage path.
+and checks incoming attackers for the turret type 0x0436F315. The city helper at
+`0x00BE39A0` found an empty wall slot, constructed one turret through
+`0x00BE2100`, and added it to city+0x354. Its city pointer at +0x688 and
+combatant vtable matched the in-game instance. The native damage entry
+measured ten points offline and 11.5 on four-seat rules against a founder
+vehicle. Its guest mirror received the same wound. The test supplies the
+turret as the attacker. Autonomous turret targeting needs its own check.
+
+The [ModAPI city header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cCity.h)
+documents the city's turret list and wall layout.

@@ -485,8 +485,10 @@ recovered the same vehicle ID and its wound, about 145 HP out of 361.765.
 The ten-point comparison invokes the native damage function directly. In a
 separate cold run, the engine carried out a rival attack order against the
 partner's vehicle and its HP fell from 361.765 to 338.338. The fixture placed
-the vehicles together and issued the order programmatically. City turrets
-and issuing that battle through the regular controls need separate checks.
+the vehicles together and issued the order programmatically. A native rival
+wall turret also dealt 11.5 damage instead of ten to a founder vehicle in a
+two-peer test. Turret durability, autonomous targeting, and issuing the
+vehicle battle through regular controls need separate checks.
 
 On QuartetTribe the solo host had one native village. The read-only terrain
 probe found 23 more compatible positions for four founders and twenty rivals

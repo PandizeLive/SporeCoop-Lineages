@@ -57,7 +57,7 @@ constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0
 constexpr size_t kVehicleSnapshotBytes = 45;
 constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C, kCityCiv = 0x590,
                     kCityCapture = 0x748, // + 4: capturing political id
-                    kCityBuildings = 0x340, kBuildingState = 0x120 + 0x34; // combatant state, 2 = destroyed
+                    kCityTurrets = 0x354, kTurretCombat = 0x588, kCityBuildings = 0x340, kBuildingState = 0x120 + 0x34; // combatant state, 2 = destroyed
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
 constexpr uintptr_t kCivCities = 0x9C;
 constexpr uintptr_t kNationSpecies = 0x268, kCitySpecies = 0x658;
@@ -1064,17 +1064,33 @@ void clear_enemy_health()
     g_vehicle_health.clear();
 }
 
+// A turret belongs to the city that currently lists it. Compare combatant
+// pointers before reading anything through an untyped native attacker.
+static bool city_turret(void* combat, uint32_t faction)
+{
+    for (void* city : all_cities()) {
+        if (pol_of(city) != faction) continue;
+        for (void* turret : vec_of(static_cast<uint8_t*>(city) + kCityTurrets))
+            if (static_cast<uint8_t*>(turret) + kTurretCombat == combat) return true;
+    }
+    return false;
+}
+
 static float vehicle_damage(void* combat, float damage, uint32_t faction, void* attacker)
 {
     if (!active() || !is_host() || !g_combat_roster_ready || !attacker || !faction || damage <= 0)
         return damage;
     auto* source = reinterpret_cast<void*>(uintptr_t(attacker) - 0x508);
     auto* target = static_cast<uint8_t*>(combat) - 0x508;
-    if (!exists(source) || !exists(target) || pol_of(source) != faction || pol_of(target) == faction)
-        return damage;
-
+    if (!exists(target) || pol_of(target) == faction) return damage;
     const bool founder_source = team_faction(faction);
     if (founder_source == team_faction(pol_of(target))) return damage;
+    if (!exists(source)) {
+        if (founder_source || !city_turret(attacker,faction) ||
+            (relationship_flags(faction,pol_of(target)) & 2)) return damage;
+        return damage * (world::rules_for_current().enemy_damage_percent() / 100.f);
+    }
+    if (pol_of(source) != faction) return damage;
     void* rival = founder_source ? target : source;
     const auto opponent = founder_source ? faction : pol_of(target);
     if (F<int>(rival,kVPurpose) != 0) return damage;
