@@ -12,6 +12,37 @@ to one empire with two founding species are under development.
 Both players share Space diplomacy. The intended player-side portrait for a contact is
 the speaking player's species. A conversation must never change the empire's species globally.
 
+## Install and remove
+
+1. Both players close Spore and extract the complete ZIP into a folder they can keep.
+2. Open SporeCoopSetup.exe. Confirm the Galactic Adventures folder and click Install.
+   The adjacent .pack contains the mod. Keep the setup and pack together for reinstalls.
+3. To remove it, close Spore, open the same setup and click Uninstall. If Windows
+   denies write access to the game directory, run the setup as administrator and retry.
+   Uninstall restores the original Steam API DLL and keeps player saves, settings and logs.
+   Keep a pre-mod save for vanilla play. The fork registers archived custom founders when
+   their planet loads. Reinstall the matching build to resume those campaigns with their models.
+
+If Steam shows error 1004 on the first launch, start Galactic Adventures once from your Steam library to
+finish its setup. If the red Creepy & Cute palette is missing, check the full Creature Editor. For a Steam
+installation with separate game folders, the Spore ModAPI community explains how to copy the owned
+bp1content folder into the Galactic Adventures folder. https://launcherkit.sporecommunity.com/support/creepyandcute
+
+## Play with a friend
+
+Use the same Duo build, content and gameplay mods on both machines. Start with only
+Galactic Adventures and the matching Creepy & Cute configuration. In the galaxy menu
+choose Co-op (or press F9). One player selects Host. The other selects Join and enters
+the host's virtual LAN address. The host then loads the disposable save.
+
+At a hotel, share the host PC with your friend through Tailscale. If you already use
+Hamachi, join the same Hamachi network and use the host's Hamachi address instead.
+The game listens on UDP 47810. The VPN is installed and managed separately by each player.
+
+The join check compares the fork rules and the loaded Creepy & Cute parts. A check of
+every third-party mod and gameplay setting is still pending. The host and guest should
+both see the same creature, pack parts and paint before using any longer-running save.
+
 ## Development milestones (2026-11-05)
 
 The private Tribal checkpoint is 0.7.3.6-duo10-dev. Duo 9 remains available
@@ -384,37 +415,6 @@ The development build reserves a disconnected founder's cities and vehicles
 by default. On the host, F9 > Nations enables temporary command while the
 partner is away. The guest regains command on reconnect. The setting is saved
 per campaign. The original factions, cities and species survive the handoff.
-
-## Install and remove
-
-1. Both players close Spore and extract the complete ZIP into a folder they can keep.
-2. Open SporeCoopSetup.exe. Confirm the Galactic Adventures folder and click Install.
-   The adjacent .pack contains the mod. Keep the setup and pack together for reinstalls.
-3. To remove it, close Spore, open the same setup and click Uninstall. If Windows
-   denies write access to the game directory, run the setup as administrator and retry.
-   Uninstall restores the original Steam API DLL and keeps player saves, settings and logs.
-   Keep a pre-mod save for vanilla play. The fork registers archived custom founders when
-   their planet loads. Reinstall the matching build to resume those campaigns with their models.
-
-If Steam shows error 1004 on the first launch, start Galactic Adventures once from your Steam library to
-finish its setup. If the red Creepy & Cute palette is missing, check the full Creature Editor. For a Steam
-installation with separate game folders, the Spore ModAPI community explains how to copy the owned
-bp1content folder into the Galactic Adventures folder. https://launcherkit.sporecommunity.com/support/creepyandcute
-
-## Play with a friend
-
-Use the same Duo build, content and gameplay mods on both machines. Start with only
-Galactic Adventures and the matching Creepy & Cute configuration. In the galaxy menu
-choose Co-op (or press F9). One player selects Host. The other selects Join and enters
-the host's virtual LAN address. The host then loads the disposable save.
-
-At a hotel, share the host PC with your friend through Tailscale. If you already use
-Hamachi, join the same Hamachi network and use the host's Hamachi address instead.
-The game listens on UDP 47810. The VPN is installed and managed separately by each player.
-
-The join check compares the fork rules and the loaded Creepy & Cute parts. A check of
-every third-party mod and gameplay setting is still pending. The host and guest should
-both see the same creature, pack parts and paint before using any longer-running save.
 
 ## What passed on Windows
 
