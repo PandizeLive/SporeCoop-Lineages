@@ -150,6 +150,19 @@ the pause arrived. That test was intentionally interrupted and is not a
 pass or a gameplay failure. Both test processes were closed. Do not resume
 until the user asks.
 
+Resumed at the user's request on 2026-11-07. With the installed Duo 22 DLL,
+both ships flew from PersonalOrbitI to Nicus and scanned the tutorial wreck
+using normal controls. Each earned the native interstellar drive, departed
+to the galaxy view, and retained its original captain and ship. The guest
+kept its drive and identity across reconnect. Both exited with zero faults.
+This closes the normal wreck-unlock gap above, not an entire Space campaign.
+
+The user clarified the remaining validation scope: target missions and
+interactions that can block co-op, rather than replaying entire stages.
+Reuse saved checkpoints, skip previously verified missions unless affected
+by a change, and keep setup shortcuts distinct from the behavior being tested.
+Next targeted gap: eligible guest economic trade and native purchase progress.
+
 ### Personal Space launch
 
 Current priority (user decision, 2026-11-06): finish the linked campaign

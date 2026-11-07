@@ -2277,3 +2277,28 @@ No forced finale-enter command or direct reward setter was used.
 
 This qualifies the existing upstream ending on the shared Lineages empire,
 not earning the interstellar drive or playing the entire Grox approach.
+
+## Native wreck unlock qualification (2026-11-07, feat/lineages-civ-combat)
+<a id="space-native-wreck-unlock"></a>
+
+On fresh isolated DuoQAPlayabilityNicusB4/B5, using the installed Duo 22
+DLL and PersonalOrbitI saves, neither native tool inventory initially had
+interstellar drive 2569FAE8. Normal planet selection and zoom landed both
+on Nicus, PlanetID 0241C023, and opened "Scan spaceship wreck."
+Both scanned the actual wreck with the gear scanner and normal mouse input.
+Both inventories then contained 2569FAE8. After native tutorial captions,
+normal zoom reached galaxy context 2 on both. Guest reconnect retained the
+earned drive; both original captain/ship identities remained unchanged.
+Both exited with zero native faults. Logs: playability-nicus-b-land.log,
+playability-wreck-approach.log, playability-wreck-scan.log and
+playability-wreck-depart.log in build/local. No drive grant, mission-state
+write or teleport was used. The core-ending fixture remains a separate check.
+
+Read-only locator: the wreck's GetNounID returned 018C88E4 (vtable 01192100,
+getter 0098F980, bytes B8 E4 88 8C 01 C3 on this executable).
+The existing coop.tribe objs command reads its spatial position in Space too.
+On Nicus it was (154.2, 450.9, 173.7); WASD and altitude input brought each
+ship close enough for the scanner. These coordinates are fixture-specific.
+The mission's generic +1E8 target planet pointed to Asten while the visible
+current objective concerned Nicus. Do not assume that field is always the
+current HUD destination. This observation alone does not establish a bug.

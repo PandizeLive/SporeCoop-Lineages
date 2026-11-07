@@ -3822,3 +3822,18 @@ playability-finale-a.log passed native entry, both cinematics, return to
 Space, both 42-charge rewards, personal creations and guest reconnect with
 zero faults. Preserve the distinction between those checks and its travel
 shortcuts when reporting end-to-end coverage.
+## Targeted playability checks (2026-11-07, feat/lineages-civ-combat)
+<a id="testing-targeted-playability"></a>
+
+The user requests focused checks of potentially blocking missions, not full
+stage replays. Load preserved isolated checkpoints near the relevant action.
+Do not repeat already-qualified missions without a changed dependency or
+new failure. Fixture setup may shorten travel/preparation, but must not
+replace the behavior asserted by the check.
+
+The supervised Duo 22 Nicus wreck check passed normal flight, actual scan,
+both native interstellar drive inventories, normal galaxy departure and
+guest reconnect with unchanged personal creations and zero faults.
+See docs/re/space.md#space-native-wreck-unlock for evidence and the read-only
+target locator. No replay of the remaining ordinary Space missions is needed
+for this result. The core ending was already checked separately.
