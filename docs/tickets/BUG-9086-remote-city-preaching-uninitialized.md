@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6-lineages24-dev
 fixed_in: 0.7.3.6-lineages25-dev
 branch: feat/lineages-civ-combat
-commits:
+commits: c2c6d0d5
 tests: tools/tests/lineages_civ_religious_controls.py
 signature: Remote city preaching slots have zero population; preacher takes native retaliation without converting followers
 docs: docs/re/civ.md
@@ -60,8 +60,15 @@ PASS: build/local/bug9086-group-q.log, independent profile Q. Its cold-city
 single-preacher attempt initialized capacity but died before capture
 (bug9086-pass-q.log, despite its provisional filename, is a failed run).
 A four-preacher group then captured without any host-camera intervention.
+Both games exited with zero faults and no new crash report after this run.
 The test defaults to a small group; one preacher's survival is not guaranteed
 by this initialization fix. No production health, power or retaliation was changed.
+
+The private Lineages 25 package installs, uninstalls and reinstalls in a
+disposable fixture while preserving loader, save and settings sentinels:
+build/local/lineages25-installer.log. The packaged DLL also passes the related
+Tribal combat regression. Full uninterrupted campaigns, four playable founders,
+two-PC VPN sessions and arbitrary third-party mod combinations remain unqualified.
 
 ## History
 

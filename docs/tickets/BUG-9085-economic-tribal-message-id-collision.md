@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6-duo23-dev
 fixed_in: 0.7.3.6-lineages24-dev
 branch: feat/lineages-civ-combat
-commits:
+commits: c2c6d0d5
 tests: tools/tests/protocol_ids_selftest.py
 signature: MSG_CIV_ECONOMY and MSG_TRIBE_COMBAT both equal 64
 docs: docs/06-testing.md
@@ -38,7 +38,14 @@ IDs. Source dispatch now selects Tribal combat separately; keep its world
 gate explicit. Native economy regression lineages24-economy-n.log passes
 route removal/recreation, changed meter and pricing, and stale-entry removal.
 Full native network and Windows unit suites pass in lineages24-net-tests.log
-and lineages24-win-tests.log. A targeted Tribal runtime recheck remains due.
+and lineages24-win-tests.log.
+
+PASS: build/local/lineages25-tribe-combat.log, actual packaged DLL on the
+isolated DuoQALineagesCombatA pair. The historical four-seat save retains
+25% HP / 10% damage bonuses: rival maximum HP 162 -> 283.5 reaches the
+guest, and a native 5.2-point hit reaches the guest founder's current HP.
+The new campaign defaults remain 15% / 5%. Both games exit with zero faults;
+the newest crash report remains the preexisting 2026-11-06 22:34 report.
 
 ## History
 

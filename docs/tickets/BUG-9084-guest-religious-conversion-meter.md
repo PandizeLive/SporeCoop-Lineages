@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.6-duo23-dev
 fixed_in: 0.7.3.6-lineages24-dev
 branch: feat/lineages-civ-combat
-commits:
+commits: c2c6d0d5
 tests: tools/tests/lineages_civ_religious_state.py
 signature: Host rival convert=100 while guest convert=0
 docs: docs/re/civ.md
