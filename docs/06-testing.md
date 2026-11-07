@@ -3793,3 +3793,32 @@ the bonus; the successful test restores it and clears the test governor role.
 --baseline runs against the old DLL; --control disables the attribution fix.
 Neither mode should pass the trader check. This is native bonus qualification,
 not a complete mouse-driven religious campaign.
+
+## Personal Space training playability checks (2026-11-06, feat/lineages-civ-combat)
+<a id="testing-space-personal-training"></a>
+
+duo_space_flight_complete.py --host 4 --guest 5 visits native cities with
+WASD, sweeps altitude when an orb was missed, and requires Mission Control
+to acknowledge all seven orbs. --resume accepts an unfinished route. It
+does not claim to finish scanner, cargo or weapons training. The updated
+uninterrupted seven-orb script still needs a full rerun; the supervised
+playability-flight-a run completed those objectives through normal input.
+
+duo_space_training_departure.py --host 4 --guest 5 --identities FILE starts
+at the final "Bye." response after completed homeworld training, drive
+purchase and acceptance of the first offworld mission. FILE contains the
+two identity() readbacks taken before departure. It zooms out, waits for
+the queued shared world and verifies both personal creations. Its local
+precursor passed in playability-training-depart-a.log; the subsequent
+duo_space_founder_rejoin.py check passed in playability-training-rejoin-a.log.
+Both profiles were isolated DuoQA profiles at 1176x664 and 10 FPS.
+
+duo_space_finale.py uses an already running disposable pair with that same
+resolution. It explicitly grants interstellar drives and moves the host
+near the core as fixture setup. Native entry, the guest's Fly to button,
+the cinematics, Staff of Life and reconnect are assertions. This cannot
+qualify earning the drive, normal long-distance travel or Grox combat.
+playability-finale-a.log passed native entry, both cinematics, return to
+Space, both 42-charge rewards, personal creations and guest reconnect with
+zero faults. Preserve the distinction between those checks and its travel
+shortcuts when reporting end-to-end coverage.

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Record full guest homeworld Space training, personal orbital handoff,
+  reconnect and two-founder core-ending qualification (BUG-9071). The ending
+  test uses drive/travel fixture shortcuts; uninterrupted campaign play
+  remains unqualified. Package the religious bonus fix in Duo 22.
+
 - Attribute religious governor conversion bonuses to their own religious
   vehicles, excluding economic vehicles and other nations (BUG-9078).
 

@@ -2232,3 +2232,48 @@ the session the bomber had its original maximum. Both games exited with zero
 faults (raid-combat-d-game.log). Enemy empire membership uses the native
 enemy vector at cEmpire +5C. C34750 compares and AddRefs empire pointers.
 Empire war/peace changes still need a separate gameplay test.
+
+## Guest homeworld training and departure (2026-11-06, feat/lineages-civ-combat)
+<a id="space-guest-complete-training"></a>
+
+In playability-flight-a, the host stayed in orbital context 1 while the
+guest completed all seven flight orbs, scanning, specimen collection and
+delivery, and five diseased-animal kills through ordinary input. The last
+orb required descending from the cruising height. The tooltip changes from
+"more cities" to "more city" at one remaining. Mission Control then awarded
+Captain and offered the interplanetary drive for purchase. The guest
+accepted the first offworld mission and zoomed out normally.
+
+playability-training-depart-a.log confirms the pending world load completed
+after departure, with the original captain bodies and spacecraft parts on
+both peers. playability-training-rejoin-a.log also checks each actual remote
+UFO's desired model, shared treasury updates and reconnect. This resolves
+the full homeworld-lesson coverage gap recorded in the earlier cold-lesson
+section. It does not qualify the later interstellar tutorial or long-term
+Space campaign.
+
+The [SDK cMission fields](https://raw.githubusercontent.com/Spore-Community/Spore-ModAPI/master/Spore%20ModAPI/Spore/Simulator/cMission.h)
+place the target animal profile at +16C and its resource key at +170.
+Reading the existing mission noun vector with the verified GetData
+callbacks returned species 0652765D in the scan and weapon lessons. The
+native HUD confirmed that species, Gnosh. Scanning it and returning a
+specimen advanced the lesson. Killing ordinary members did not advance
+the diseased-animal counter; killing the designated animals did. A
+completed objective can retain mission state 3 until its dialogue turn-in.
+No mission state or completion credit was injected in this run.
+
+## Two-founder core ending (2026-11-06, feat/lineages-civ-combat)
+<a id="space-lineages-core-ending"></a>
+
+playability-finale-a.log ran duo_space_finale.py on the same two founders
+after the guest's full homeworld training and orbital reconnect. The
+fixture granted interstellar drives and used finale goto near/core for the
+host's travel. Mouse-wheel entry into the core waited for the guest. The
+guest used the native co-op Fly to control twice, and both ran cinematic
+2F7C7BDA. Each returned to galaxy context 2, busy=0, with the native Staff
+of Life and 42 charges. Guest reconnect retained the reward, both captain
+digests and their distinct ship parts. Both fault counters remained zero.
+No forced finale-enter command or direct reward setter was used.
+
+This qualifies the existing upstream ending on the shared Lineages empire,
+not earning the interstellar drive or playing the entire Grox approach.

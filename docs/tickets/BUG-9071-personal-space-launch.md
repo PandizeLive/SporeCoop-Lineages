@@ -110,3 +110,26 @@ no new naming prompt, and seven remaining after accepting the lesson.
 Both peers exited with zero faults. The earlier D screenshot shows seven
 in the visible HUD too; the textual "Visit 7" lives in a tooltip, so a
 visible-parent assertion on that string had incorrectly failed the run.
+
+playability-flight-a-restart.log repeats the cold restart with the original
+captain and spacecraft. The guest then completed all seven real flight
+orbs, scanning, abduction, specimen delivery and five diseased-animal kills
+using keyboard, mouse and native tools. Mission Control awarded Captain
+and sold the interplanetary drive. The host remained in orbital Space.
+playability-training-depart-a.log verifies native departure, the queued
+world load and both original captain digests and hull designs.
+playability-training-rejoin-a.log verifies both remote rendered UFO models,
+shared treasury changes and another reconnect after completing training.
+Both reported zero faults. These are localhost checks, not two-PC coverage.
+
+Test-driver findings: "more cities" becomes singular at the last orb;
+some orbs need a lower flight altitude; cargo specimens require their icon,
+not a numbered tool hotkey. Ordinary wildlife of the mission species does
+not count as diseased. Native mission state 3 may remain until Mission
+Control accepts the completed objective, so HUD completion plus departure
+is stronger evidence than treating state 3 as unfinished.
+
+The new seven-orb script incorporates the observed corrections but has not
+yet been rerun uninterrupted from seven. The departure script preserves
+the successful local harness with configurable instance IDs and identity
+file. Full homeworld training above was a supervised normal-input run.

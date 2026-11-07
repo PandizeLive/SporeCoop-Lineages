@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo21-dev. Use the same build on every
+The current local build is 0.7.3.6-duo22-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -114,10 +114,50 @@ release gates. See the qualification limits below.
 | Verified locally | Two playable Tribal villages | Separate species/ownership; shared five-victory campaign, unlocks and history; revival, capture/rebuilding, outfitters, native graduation and reconnect |
 | Required next | Two Civilizations | Automatic transition and per-player controls; team victories, unlocks, history and advancement remain shared |
 | Required next | One Space empire, two species | Shared diplomacy and resources; each speaking player's portrait; location and reconnect persistence |
-| Required next | Supported Galactic Adventures | Captains, objectives, combat, rewards and return to campaign agree |
+| Deferred by user | Supported Galactic Adventures | Full shared mission play is outside the current playable-through-Space pass |
 | Release | Campaign and compatibility qualification | Full path, declared mod combinations and real two-PC VPN checks |
 
+### Playability checkpoint (2026-11-06)
+
+The guest has completed native homeworld Space training while the host
+stayed in orbit: seven flight orbs, scanning, abduction, delivery and five
+diseased-animal kills. Purchasing the drive and departing loaded the shared
+Space world with both founders' own captains and spacecraft. A subsequent
+reconnect retained the actual ship models seen by both peers and the shared
+treasury.
+
+The local two-game galactic-core check also passed: native entry waited for
+the partner, Fly to brought the guest to the gate, both played the ending,
+and both returned to Space with 42 Staff of Life charges. The guest kept
+the reward and personal creations after reconnect. That check granted the
+interstellar drive and moved the host near the core as fixture shortcuts.
+It does not establish normal interstellar unlocks, the full Grox journey,
+an uninterrupted Cell-to-core campaign, or three/four-founder playability.
+These remain qualification gaps; this is still a private test build.
+
+Paused at the user's request on 2026-11-06. A subsequent 150-second normal
+flight smoke test entered four star systems on each peer, retained both
+identities and ending rewards, and exited without faults. Duo 22 built
+successfully and passed the Windows unit suite. Its actual ZIP passed
+install, uninstall and reinstall with the original loader restored and
+save/settings sentinels preserved. ZIP SHA256:
+94eea7219e5019871a2d1420cd50a48af453db989850714b1a3bc19ff36cb975.
+
+Next on resume: normal pre-interstellar progression from the preserved
+PersonalOrbitI checkpoint, then outstanding Civilization campaign checks.
+The DuoQAPlayabilityNicusA pair was being started with the packaged DLL when
+the pause arrived. That test was intentionally interrupted and is not a
+pass or a gameplay failure. Both test processes were closed. Do not resume
+until the user asks.
+
 ### Personal Space launch
+
+Current priority (user decision, 2026-11-06): finish the linked campaign
+through Cell, Creature, Tribe, Civilization and Space before more balance
+work. Adventures are deferred for this pass. This does not qualify shared
+adventure objectives or rewards. Upstream 0.7.8 still lists co-op adventures
+as an unchecked roadmap item; its Adventure adapter provides shared presence.
+Source: https://github.com/WoodyWizard/SporeCoop/blob/v0.7.8/README.md
 
 Every founding player should create and name a captain of their own species,
 design their own spacecraft, and receive the native flight tutorial, including
