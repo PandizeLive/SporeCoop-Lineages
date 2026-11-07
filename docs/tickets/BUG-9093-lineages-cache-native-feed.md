@@ -10,7 +10,7 @@ role: host guest
 versions: 0.7.3.6-lineages26-dev
 fixed_in: unreleased
 branch: feat/lineages-cache
-commits:
+commits: 8bd7ca16
 tests: tools/tests/test_cache_category.py tools/tests/lineages_library.py tests/library_sync_tests.cpp
 signature:
 docs: docs/re/creations.md#creations-cache-native-feed

@@ -4086,3 +4086,12 @@ without vanilla root replacements. RE symbol lint and documentation lint are
 additional gates. The Linux/Wine lab and sanitizer suite were not run on this
 Windows host. Four native peers, natural pollination selection and arbitrary
 missing-part combinations remain unqualified; portable relay is not their proof.
+
+Final preview: 0.7.3.6-lineages27-dev, feature commit 8bd7ca16. The version-labeled
+DLL passed the native resource/card checks after hot reload (release-final-dll.log).
+The installer ZIP passed CRC checks, all eleven pack payload SHA-256 hashes,
+installer version, exact resource-package contents and native symbol inclusion
+(release-package.log). ZIP SHA-256:
+2eae48a2196632a9bc4eff8b5bdea861a197cd6c8b91362f49396b0825d2151d.
+The installer itself was not rerun against the personal installation. The full
+Linux lab and broad campaign regression remain outside this targeted qualification.
