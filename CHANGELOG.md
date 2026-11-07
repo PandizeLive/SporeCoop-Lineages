@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Let guests negotiate economic city purchases as their own founder. The host
+  validates and settles payment/capture once; refused offers reset shared
+  trade eligibility without charging (BUG-9082).
+
 - Synchronize Civilization trade routes, economic purchase meters and native
   pricing credits to guests, including route removal and reconnect (BUG-9081).
 

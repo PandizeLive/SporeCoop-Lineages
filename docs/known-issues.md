@@ -1741,6 +1741,15 @@ order targets the correct NPC chief but does not start a performance within
 
 The private Duo 22 package omits guest trade routes, purchase progress and
 pricing credits. BUG-9081 adds and verifies their synchronization in source;
-it is not yet included in a replacement package. Final guest Buy City input
-still needs separate qualification. See
+it is not yet included in a replacement package. BUG-9082 also fixes and
+qualifies native guest purchase, cancellation, refusal and reconnect. See
 [BUG-9081](tickets/BUG-9081-civ-economic-state-not-replicated.md).
+
+## Packed Steam symbol reload (2026-11-07, development tools)
+<a id="issue-packed-steam-symbol-reload"></a>
+
+Running sym.reload followed by mod.reload coop can discard the packed executable's
+symbol database and leave the mod unloaded. Cold-launch a preserved checkpoint
+when symbols change. Normal startup works; this is a development-console
+limitation, not a campaign blocker. See
+[BUG-9083](tickets/BUG-9083-packed-steam-symbol-hot-reload.md).

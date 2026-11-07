@@ -313,6 +313,37 @@ static uintptr_t a_CivAIPlayerRet;
 static thread_local void* g_ai_founder;
 static thread_local void* g_capture_founder;
 static uintptr_t a_ChangeOwnerPlayerRet;
+static bool g_economic_purchase = true;
+COOP_FIX("civ.economic_purchase", "BUG-9082", g_economic_purchase,
+         "civ: guest city negotiations use their founder and host-owned payment/capture");
+static bool g_purchase_ready;
+using CanBuyCity_t = bool(SK_THISCALL*)(void*,uint32_t);
+using BuyPrice_t = float(SK_THISCALL*)(void*,uint32_t);
+static CanBuyCity_t o_CanBuyCity;
+static BuyPrice_t o_BuyPrice;
+static uintptr_t a_CityBuyEligibilityRet, a_CityBuyPriceRet;
+static uintptr_t a_BuyOfferTolerance;
+using BuyByCiv_t = void(SK_THISCALL*)(void*,uint32_t,float);
+using FinishBuy_t = void(SK_THISCALL*)(void*,bool);
+static BuyByCiv_t o_BuyByCiv;
+static FinishBuy_t o_FinishBuy;
+static uint32_t purchase_ui_buyer(uint32_t original, uintptr_t caller, uintptr_t site)
+{
+    if (caller == site && site && g_purchase_ready && g_economic_purchase && g_founder_control && active() &&
+        is_guest() && !local_play() && g_founder_nations.guest().faction)
+        return g_founder_nations.guest().faction;
+    return original;
+}
+static bool SK_THISCALL h_CanBuyCity(void* city,uint32_t buyer)
+{
+    return o_CanBuyCity(city,purchase_ui_buyer(buyer,
+        (uintptr_t)__builtin_return_address(0),a_CityBuyEligibilityRet));
+}
+static float SK_THISCALL h_BuyPrice(void* city,uint32_t buyer)
+{
+    return o_BuyPrice(city,purchase_ui_buyer(buyer,
+        (uintptr_t)__builtin_return_address(0),a_CityBuyPriceRet));
+}
 using TerrainCursor_t = void*(SK_CDECL*)();
 static TerrainCursor_t o_TerrainCursor;
 static void* g_bound_cursor;
@@ -592,12 +623,48 @@ static Target read_target(net::Reader& r)
 }
 
 enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4,
-                 CMD_WALL_EDIT = 6, CMD_WALL_ACK = 7 };
+                 CMD_WALL_EDIT = 6, CMD_WALL_ACK = 7, CMD_CITY_PURCHASE = 8 };
 
 static void send_cmd(net::Writer& w)
 {
     C.sess->send_reliable_to(0, net::MSG_CIV_CMD, w);
     g_cmds_sent++;
+}
+
+static bool guest_purchase() {
+    return g_purchase_ready && g_economic_purchase && g_founder_control && active() &&
+           is_guest() && !local_play() && !g_applying;
+}
+static void request_city_purchase(void* city,float price,bool accepted)
+{
+    const auto live=all_cities();
+    if (std::find(live.begin(),live.end(),city)==live.end()) return;
+    const int index=host_index_of_city(city);
+    if (index<0 || index>=250) return;
+    const auto pos=city_pos(city);
+    net::Writer w;
+    w.u8(CMD_CITY_PURCHASE); w.u32(modes::current_world()); w.u8(uint8_t(index));
+    w.u32(pol_of(city)); w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
+    w.f32(price); w.u8(accepted);
+    send_cmd(w);
+}
+static void SK_THISCALL h_BuyByCiv(void* city,uint32_t buyer,float price)
+{
+    if (guest_purchase()) {
+        // The native dialogue still uses its player-country scratch fields.
+        // Only its final transaction crosses the network; no local SpendMoney.
+        void* local=player_civ();
+        if (local && buyer==pol_of(local) && F<void*>(local,0x440)==city)
+            request_city_purchase(city,price,true);
+        return;
+    }
+    o_BuyByCiv(city,buyer,price);
+}
+static void SK_THISCALL h_FinishBuy(void* country,bool accepted)
+{
+    if (!accepted && guest_purchase() && country==player_civ())
+        request_city_purchase(F<void*>(country,0x440),0,false);
+    o_FinishBuy(country,accepted);
 }
 
 using SetOrder_t = int(SK_THISCALL*)(void*, void*, int, int);
@@ -1663,6 +1730,21 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         }
     if (!g_ok)
         return false;
+    a_CityBuyEligibilityRet=H->sym("SporeCoop::CityBuy_Eligibility_Ret");
+    a_CityBuyPriceRet=H->sym("SporeCoop::CityBuy_Price_Ret");
+    const auto can_buy=H->sym("Simulator::cCity::CanBuyCity");
+    const auto buy_price=H->sym("Simulator::cCity::GetBuyPrice");
+    const auto buy_by=H->sym("Simulator::cCity::BuyByCiv");
+    const auto finish_buy=H->sym("Simulator::cCivilization::FinishBuyCity");
+    a_BuyOfferTolerance=H->sym("SporeCoop::CityBuy_FairOfferTolerance");
+    g_purchase_ready=can_buy && buy_price && buy_by && finish_buy && a_BuyOfferTolerance &&
+                     a_CityBuyEligibilityRet && a_CityBuyPriceRet;
+    if (g_purchase_ready) {
+        H->hook_create(M,(void*)can_buy,(void*)h_CanBuyCity,(void**)&o_CanBuyCity);
+        H->hook_create(M,(void*)buy_price,(void*)h_BuyPrice,(void**)&o_BuyPrice);
+        H->hook_create(M,(void*)buy_by,(void*)h_BuyByCiv,(void**)&o_BuyByCiv);
+        H->hook_create(M,(void*)finish_buy,(void*)h_FinishBuy,(void**)&o_FinishBuy);
+    }
     H->hook_create(M, (void*)a_BTTick, (void*)h_BT, (void**)&o_BT);
     if (uintptr_t kg = H->sym("SporeCoop::Vehicle_KeepOnValidGround")) // optional (BUG-0186, GOG 2024)
         H->hook_create(M, (void*)kg, (void*)h_KeepGround, (void**)&o_KeepGround);
@@ -2952,6 +3034,52 @@ static void host_command(uint8_t from, net::Reader& r)
         void* v = command_vehicle(id,live);
         return v && g_hv.at(v).owner == from ? v : nullptr;
     };
+    if (kind == CMD_CITY_PURCHASE) {
+        struct Pending {
+            uint64_t epoch; uint32_t world,faction; uint8_t from,index,accepted;
+            net::Vec3 pos; float price;
+        } request{};
+        request.epoch=g_founder_epoch; request.world=r.u32(); request.index=r.u8();
+        request.faction=r.u32(); request.pos={r.f32(),r.f32(),r.f32()};
+        request.price=r.f32(); request.accepted=r.u8(); request.from=from;
+        if (!r.ok() || r.left() || request.accepted>1 || request.index>=250 ||
+            !std::isfinite(request.price) || request.price<0 || request.price>999999 ||
+            !std::isfinite(request.pos.x) || !std::isfinite(request.pos.y) || !std::isfinite(request.pos.z))
+            return reject();
+        H->run_outside_frame([](void* raw) {
+            std::unique_ptr<Pending> p(static_cast<Pending*>(raw));
+            if (!g_purchase_ready || !g_economic_purchase || !g_founder_control || !active() || !is_host() ||
+                p->epoch!=g_founder_epoch || p->world!=modes::current_world() || world::load_queued() ||
+                world::save_busy() || !net::is_player(*C.sess,p->from)) return;
+            const auto buyer=g_founder_nations.guest().faction;
+            void* city=command_city(p->index);
+            bool valid=buyer && founder_owner(buyer)==p->from && p->from && city &&
+                pol_of(city)==p->faction && net::dist(city_pos(city),p->pos)<5.f &&
+                !g_founder_nations.contains_faction(p->faction) && !defer_planner_mutation(city) &&
+                o_CanBuyCity(city,buyer);
+            if (valid && p->accepted) {
+                const float quote=o_BuyPrice(city,buyer);
+                const float tolerance=*reinterpret_cast<const float*>(a_BuyOfferTolerance);
+                void* nation=thiscall<void*>(a_CivByPol,nm(),buyer);
+                valid=nation && std::isfinite(quote) && quote>0 && std::isfinite(tolerance) &&
+                      tolerance>=0 && p->price>0 && p->price>=quote-tolerance &&
+                      thiscall<float>(a_GetMoney,nation)>=p->price;
+                if (valid) o_BuyByCiv(city,buyer,p->price);
+            } else if (valid) {
+                // Native FinishBuyCity(false) resets the trade meter on refusal.
+                F<float>(city,0x758)=0;
+                F<uint32_t>(city,0x75C)=UINT32_MAX;
+            }
+            if (valid) ++g_cmds_done;
+            else {
+                ++g_cmds_rejected;
+                net::Writer notice;
+                notice.str8("City purchase declined: eligibility, owner or team funds changed.");
+                C.sess->send_reliable_to(p->from,net::MSG_NOTICE,notice);
+            }
+        },new Pending(request));
+        return;
+    }
     if (kind == CMD_WALL_EDIT) {
         const auto request = r.u32();
         const bool accepted = request && host_wall_edit(from,r);

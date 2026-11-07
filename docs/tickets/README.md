@@ -561,3 +561,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9079](BUG-9079-guest-trade-route-not-created.md) | not-reproduced | bug | Civilization | 2026-11-06 |  | Guest trader reaches rival without creating a trade route |
 | [BUG-9080](BUG-9080-civ-test-used-space-alliance-api.md) | wontfix | test | Civilization | 2026-11-06 |  | Civilization test setup passes political IDs to Space empire API |
 | [BUG-9081](BUG-9081-civ-economic-state-not-replicated.md) | fixed | desync | Civilization | 2026-11-07 | unreleased | Guest does not receive native trade routes or economic purchase progress |
+| [BUG-9082](BUG-9082-guest-native-city-purchase.md) | open | bug | Civilization | 2026-11-07 |  | Guest native Buy City interaction does not complete |
+| [BUG-9083](BUG-9083-packed-steam-symbol-hot-reload.md) | open | bug | Framework | 2026-11-07 |  | Symbol hot reload drops the packed Steam executable's database |

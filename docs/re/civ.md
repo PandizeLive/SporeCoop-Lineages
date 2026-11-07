@@ -1463,3 +1463,38 @@ Negative values on the original attack event did not create friendship.
 No route or purchase progress was set in the original reproduction.
 The Steam executable is packed on disk; live ASLR-adjusted bytes were used
 for signature checks. Raw on-disk disassembly was not usable evidence.
+## Guest native city negotiation (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-guest-city-negotiation"></a>
+
+The native command handler starts at CF3350 on the active 2024 code. Its
+Buy City branch calls CanBuyCity BD8110 at CF35F1 and GetBuyPrice BE93A0 at
+CF361F, both with the native player political ID. The guest's real trading
+founder differs from that ID. CanBuyCity requires city+75C equal to the buyer
+and city+758 at least 100; the enabled menu alone does not prove this gate.
+
+BuyCity BF0520 keeps the pending target at nation+440, selected integer offer
+at +444 and float quote at +448. Its dialogue uses five native offers: 32,000,
+24,000, 16,000, 8,000 and 4,000. The CFFC7F offer handler reads the original
+player country's scratch fields and wealth, so that context must remain the
+native player country. CFFCC9 subtracts the 120-point fair-offer tolerance
+at preferred address 013F1EF4 from the quote. Fair offers and overpayment
+accept; lower offers run refusal responses. This is not random acceptance.
+
+With only UI attribution fixed, a guest accepted 32,000, shared SpendMoney
+reached the host, but h_Capture suppressed its local capture. Both peers kept
+the rival city: bug9082-transaction-before.log. Intercept BuyByCiv before its
+payment and forward the transaction to the host with the guest founder.
+FinishBuyCity(false) instead zeros the meter and resets buyer to FFFFFFFF;
+its refusal must also reach the host or the next snapshot restores eligibility.
+
+The purchase-only regression prepares eligibility/funds on an isolated saved
+trade checkpoint, then clicks the real negotiation. bug9082-purchase-j.log
+passes own-founder ownership on both peers, one shared payment and one team
+economic capture-history increment. It does not replay the trade journey.
+
+Native Nevermind... closes the discussion through its cancellation path and
+retains the full meter. It is distinct from a rejected low offer followed by
+Oops., which calls FinishBuyCity(false) and clears eligibility. Both behaviors
+were exercised through the guest dialogue: bug9082-purchase-k3.log and
+bug9082-purchase-l2.log. The latter also verifies captured city parts and
+single team history credit after reconnect into a new native save slot.

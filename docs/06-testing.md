@@ -3852,3 +3852,28 @@ BUG-9081 evidence: bug9081-before.log and bug9081-price-before.log fail;
 bug9081-pass-c.log, bug9081-pass-d.log and bug9081-pass-e.log pass the complete
 state checks. Both processes exited with zero faults. Setup/negative-control
 and final native purchase-button qualification are separate from these tests.
+## Targeted native Civilization purchase (2026-11-07, Lineages)
+<a id="testing-civ-native-purchase"></a>
+
+Use tools/tests/duo_civ_city_purchase.py --host 4 --guest 5 on the disposable
+Clyth economic checkpoint. It grants eligibility and funds as fixture setup,
+selects an existing trader, and clicks native Buy City, offer and acceptance.
+It checks native ownership on both peers, one shared payment and one team
+economic-history credit. --transaction-off disables forwarding after the
+dialogue opens to reproduce the charge-without-capture bug. Never use this
+fixture-mutating test on a personal profile. This is a manual Windows lab test,
+not an entry in the incompatible Linux baseline fixture suite.
+
+--cancel-first checks native Nevermind cancellation without payment or loss
+of eligibility. --refuse-first checks that a rejected 4,000 offer and Oops.
+clear the host and guest meters without payment. --rejoin-port 47810 checks
+ownership, city parts and single team capture credit in a new guest save slot.
+Caption search includes hidden controls; inspect ancestor visibility before
+clicking. The conversation text pane and reply pane share ID 04AB5E50, so
+that ID alone does not locate a reply. The native offer rows are 31 pixels
+apart at the required test resolution of 1176x664.
+
+For packed Steam 3010a413, the documented sym.reload development loop loses
+the selected database (BUG-9083). A subsequent mod.reload cannot initialize.
+Core quit still works. Cold-launch the same saved checkpoint when symbols
+change; do not replay the stage or bypass executable verification.
