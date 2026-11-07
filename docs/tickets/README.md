@@ -555,4 +555,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9073](BUG-9073-guest-city-turret-planner.md) | open | desync | Civilization | 2026-11-06 |  | Guest city turret purchases and sales diverge from the host wall and treasury |
 | [BUG-9074](BUG-9074-captured-city-part-owners.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | A guest founder captures a rival city but its parts retain the rival on the guest |
 | [BUG-9075](BUG-9075-captured-city-held-by-planner.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | Incoming capture mutates the city held by the guest planner |
-| [BUG-9076](BUG-9076-civilization-building-combat-scaling.md) | open | bug | Civilization | 2026-11-06 |  | Destructible city buildings miss reserved-founder health and incoming damage scaling |
+| [BUG-9076](BUG-9076-civilization-building-combat-scaling.md) | fixed | bug | Civilization | 2026-11-06 | unreleased | Destructible city buildings miss reserved-founder health and incoming damage scaling |

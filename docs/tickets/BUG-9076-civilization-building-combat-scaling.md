@@ -1,16 +1,16 @@
 ---
 id: BUG-9076
 title: Destructible city buildings miss reserved-founder health and incoming damage scaling
-status: open
+status: fixed
 kind: bug
 stage: Civilization
 reported: 2026-11-06
 source: Duo 19 four-seat native building combat test
 role: host guest
 versions: duo19-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ-combat
-commits:
+commits: ce261273
 tests: tools/tests/duo_civ_building_combat.py
 signature: Rival building max 800 stays 800 and incoming hit stays 10 at four seats
 docs: docs/re/civ.md
