@@ -9,6 +9,8 @@
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
+#include "dna_sync.h"
+#include "modes.h"
 
 using namespace skg;
 
@@ -987,6 +989,26 @@ void dna_add_raw(float delta)
 {
     if (o_AddEvo)
         o_AddEvo(delta);
+}
+
+static bool g_bar_spend_fix = true;
+COOP_FIX("creature.bar_spend", "BUG-9092", g_bar_spend_fix,
+         "creature: sync earned progress separately from shared DNA spending and death penalties");
+
+float evolution_bar()
+{
+    if (mode_id() != modes::kCreature) return NAN;
+    void* nm = noun_manager();
+    void* p = nm && readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr;
+    return p && readable((uint8_t*)p + 0x10F0, 4) ? *(float*)((uint8_t*)p + 0x10F0) : NAN;
+}
+
+void dna_sync_raw(float total, float earned)
+{
+    uintptr_t set = H->sym("Simulator::cCreatureGameData::SetEvolutionPoints");
+    dna_sync::apply(total, earned, dna(), evolution_bar(), g_bar_spend_fix && set && o_AddEvo,
+                   [](float delta) { dna_add_raw(delta); },
+                   [set](float value) { cdecl_call<void>(set, value); });
 }
 
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }

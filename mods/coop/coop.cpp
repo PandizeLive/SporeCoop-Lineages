@@ -30,6 +30,7 @@
 #include "slotfs.h"
 #include "driver.h"
 #include "game.h"
+#include "dna_sync.h"
 #include "modes.h"
 #include "stage_epoch.h"
 #include "mouse.h"
@@ -128,6 +129,7 @@ bool g_overlay = true;
 bool g_share_world = true; // host sends its save to joining guests
 bool g_anim_log = false;
 double g_last_time_sync = 0;
+float g_dna_bar_sent = NAN;
 float g_dna_sent = -1;      // host: last broadcast total
 double g_dna_at = 0;        // host: when it was sent
 uint32_t g_dna_rx = 0, g_dna_fwd = 0;
@@ -797,6 +799,7 @@ bool host_here() // the host plays in our world again (not loading it any more)
 bool g_place_fix = true;
 COOP_FIX("core.same_place", "BUG-0130", g_place_fix, "core: nothing of the host's world is applied to a guest in another world");
 uint32_t g_place_dropped = 0;
+dna_sync::Progress g_dna_pending_progress;
 float g_dna_pending = -1; // the host's DNA total that arrived while we were elsewhere
 // unknown: what to say before the host's first state arrived (just joined).
 // The 0.7.3.0 predicate: kept for the off side of core.world_gate (the gate) only; every module
@@ -902,10 +905,9 @@ void host_away_tick(double now)
         }
     }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
-        float d = g_dna_pending - game::dna(); // the host's total, once we play its world
-        if (d != 0)
-            game::dna_add_raw(d);
+        game::dna_sync_raw(g_dna_pending, g_dna_pending_progress.valid(g_world) ? g_dna_pending_progress.earned : NAN);
         g_dna_pending = -1;
+        g_dna_pending_progress = {};
         g_dna_rx++;
     }
     // away: in the main menu for 1.5 s (not a passing state between two worlds); back: in our world
@@ -2685,9 +2687,11 @@ void on_frame(void*, int, void*)
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere()); // BUG-0231: held while elsewhere
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
+        float earned = game::evolution_bar();
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
-        if (total != g_dna_sent || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
+        if (total != g_dna_sent || (std::isfinite(earned) && earned != g_dna_bar_sent) || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
             g_dna_sent = total;
+            g_dna_bar_sent = earned;
             g_dna_at = now;
             net::Writer w;
             w.f32(total);
@@ -2698,6 +2702,7 @@ void on_frame(void*, int, void*)
                 w.u8(c.player);
                 w.f32(c.amount);
             }
+            dna_sync::Progress{g_world, earned}.write(w);
             g_dna_out.clear();
             for (auto& p : g_sess.players())
                 if (p.id != 0)
@@ -3225,6 +3230,7 @@ void end_session(EndPath path, bool cell)
     shared::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
+    g_dna_pending_progress = {};
     if (g_host_away_fix) { // BUG-0085
         g_host_away = false;
         g_host_away_since = -1;
@@ -3399,35 +3405,40 @@ void setup_callbacks()
         // (also before the host's first state when the host named no world in WELCOME: one Civ
         // cycle applied in that window bound the guest's own vehicles for good, BUG-0231; with
         // Welcome::world a guest in the host's world is Same from WELCOME on and loses nothing)
-        if (from == 0 && gate_drops(type)) {
-            if (type == net::MSG_DNA) {
-                float total = r.f32();
-                if (r.ok())
-                    g_dna_pending = total;
-            }
+        if (from == 0 && type != net::MSG_DNA && gate_drops(type)) {
             g_place_dropped++;
             return;
         }
-        if (type == net::MSG_DNA && g_sess.role() == net::Role::Client) {
+        if (type == net::MSG_DNA && from == 0 && g_sess.role() == net::Role::Client) {
             float total = r.f32(); // (row 6, elsewhere, is the gate above: kept as g_dna_pending)
             std::vector<dna_ledger::Part> parts; // the host's causes (an older host sends none)
             if (r.ok() && r.left() >= 1) {
                 unsigned n = r.u8();
-                for (unsigned i = 0; i < n && r.left() >= 6; i++) {
+                if (r.left() < n * 6u) return;
+                for (unsigned i = 0; i < n; i++) {
                     uint8_t c = r.u8(), pl = r.u8();
                     float a = r.f32();
                     if (c >= 1 && c <= 4 && std::isfinite(a) && std::fabs(a) < 100000)
                         parts.push_back({(dna_ledger::Cause)c, pl, a});
                 }
             }
-            if (r.ok() && dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
+            auto progress = dna_sync::Progress::read(r);
+            if (!r.ok() || !std::isfinite(total) || total < 0) return;
+            if (gate_drops(type)) {
+                g_dna_pending = total;
+                g_dna_pending_progress = progress;
+                g_place_dropped++;
+                return;
+            }
+            if (dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 float before = game::dna(), d = total - before;
                 if (d != 0) {
                     LOG("dna: %.0f -> %.0f cause=%s", before, total, dna_ledger::causes_text(parts).c_str());
-                    game::dna_add_raw(d); // through the game so the UI/progress updates
+
                     for (auto& p : parts)
                         dna_note(p, g_sess.my_id());
                 }
+                game::dna_sync_raw(total, progress.valid(g_world) ? progress.earned : NAN);
                 g_dna_rx++;
             }
             return;

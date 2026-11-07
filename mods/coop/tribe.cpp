@@ -1,4 +1,5 @@
 #include "tribe.h"
+#include "chief_arrival.h"
 #include "creature_hp.h"
 
 #include <algorithm>
@@ -293,9 +294,12 @@ constexpr float kMirrorWalkMax = 8.f; // farther off: drive::step (it teleports 
 constexpr double kPathDt = 0.1;       // s: the interpolated path's velocity is taken over this
 static std::unordered_map<void*, uint16_t> g_gid_of;
 static std::unordered_set<uint16_t> g_cycle_ids;
-static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
+static net::CycleTracker g_cyc; // upstream 0.7.9: reject older snapshot cycles
+bool g_cycle_order_fix = true;
+COOP_FIX("net.cycle_order", "BUG-9090", g_cycle_order_fix,
+         "net: discard older Tribal and Civilization snapshot cycles");
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
-static uint16_t g_rx_cycle = 0xFFFF;
+
 static uint32_t g_spawned, g_removed, g_cmds_sent;
 static std::vector<void*> g_local_tribe_of; // host tribe index -> local tribe
 static double g_march_until;
@@ -1485,12 +1489,17 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 // `coop.fix tribe.place_chiefs off`: chiefs stay where the game put them.
 static bool g_place_fix = true;
 COOP_FIX("tribe.place_chiefs", "BUG-0340", g_place_fix, "tribe: at arrival and after a rejoin every player's chief too close to another gets its own spot round the village");
+static bool g_place_still_fix = true;
+COOP_FIX("tribe.place_still", "BUG-9091", g_place_still_fix,
+         "tribe: arrival placement leaves chiefs that have walked alone");
+static std::unordered_map<void*, chief_arrival::Movement> g_place_first;
 static double g_place_due = 0, g_place_until = 0;
 static uint32_t g_placed;
 static std::unordered_set<void*> g_placed_now; // chiefs placed in this arrival's window
 static void arrival_place_due(double now)
 {
     g_placed_now.clear();
+    g_place_first.clear();
     g_place_due = now + 3.0;   // the split and the chiefs settle first
     g_place_until = now + 60.0; // a player still loading: the guests' games come in later
 }
@@ -2208,6 +2217,11 @@ static void guest_state(net::Reader& r)
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
     if (!r.ok() || nt > 32 || !net::cycle_chunk_ok(chunk, chunks))
         return;
+    bool started = false;
+    if (!g_cyc.begin(cycle, tribe::g_cycle_order_fix, &started))
+        return;
+    if (started)
+        g_cycle_ids.clear();
     std::vector<std::pair<net::Vec3, bool>> htribes;
     struct Food { uint8_t index; uint32_t species; float amount; };
     std::vector<Food> food;
@@ -2244,11 +2258,6 @@ static void guest_state(net::Reader& r)
                 g_local_tribe_of[i] = t;
             }
         }
-    }
-    if (cycle != g_rx_cycle) {
-        g_rx_cycle = cycle;
-        g_cycle_ids.clear();
-        g_cycle_chunks.clear();
     }
     double now = H->time_seconds();
     uint8_t n = r.u8();
@@ -2365,10 +2374,10 @@ static void guest_state(net::Reader& r)
     }
     if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
         return;
-    g_cycle_chunks.insert(chunk);
+    g_cyc.add(chunk);
     if (chunk + 1 < chunks)
         return;
-    if (g_cycle_chunks.size() < chunks) { // a chunk of this cycle was lost or comes late: keep everything
+    if (!g_cyc.complete(chunks)) { // a chunk of this cycle was lost or comes late: keep everything
         g_incomplete++;
         return;
     }
@@ -4321,6 +4330,10 @@ static void place_chiefs(double now)
         void* b = ch[j].second;
         if (!game::object_alive(b))
             continue;
+        if (g_place_still_fix) {
+            if (!g_place_first[b].stationary(game::position(b), drive::speed(game::velocity(b))))
+                g_placed_now.insert(b); // permanently exempt in this arrival window
+        }
         bool close = false;
         for (size_t i = 0; i < ch.size() && !close; i++) {
             void* a = ch[i].second;
@@ -4790,6 +4803,8 @@ void on_session_end()
     g_hm.clear();
     g_hm_by_id.clear();
     g_gm.clear();
+    g_cyc.reset();
+    g_cycle_ids.clear();
     g_gid_of.clear();
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();
@@ -4813,6 +4828,8 @@ void on_world_change()
     g_hm.clear();
     g_hm_by_id.clear();
     g_gm.clear();
+    g_cyc.reset();
+    g_cycle_ids.clear();
     g_gid_of.clear();
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();

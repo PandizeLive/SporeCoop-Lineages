@@ -636,3 +636,13 @@ credit files retain their plant and meat balances on the new build.
 Extra predators use the native encounter's species and size. The host skips
 additions when the Cell pool is full or a clear position is unavailable.
 Cell enemy HP caps at 255, the largest value its network state can carry.
+
+## Selective upstream 0.7.9 integration (2026-11-07)
+
+The development branch ports older-snapshot rejection for Tribe/Civilization
+(BUG-9090), protects moving chiefs from arrival repositioning (BUG-9091), and
+adapts editor DNA spending so earned progress is separate while shared death
+penalties remain intact (BUG-9092). Use the same patched build on every peer.
+Focused unit fail/pass checks and native two-peer Tribal/Creature checks are
+recorded in docs/06-testing.md#testing-lineages-upstream-079. No release package
+was published; these changes do not complete Adventures or close BUG-9062.

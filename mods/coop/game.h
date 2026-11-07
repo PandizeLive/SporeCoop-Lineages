@@ -168,6 +168,8 @@ void set_time_of_day(const net::Quat& q);
 // ---- DNA (cCreatureGameData evolution points, a global) ----
 float dna();
 void dna_add_raw(float delta);              // original AddEvolutionPoints, not reported
+float evolution_bar();
+void dna_sync_raw(float total, float earned); // host-authoritative budget and earned progress
 using DnaListener = bool (*)(float& delta, bool activity_reward); // scale an earned award or return false to swallow it
 void set_dna_listener(DnaListener fn);
 

@@ -3996,3 +3996,36 @@ adventure-new-journal-gate.log then passed the existing first-gate test on the
 new journal. Native shutdown logs show ExitProcess 0/faults 0 for both games.
 lineages_adventure_captain_probe.py is explicitly a disposable fixture and must
 not be counted as an earned act transition or full Adventure qualification.
+
+## Selective upstream 0.7.9 ports (2026-11-07)
+<a id="testing-lineages-upstream-079"></a>
+
+BUG-9090/9091/9092 retain off switches for negative controls. Portable tests:
+validate_tests (old snapshot cycle rejection and wrap/reset), chief_arrival_tests
+(moving, stopped and returned-to-origin chiefs), dna_sync_tests (separate budget
+and progress, coalesced gain/spend, shared death debit, duplicate/catch-up totals,
+invalid/truncated optional tails). They are in make test. Windows binaries and
+FAIL/PASS output live under build/local/079-{cycle,chief,dna}-{fail,pass}.log.
+The validation binary's --nofix also exercises its older unrelated regressions.
+
+Two isolated, muted 10 FPS Windows instances used fresh DuoQA079A4/A5 profiles.
+079-tribe-native.log passed native chief/staff identity, absent chief and chief
+replacement on both peers, with zero faults. The Creature fixture was loaded
+directly from a retained save into unused Game7; no stage replay was needed.
+
+lineages_dna_progress.py --host 4 --guest 5 [--nofix] requires an already joined
+Creature pair and rejects personal profiles. 079-dna-native-fail.log reproduces
+host budget/progress 60/0 versus guest 60/-40. 079-dna-native-pass.log records
+60/0 on both after spending, 70/10 after a reward, and 63/3 after the same native
+debit used for an unrevived death. A periodic resend leaves them equal. Native
+fault counters remain zero. The test uses the actual editor setter and penalty
+debit, not the editor UI or full death timer. Reordered live Civilization packets,
+a live chief-teleport negative control and four-player sessions are not qualified
+by this batch. BUG-9062 remains open.
+
+The initial copied-executable launch exited before game code (no mods loaded,
+TerminateProcess 53). Setting SteamAppId and SteamGameId to 24720 for the isolated
+launch resolved it. This failure is separate from the tested DLL. Git Bash builds
+need an unsandboxed process on this Windows setup; use -j2 for the background
+resource budget. The DLL, fix registry, RE/docs checks and focused units are the
+local gates; the Linux/Wine lab smoke and sanitizer suite were not run.

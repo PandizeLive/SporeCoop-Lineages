@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Adapt upstream 0.7.9 snapshot ordering and chief arrival-placement fixes
+  (BUG-9090, BUG-9091). Separate shared Creature DNA spending from earned
+  stage progress while retaining shared death penalties (BUG-9092).
+
 - Share required-once Adventure conversations through a host-ordered journal,
   including parallel goals and warm reconnect catch-up (BUG-9089, partial).
   Combat objectives, partner bodies and terminal rewards remain unfinished.

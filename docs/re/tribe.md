@@ -2671,3 +2671,14 @@ On QuartetTribe a read-only survey found one live village and 23 further
 sites meeting the slope and separation checks. This measures terrain on that
 seed. It does not establish AI routes or native support for 24 live villages.
 See four-warriors-b-combat.log and tribe-layout-a-save.log (BUG-9072).
+
+## Upstream arrival and snapshot guards (2026-11-07)
+<a id="tribe-lineages-upstream-079"></a>
+
+BUG-9090 ports v0.7.9's wrapping CycleTracker to both Tribal and Civilization
+receivers. A delayed older cycle is rejected before changing bindings or units;
+session/world teardown resets sequence state. Complete-cycle cleanup still waits
+for all unique chunks. BUG-9091 exempts a chief from arrival repositioning once
+movement is observed in that arrival window, even after it stops or returns to
+its original position. This is a plausible protection against upstream BUG-0610,
+not evidence that the unexplained Lineages BUG-9062 relocations share that cause.

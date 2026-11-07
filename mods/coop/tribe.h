@@ -16,6 +16,7 @@
 #include "sporekit.h"
 
 namespace tribe {
+extern bool g_cycle_order_fix; // shared by Tribal and Civilization snapshot receivers
 float reported_enemy_max(void* citizen);
 
 struct Ctx {

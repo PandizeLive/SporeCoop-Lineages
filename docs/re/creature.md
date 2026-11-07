@@ -1755,3 +1755,24 @@ the local avatar's setter. The original handles clamping and all meal refills.
 With four seats, host and guest both measured 1.07491 times their requested
 native drop. An enemy's native 7.5 HP became 10.875 on both screens; the
 guest lost 2.3 HP to a two-point attack. See hunger-seats-a-reload.log.
+
+## Shared DNA budget versus earned progress (2026-11-07)
+<a id="creature-lineages-dna-progress"></a>
+
+CORRECTION: earlier co-op notes describe AddEvolutionPoints as synchronizing DNA
+and the evolution bar together. That is correct for rewards and our death debit,
+but incorrect for editor spending (upstream BUG-0630, Lineages BUG-9092).
+The native editor uses SetEvolutionPoints (cdecl void(float), plain ret) to write
+only the budget at 0x169E398. Upstream v0.7.9 disassembly verifies its symbol at
+0xD2E480 for dc04aee5. The native two-peer test confirms the setter leaves the
+host's earned cPlayer+0x10F0 unchanged, while legacy AddEvolutionPoints-based
+reconciliation reduces the guest's earned field by the spend.
+
+Lineages retains dna_add_raw's original semantics for creature_rescue::charge.
+MSG_DNA appends DNA1/u32-world/f32-earned after the existing cause list, only
+when the host has finite Creature progress. The guest applies the earned delta
+through the native reward function, then sets the authoritative budget. The
+pending-world path retains both fields; resends converge after editor/loading.
+Missing tails retain the legacy path, so use the same patched build on all peers.
+No new message ID or save sidecar is required. Native evidence:
+docs/06-testing.md#testing-lineages-upstream-079.

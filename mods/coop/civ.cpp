@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "tribe.h"
 #include "census.h"
 #include "civ_economy.h"
 #include "civ_influence.h"
@@ -236,11 +237,11 @@ static std::unordered_map<uint16_t, GV> g_gv;
 static std::unordered_map<void*, uint16_t> g_gv_of;
 
 static std::unordered_set<uint16_t> g_cycle_ids;
-static std::unordered_set<uint8_t> g_cycle_chunks; // chunks of the current cycle received
+static net::CycleTracker g_cyc; // upstream 0.7.9: reject older snapshot cycles
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
 static uint32_t g_last_chunks, g_max_chunk;        // host: chunks per cycle, largest chunk (bytes)
 static size_t g_chunk_budget = net::kMaxPacket - 48; // host: bytes per chunk (coop.civ chunk <bytes>, tests)
-static uint16_t g_rx_cycle = 0xFFFF;
+
 static bool g_applying; // executing a host message: the hooks let the game act
 
 // BUG-0186: Vehicle_KeepOnValidGround (0xCA7430, thiscall(v), from the vehicle's movement updates)
@@ -3672,11 +3673,11 @@ static void guest_state(net::Reader& r)
     uint8_t chunk = r.u8(), chunks = r.u8();
     if (!r.ok() || !net::cycle_chunk_ok(chunk, chunks))
         return;
-    if (cycle != g_rx_cycle) {
-        g_rx_cycle = cycle;
+    bool started = false;
+    if (!g_cyc.begin(cycle, tribe::g_cycle_order_fix, &started))
+        return;
+    if (started)
         g_cycle_ids.clear();
-        g_cycle_chunks.clear();
-    }
     if (!guest_cities(r))
         return;
     if (!guest_nodes_and_buildings(r)) return;
@@ -3748,12 +3749,12 @@ static void guest_state(net::Reader& r)
     }
     if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
         return;
-    g_cycle_chunks.insert(chunk);
+    g_cyc.add(chunk);
     if (chunk + 1 < chunks)
         return;
     // only a complete cycle tells which vehicles are gone: with a chunk lost (or late) every
     // vehicle of it was killed and made again on the next cycle
-    if (g_cycle_chunks.size() < chunks) {
+    if (!g_cyc.complete(chunks)) {
         g_incomplete++;
         return;
     }
@@ -4033,9 +4034,9 @@ void on_world_change()
     g_split_for.clear();
     g_city_short_since = -1;
     g_cities_waiting_told = 0;
-    g_rx_cycle = 0xFFFF;
+    g_cyc.reset();
     g_cycle_ids.clear();
-    g_cycle_chunks.clear();
+
     g_exist_frame = ~0ull;
 }
 
