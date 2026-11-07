@@ -3925,3 +3925,38 @@ guest fixture lacks the founder sidecar and is not a valid substitute.
 lineages-catchup-c.log passed the complete run on the packaged lineages25
 DLL. See docs/re/space.md#space-tribal-returner-launch for bounds and the
 earlier test-driver failures preserved under BUG-9087.
+
+## First-use Civilization camera check (2026-11-07, Lineages)
+<a id="testing-lineages-civ-camera"></a>
+
+tools/tests/lineages_civ_camera_tutorial.py --host 4 starts at the visible
+arrow-key lesson in a disposable 1176x664 profile. It uses normal console
+input and checks visible native pan-to-zoom-to-selection transitions. The
+--control variant sends a single held arrow message. It does not certify
+the remaining vehicle/Goals lessons or partner capital creation.
+
+After the full native tutorial releases its pause, run duo_civ_auto_founders.py,
+duo_civ_graduation_designs.py with the actual vehicle role, and
+duo_civ_founder_control.py. LineagesTutorialA passed those three checks with
+the religious role. Preserve earlier capital timeouts as premature test
+attempts during native paused lessons. See docs/re/civ.md#civ-first-use-camera.
+
+Cold fixture setup must wait for 600 menu frames before coop.load, as in the
+qualified Space-returner setup. The older build/local/tribal-final-start.py
+waits only ten seconds and reproduced the black startup in TutorialB; that
+run did not qualify camera input. Do not reuse it for fresh first-use profiles.
+
+TutorialC's centered-cursor --control fails; the repeated-input variant passes
+pan and zoom (lineages-tutorial-c-pan-control.log / -pan-repeat.log). TutorialA
+also passed those native lessons with the same repeat sequence. Slow menu
+rendering can exceed Console's 90-second timeout before 600 frames: its socket
+timeout must exceed the wait command's deadline. A timed-out wait is not proof
+of menu readiness. TutorialC resumed only after the native intro finished.
+
+The post-tutorial duo_civ_team_progress.py regression also acknowledges the
+specifically identified Communications Panel lesson. TutorialC failed at that
+previously unanswered prompt; TutorialD passed both fixture captures without
+manual input after the driver change. Both clients retained two separate
+species/nations, matching technology/unlocks and native campaign state.
+BUG-9088 records the failed run, assisted continuation and uninterrupted pass.
+No combat victories were earned in this fixture and no full stage was replayed.

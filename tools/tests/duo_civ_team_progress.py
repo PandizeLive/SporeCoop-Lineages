@@ -14,6 +14,15 @@ from duo_civ_species import native
 from duo_orders import wait_until
 from duo_villages import Console, command
 from duo_tribe_graduation_editor import button
+from uifind import shown
+
+
+def acknowledge_capture_tutorial(c):
+    # First-use profiles pause when any nation gains its second city. Only
+    # acknowledge this identified lesson, never a save box or an unknown choice.
+    if shown(c, 'Communications Panel'):
+        return button(c, 'FFFFFFF1')
+    return False
 
 
 def country(c, faction):
@@ -47,8 +56,12 @@ def main():
     for c in (h, g):
         assert 'duoqa' in command(c, 'coop.savedb').lower(), 'Disposable profile required'
         assert f"world '{a.planet}.spo'" in command(c, 'coop.avatar'), 'Wrong disposable campaign'
-    initial = cities(h)
-    assert len(initial) == 2 and sorted(r[3] for r in initial) == [0, 1], initial
+    def founders_ready():
+        rows = cities(h)
+        return rows if len(rows) == 2 and sorted(r[3] for r in rows) == [0, 1] else None
+    # Native Civ mode and city objects precede the saved founder bindings on
+    # checkpoint load. Wait for actual ownership before selecting capture sides.
+    initial = wait_until(founders_ready, 'Expected two bound founder capitals', 30)
     home, guest = (next(r[2] for r in initial if r[3] == owner) for owner in (0, 1))
     before = {pol: state(h, pol) for pol in (home, guest)}
     print('BEFORE', before, flush=True)
@@ -79,6 +92,7 @@ def main():
                 button(c, '0445C99D')
                 button(c, '062EF353')
                 button(c, '05107B1A')  # choose military for the captured religious city
+                acknowledge_capture_tutorial(c)
             if 'Civ' not in command(g, 'game.mode'):
                 return False
             try:

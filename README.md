@@ -33,6 +33,8 @@ Difficulty scales with the seats reserved for the stage. The host can reserve on
 
 Lineages 25 includes verified guest economic purchases, religious conversion state, and preaching at cities the host has not viewed. Civilization vehicles, turrets and buildings have targeted combat-scaling coverage. The packaged build also passed a Tribal combat synchronization check. A returning Tribal founder can recover the saved Civilization victory, create its own ship and captain while the host remains in Space, and reconnect with the tutorial intact.
 
+A first-use Civilization tutorial also reached two native species capitals through normal camera and vehicle-selection input. Both clients retained the graduation designs, and the guest could buy and command its own vehicle afterward.
+
 ## Known limits
 
 - Tribal movement can jump on the guest's screen when the host changes position unexpectedly.

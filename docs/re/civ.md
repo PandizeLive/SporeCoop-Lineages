@@ -1564,3 +1564,43 @@ initializes both-zero capacities with a valid native slot spatial object
 at +78, on the authoritative connected Civilization host. Existing nonzero
 capacities are retained. It then runs the original native logic unchanged.
 No controller, rendered crowd, camera or persistent raw pointer is created.
+
+## First-use camera and founder timing (2026-11-07, Lineages)
+<a id="civ-first-use-camera"></a>
+
+BUG-9052: LineagesTutorialA reached native vehicle selection after ordinary
+repeated arrow input and wheel input, without changing tutorial state. The
+successful sequence moved the cursor into the world before repeating VK_UP.
+A single held key in the earlier sequence moved the camera without advancing
+the lesson. Cursor placement versus repeat messages still needs isolation.
+
+GetKeyboardState is not evidence of the cause: a temporary lab hook recorded
+zero calls during this lesson. It was unloaded and its DLL removed. Do not
+patch the game or the input layer based on the import alone.
+
+The native vehicle-selection lesson, geyser explanation and Goals tooltip
+follow camera training. Acknowledge the visible Goals checkmark as well as the
+cinematic caption. founder_tick deliberately waits for time_paused() to clear;
+the second native city can exist with no species while the tutorial is paused.
+That intermediate state alone is not a missing-capital defect. After normal
+input completed the lessons, both peers showed 067B3E4A and 0680BF38 capitals.
+Native design retention and guest purchase/ownership/order tests then passed.
+Both games exited normally with zero faults and no probes left installed.
+
+CORRECTION (2026-11-07): TutorialC isolates key repetition from cursor position.
+With the cursor centered in both variants, one two-second held message still
+fails, while repeated down messages followed by key-up pass pan and zoom.
+lineages-tutorial-c-pan-control.log and lineages-tutorial-c-pan-repeat.log are
+the controlled evidence. No change to native tutorial conditions is required.
+
+## First-use capture lesson (2026-11-07, Lineages)
+<a id="civ-first-use-capture-lesson"></a>
+
+BUG-9088: a nation gaining a second city opens the native Communications Panel
+lesson (title 01510D07, box 06318E78, checkmark FFFFFFF1). It pauses the first-use
+capture checkpoint until acknowledged. The capture regression now checks that
+specific visible caption before normal checkmark input; it does not click
+arbitrary OK/save boxes. With the lesson answered, both native campaigns
+converge and further capture unlocks survive the automatic world transfer.
+TutorialC's initial timeout and assisted continuation remain separate from
+TutorialD's uninterrupted two-capture pass. See the ticket for exact logs.

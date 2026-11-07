@@ -531,7 +531,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9049](BUG-9049-graduation-city-hall-camera-crash.md) | fixed | crash | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Graduation dereferences an absent animal pen after saving City Hall |
 | [BUG-9050](BUG-9050-intermediate-graduation-save-crash.md) | fixed | crash | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Intermediate Tribal graduation designs trigger an unsafe evolution save |
 | [BUG-9051](BUG-9051-stale-guest-member-on-host-return.md) | fixed | crash | Tribe Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Guest mirror retains a stale citizen while the host edits during graduation |
-| [BUG-9052](BUG-9052-native-camera-tutorial-console-input.md) | open | bug | Civilization | 2026-11-05 |  | Automated native Civilization camera tutorial does not acknowledge panning |
+| [BUG-9052](BUG-9052-native-camera-tutorial-console-input.md) | not-reproduced | bug | Civilization | 2026-11-05 |  | Automated native Civilization camera tutorial does not acknowledge panning |
 | [BUG-9053](BUG-9053-graduation-custom-designs-differ-on-guest.md) | fixed | bug | Civilization | 2026-11-05 | 0.7.3.6-duo10-dev | Graduation city hall appears different on the guest |
 | [BUG-9054](BUG-9054-second-founder-nation-remains-npc-controlled.md) | open | bug | Civilization | 2026-11-05 |  | Second founder nation remains NPC controlled with a separate budget |
 | [BUG-9055](BUG-9055-civ-guest-rendering-artifacts-after-cold-load.md) | open | bug | Civilization | 2026-11-05 |  | Guest Civilization screenshot retains logo and trails after cold load |
@@ -567,3 +567,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9085](BUG-9085-economic-tribal-message-id-collision.md) | fixed | desync | Tribal | 2026-11-07 | 0.7.3.6-lineages24-dev | Civilization economy and Tribal combat share a wire message ID |
 | [BUG-9086](BUG-9086-remote-city-preaching-uninitialized.md) | fixed | bug | Civilization | 2026-11-07 | 0.7.3.6-lineages25-dev | Guest preaching stalls at cities the host has not viewed |
 | [BUG-9087](BUG-9087-multistage-catchup-history-stale.md) | not-reproduced | bug | Space | 2026-11-07 |  | Tribal returner loads Civilization but History still offers Enter Civilization |
+| [BUG-9088](BUG-9088-first-use-civ-capture-tutorial-driver.md) | not-reproduced | bug | Civilization | 2026-11-07 |  | First-use capture regression leaves Communications Panel tutorial unanswered |
