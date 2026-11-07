@@ -1382,13 +1382,18 @@ static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t o
 // more while another player's army besieges it
 using Convert_t = void(SK_THISCALL*)(void*, uint32_t, int);
 static Convert_t o_Convert;
+static bool g_religious_attribution = true;
+COOP_FIX("civ.religious_attribution", "BUG-9078", g_religious_attribution,
+         "civ: religious governors boost their own preachers, not traders or other nations");
 static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
 {
     if (is_host() && active() && city && count > 0) {
         net::Vec3 cp = city_pos(city);
         uint8_t preacher = 0xFF;
         for (auto& [v, h] : g_hv)
-            if (role(h.owner) == 3 && F<int>(v, kVPurpose) == 2 && net::dist(veh_pos(v), cp) < 200.f) {
+            if (role(h.owner) == 3 &&
+                F<int>(v, kVPurpose) == (g_religious_attribution ? 1 : 2) &&
+                (!g_religious_attribution || pol_of(v) == pol) && net::dist(veh_pos(v), cp) < 200.f) {
                 preacher = h.owner;
                 break;
             }

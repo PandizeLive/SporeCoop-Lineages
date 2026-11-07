@@ -386,7 +386,8 @@ the religious cVehicle).
 * `+0x750` is **recomputed every tick** in 0xBE2240:
   `200·followers[convertID] / (followers[convertID] + followers[owner])`, clamped 0..100:
   so writing +0x750 has no lasting effect; the state is the followers map. ✔
-* **ConvertCitizens 0xBEB1C0** - thiscall(city, uint32 converterPol, int count) ret 8: moves
+* ~ superseded for competing religions: see [correction](#civ-religious-governor-attribution).
+  **ConvertCitizens 0xBEB1C0** - thiscall(city, uint32 converterPol, int count) ret 8: moves
   up to `count` followers from the owner (or from a rival converter) to `converterPol`, sets
   +0x754, notifies (0xB3D550→0xAC8BD0) and calls `CheckReligiousConversion` 0xBEAB60 ✔.
   Called only from the per-slot preach tick 0xBEB2F0 (thiscall(city, int slot)), which first
@@ -1356,3 +1357,57 @@ the native file changes fixes the loss. Two cold replays (one with the installed
 package) preserved the pending fraction and then completed religious conversion
 on both peers. The installed build also completed military capture and economic
 purchase after filling their scaled meters; the purchase still debited 2,500.
+
+## Native trade input qualification (2026-11-06, feat/lineages-civ-combat)
+<a id="civ-native-trade-qualification"></a>
+
+On TradeControlsC with installed Duo 21, the guest's native land purchase
+button created a purpose-2 vehicle on the host and guest. A completed click
+selected it; the native create-route button 037E95BC delivered order 9 with
+the correct host city pointer. The trader moved to that city on both peers.
+This qualifies input and forwarding, not a completed economic campaign.
+
+The fixture's guest-to-rival relationship category was 1; the reverse was 2.
+GOG 2024 D00BD0 is thiscall(manager, polA, polB, bool), ret 0xC, returning
+category 0..4. Its prologue, callers and live category reads were checked.
+The route acceptance helper CEEF90 takes (city*, requesting cCivilization*)
+on the stack, ret 8, returning a float. An ASLR-adjusted entry probe observed
+the route behavior call at DCA391 with exactly those objects. For a requesting
+nation whose +89 mIsPlayerOwned is false, it first returns zero for relationship
+category <=1. It also has later player/AI and neutral-city distinctions.
+No route appearing in this hostile fixture is therefore not evidence of
+broken route creation (BUG-9079). Friendly acceptance and guest progress
+rendering remain unqualified.
+
+Test pitfalls:
+* input_click releases after six rendered frames. At 10 FPS, waiting 0.5
+  seconds reads a rollover during the unfinished click. Wait at least eight
+  frames before querying the menu or issuing another click.
+* A broad drag starting on a parked vehicle or city part may grab that object.
+  Use a completed click on the native projected trader position for this test.
+* Diagnostic addresses need the current process's ASLR delta. Verify bytes
+  before probing; an unadjusted CEEF90 probe hit nothing in this session.
+* DeclareAlliance / DeclarePeace take Space cEmpire pointers, not Civilization
+  political IDs. The wrong diagnostic call crashed at IsAtWar+22 while reading
+  0x2232+0x84 (BUG-9080). See docs/re/space.md for the full API signatures.
+
+## Religious governor attribution (2026-11-06, feat/lineages-civ-combat)
+<a id="civ-religious-governor-attribution"></a>
+
+BUG-9078: native VehiclePurpose 1 is cultural/religious; 2 is economic.
+The inherited conversion hook required purpose 2 and did not match the
+vehicle's political ID to the ConvertCitizens attacker. With the guest
+governing as religious, a native purpose-2 vehicle near the rival changed
+a one-citizen contribution into two on installed Duo 21. The corrected
+hook requires purpose 1 and matching political IDs. The regression switch
+civ.religious_attribution retains the former predicate when off.
+
+CORRECTION (2026-11-06): the earlier conversion summary was incomplete
+for competing religions. BEB216 compares the caller with city+754. When
+they differ, BEB244..BEB268 removes followers from the current converter
+and returns them to the city owner. Only a contribution left over after
+that reversal switches +754 to the new converter and starts new gains.
+ReligiousBonusB observed zero followers gained for the new nation after
+one such contribution; that is expected native behavior. The regression
+checks that exactly one existing conversion is undone, not two, when the
+nearby governor's preacher belongs to the other nation.

@@ -557,3 +557,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9075](BUG-9075-captured-city-held-by-planner.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | Incoming capture mutates the city held by the guest planner |
 | [BUG-9076](BUG-9076-civilization-building-combat-scaling.md) | fixed | bug | Civilization | 2026-11-06 | unreleased | Destructible city buildings miss reserved-founder health and incoming damage scaling |
 | [BUG-9077](BUG-9077-city-takeover-resistance.md) | fixed | feature | Civilization | 2026-11-06 | unreleased | Reserved-founder city takeover resistance across all three routes |
+| [BUG-9078](BUG-9078-religious-bonus-vehicle-purpose.md) | fixed | bug | Civilization | 2026-11-06 | unreleased | Religious governor bonus looks for economic vehicles |
+| [BUG-9079](BUG-9079-guest-trade-route-not-created.md) | not-reproduced | bug | Civilization | 2026-11-06 |  | Guest trader reaches rival without creating a trade route |
+| [BUG-9080](BUG-9080-civ-test-used-space-alliance-api.md) | wontfix | test | Civilization | 2026-11-06 |  | Civilization test setup passes political IDs to Space empire API |

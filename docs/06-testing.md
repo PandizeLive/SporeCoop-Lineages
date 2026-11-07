@@ -3776,3 +3776,20 @@ the guest, then run --cold-receipt PATH. The next one-citizen contribution
 must convert a citizen. This catches a join-time save replacing the native
 checkpoint before its old conversion attachment is read. The cold test
 also completes native religious conversion and checks both city owners.
+
+## Lineages religious bonus attribution (2026-11-06)
+<a id="testing-lineages-religious-bonus"></a>
+
+duo_civ_religious_bonus.py --host 4 --guest 5 uses joined disposable Clyth
+profiles with an uncaptured rival. It selects the guest's religious governor
+role, creates native purpose-2 and purpose-1 vehicles using an available
+fixture model, arranges proximity with native Teleport, and reads actual
+follower-map changes after ConvertCitizens. A trader must leave a one-citizen
+contribution at one, the converting nation's preacher must boost it to two,
+and another nation's contribution must undo exactly one existing conversion.
+Both vehicle purposes must
+appear on the guest. Takeover resistance is temporarily disabled to isolate
+the bonus; the successful test restores it and clears the test governor role.
+--baseline runs against the old DLL; --control disables the attribution fix.
+Neither mode should pass the trader check. This is native bonus qualification,
+not a complete mouse-driven religious campaign.

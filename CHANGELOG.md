@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Attribute religious governor conversion bonuses to their own religious
+  vehicles, excluding economic vehicles and other nations (BUG-9078).
+
 - Add 5% city takeover effort per extra reserved founder across military,
   religious and economic routes. Keep native prices/income and combat
   bonuses, and preserve fractional conversion across saves and joining
