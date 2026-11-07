@@ -277,7 +277,7 @@ void refresh()
                                      (ri.rel.from_web ? " (from the release page)" : "")
                          : !ri.done ? "Newest release: checking GitHub..."
                                     : "Newest release: GitHub not reachable (" + ri.err + ")";
-    SetWindowTextW(g_latest, g_opt.inst.api.empty() ? L"Duo preview uses the release pack next to this setup." :
+    SetWindowTextW(g_latest, g_opt.inst.api.empty() ? L"Lineages preview uses the release pack next to this setup." :
                    upd::widen(latest).c_str());
     // BUG-0094: the version the button installs, as do_install chooses it: the pack next to the
     // setup, or GitHub's release when that is newer
@@ -392,7 +392,7 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         lf.lfWeight = FW_BOLD;
         lf.lfHeight = lf.lfHeight * 3 / 2;
         g_bold = CreateFontIndirectW(&lf);
-        add(L"STATIC", L"SporeCoop " SETUP_VERSION, 0, 20, 14, 520, 28, 0, true);
+        add(L"STATIC", L"SporeCoop Lineages " SETUP_VERSION, 0, 20, 14, 520, 28, 0, true);
         add(L"STATIC", L"Play every stage of Spore together. This installs the mod into your game folder.", 0, 20,
             44, 520, 20);
         add(L"STATIC", L"Game folder (the one with SporebinEP1):", 0, 20, 78, 520, 18);
@@ -407,7 +407,7 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 252, 120, 32, ID_REMOVE);
         g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 252, 100, 32, ID_CLOSE);
         g_status = add(L"STATIC", L"", 0, 20, 296, 520, 52);
-        add(L"STATIC", L"Duo fork of WoodyWizard's SporeCoop. Both players need the same Duo build.", 0, 20,
+        add(L"STATIC", L"Lineages fork of WoodyWizard's SporeCoop. Use matching builds on every PC.", 0, 20,
             356, 520, 18);
         refresh();
         if (!g_opt.inst.api.empty())
@@ -585,7 +585,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     RegisterClassW(&wc);
     RECT r{0, 0, 560, 386};
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
-    HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+    HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Lineages Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
     if (!g_opt.dir.empty())
         SetWindowTextW(g_dir, (inst::g_ga_fix ? inst::game_root_of(g_opt.dir) : g_opt.dir).c_str());

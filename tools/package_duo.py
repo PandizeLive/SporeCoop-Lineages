@@ -38,7 +38,7 @@ def main():
         with zipfile.ZipFile(stage / output.name, "w", zipfile.ZIP_DEFLATED) as archive:
             for file in (stage / "SporeCoopSetup.exe", pack):
                 archive.write(file, file.name)
-            for source, name in (("docs/DUO.md", "Start here.txt"), ("LICENSE", "LICENSE.txt"),
+            for source, name in (("docs/LINEAGES-INSTALL.md", "Start here.txt"), ("LICENSE", "LICENSE.txt"),
                                  ("THIRD_PARTY_NOTICES.md", "Notices.txt"),
                                  ("third_party/minhook/LICENSE.txt", "MinHook-LICENSE.txt")):
                 archive.write(root / source, name)

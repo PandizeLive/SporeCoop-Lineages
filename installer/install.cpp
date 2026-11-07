@@ -230,7 +230,7 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     std::wstring lp = local_pack(opt);
     bool have_local = !lp.empty() && upd::read_pack_file(lp, pack, err);
     if (opt.api.empty() && !have_local) {
-        msg = "Extract the full Duo release and keep its .pack next to SporeCoopSetup.exe.";
+        msg = "Extract the full Lineages release and keep its .pack next to SporeCoopSetup.exe.";
         return Result::Failed;
     }
     upd::ReleaseInfo ri = box.get(); // BUG-0077: a copy; the check thread may set the box meanwhile

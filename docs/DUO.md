@@ -1,6 +1,13 @@
 # SporeCoop Lineages private test build
 
-The current development build is 0.7.3.6-lineages25-dev. New builds use the
+The current development build is 0.7.3.6-lineages26-dev. This private preview
+includes the selective upstream 0.7.9 fixes: stale Tribal/Civilization snapshot
+rejection, moving-chief placement protection, and separate shared DNA budget
+and earned progress with death penalties preserved. Adventures are incomplete;
+three- and four-player campaigns and an uninterrupted Cell-to-Space run remain
+unverified. Use a separate test campaign and keep a pre-mod save backup.
+
+New builds use the
 Lineages name; historical Duo filenames remain for traceability. This build
 synchronizes native religious followers and fixes a network message collision
 between Civilization economy and Tribal combat. It also initializes missing
@@ -57,8 +64,8 @@ older builds' campaigns defaulting to 5. Reserved seats change next stage.
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct
 Tribal villages with shared progression, and automatic two-species Civilization entry.
-Complete Civilization play and the transition from two civilizations
-to one empire with two founding species are under development.
+Civilization play and the transition from two civilizations to one empire
+with two founding species have targeted test coverage, not full-run qualification.
 Both players share Space diplomacy. The intended player-side portrait for a contact is
 the speaking player's species. A conversation must never change the empire's species globally.
 

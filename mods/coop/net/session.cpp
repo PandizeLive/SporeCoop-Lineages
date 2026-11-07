@@ -455,7 +455,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             Reject rej;
             if (!campaign_profile.empty() && campaign_profile != h.campaign_profile) {
                 rej.reason = REJ_VERSION;
-                rej.text = h.campaign_profile.empty() ? "This host needs the Duo fork." :
+                rej.text = h.campaign_profile.empty() ? "This host needs SporeCoop Lineages." :
                     "Campaign mismatch. Host: " + campaign_profile + ", guest: " + h.campaign_profile;
                 Writer w;
                 rej.write(w);
@@ -618,7 +618,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
         if (!wl.read(r))
             return;
         if (!campaign_profile.empty() && wl.campaign_profile != campaign_profile) {
-            pending_disc_ = "The host needs the same Duo build and Creepy & Cute configuration.";
+            pending_disc_ = "The host needs the same Lineages build and Creepy & Cute configuration.";
             leave("incompatible host");
             return;
         }
