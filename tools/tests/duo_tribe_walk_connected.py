@@ -14,6 +14,7 @@ from duo_villages import Console, command
 from duo_orders import wait_until
 from duo_tribe_rescue import citizens
 from duo_native_ui import require_gameplay_ui, view_tribal_point
+from coop_ability_bar import u32
 import coop_tribe_walk as walk
 from coop_multi import measure
 
@@ -30,11 +31,16 @@ def main():
     p.add_argument('--idle-fps', type=int, choices=range(5, 31), default=10,
                    help='Return to this low background frame rate after recording.')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--health-trace', action='store_true',
+                   help='Record native host HP/death/respawn state alongside movement (BUG-9062).')
+    p.add_argument('--teleport-trace', action='store_true',
+                   help='Record native host Teleport callers with a temporary diagnostic probe.')
     a = p.parse_args()
     assert a.seconds >= 20
     assert not a.output.exists(), 'Preserve earlier evidence; use a new output path'
     h, g = Console(a.host), Console(a.guest)
     for c in (h, g):
+        assert 'duoqa' in command(c, 'coop.savedb').lower(), 'Use isolated test profiles only'
         assert f"world '{a.planet}'" in command(c, 'coop.avatar')
         assert 'Tribe' in command(c, 'game.mode')
         require_gameplay_ui(c)
@@ -71,7 +77,14 @@ def main():
         result = command(driver, f'coop.tribe select {identity} 1')
         assert 'selected=1' in result, f'Member {identity} selection failed: {result}'
     samples, orders = [], []
+    probed = False
     try:
+        if a.teleport_trace:
+            assert command(h, 'probe.list').strip() == 'no probes', 'Leave existing diagnostic probes untouched'
+            body = citizens(h)[selected[0]]['ptr']
+            target = u32(h, u32(h, body + 0xC0) + 0x44)
+            assert target and 'probe installed' in command(h, f'probe {target:#x}')
+            probed = True
         for c in (h, g):
             command(c, f'frame.limit {round(1000/a.fps)}')
             command(c, 'coop.track start')
@@ -84,9 +97,16 @@ def main():
                 orders.append(dict(time=elapsed, target=point, result=result))
                 next_order = elapsed+6
             errors, coverage, total, worst = measure(h, g)
-            samples.append(dict(time=elapsed, errors=errors, coverage=coverage, total=total, worst=worst))
+            sample = dict(time=elapsed, errors=errors, coverage=coverage, total=total, worst=worst)
+            if a.health_trace:
+                sample['host_citizens'] = {i: r for i, r in citizens(h).items() if i in selected}
+            if probed:
+                sample['host_teleports'] = command(h, 'probe.list clear')
+            samples.append(sample)
             time.sleep(.4)
     finally:
+        if probed:
+            command(h, 'probe.clear')
         for c in (h, g):
             command(c, 'coop.track stop')
             command(c, f'frame.limit {round(1000/a.idle_fps)}')

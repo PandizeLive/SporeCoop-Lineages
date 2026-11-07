@@ -6,7 +6,7 @@ Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](h
 
 ## Playable today
 
-**Development build** `0.7.3.6-duo12-dev` · **Checkpoint** `09f3fb18`. Both players need the same build. The results below come from individual scenarios tested across development builds using two Windows game instances on one PC.
+**Development build** `0.7.3.6-lineages25-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
 
 | Stage | What players have done together |
 | --- | --- |
@@ -29,19 +29,19 @@ Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](h
 
 ## Current work
 
-Difficulty scales with the seats reserved for the stage. The host can reserve one to four and start solo. Joining an open seat keeps that stage's difficulty steady. **Three- and four-player campaigns still need live testing.**
+Difficulty scales with the seats reserved for the stage. The host can reserve one to four and start solo. Joining an open seat keeps that stage's difficulty steady. **Two founding species are qualified; three- and four-species campaign bindings remain unfinished.** Reserving four seats enables the corresponding difficulty, not a completed four-species campaign.
 
-Duo 12 carries fractions of Cell enemy health and damage across hits and saves, so small bonuses add up even though Cell uses whole points. It also synchronizes pirate combat in colony raids. With four seats reserved, both test instances saw the same pirate bomber rise from 250 to 362.5 HP. Upcoming checks cover Civilization vehicles and turrets, hostile empire ships, and Creature rewards for alliances and extinctions.
+Lineages 25 includes verified guest economic purchases, religious conversion state, and preaching at cities the host has not viewed. Civilization vehicles, turrets and buildings have targeted combat-scaling coverage. The packaged build also passed a Tribal combat synchronization check. A returning Tribal founder can recover the saved Civilization victory, create its own ship and captain while the host remains in Space, and reconnect with the tutorial intact.
 
 ## Known limits
 
 - Tribal movement can jump on the guest's screen when the host changes position unexpectedly.
-- A returning player can recover specific missed transitions. Catch-up across several stages and unfinished evolution choices is incomplete.
+- Returning-founder catch-up is verified for specific transitions, including Tribe to Space. Arbitrary Cell-to-Space catch-up and first-ever mid-stage joins are not qualified.
 - Adventure dialogue, combat, multi-goal acts, final results and captain XP still run separately for each player.
 
 ## Roadmap
 
-1. **Finish the two-founder campaign.** Test an uninterrupted run through Space, then repeat stage transitions with disconnects, save reloads and a returning founder.
+1. **Finish the two-founder campaign.** Resolve remaining reproducible blockers with targeted checkpoint tests, including disconnects, save reloads and returning founders.
 2. **Test three founders, then four.** Verify that every player keeps their species and settlements, and that larger rival counts remain playable from founding through victory.
 3. **Complete shared Adventures and cross-PC testing.** Synchronize the remaining objectives and rewards, verify the return to the campaign, and run the supported setup on separate PCs.
 

@@ -47,3 +47,14 @@ tribal-validation-mobile-b.log passes a45-second, nine-member guest walk at
 p900.226m,100% matched windows and gait,1% uneven slow frames, zero faults.
 The wrapper then restores the direct connection and verifies both founders.
 This does not reproduce BUG-0386 or close either earlier relocation failure.
+2026-11-07: lineages-walk-a.log/.json repeats the 45-second, nine-member
+guest walk on a fresh copy of TribalValidateB with the packaged lineages25
+DLL. All movement limits pass, no driver teleports occur, tracking coverage
+is 100%, matched-speed windows and visible gait are 100%, uneven slow frames
+are 1%, and both games report zero faults. Added --health-trace records native
+host HP/death/revive state for every selected member. All nine retain stable
+HP and dead=0 during this run. --teleport-trace temporarily probes the native
+spatial Teleport vtable method; it records no calls in the measured interval
+and removes the probe afterward. The earlier unexplained relocations did
+not recur. This does not establish their cause or close the report. No
+movement limits were weakened and no gameplay patch was made.
