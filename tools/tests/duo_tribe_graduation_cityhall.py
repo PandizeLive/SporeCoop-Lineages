@@ -48,6 +48,7 @@ def main():
     p.add_argument('--vehicle-control',action='store_true',help='Disable BUG-9060 for the native role-specific pause regression.')
     p.add_argument('--vehicle-role',choices=tuple(LAND_VEHICLE_EDITORS),default='economic')
     p.add_argument('--resume-vehicle',action='store_true',help='Continue a previously logged native City Hall sequence from its first vehicle editor.')
+    p.add_argument('--stop-at-arrival',action='store_true',help='Stop when both native modes enter Civilization; tutorial and capital checks follow separately.')
     recovery=p.add_mutually_exclusive_group()
     recovery.add_argument('--retire-guest-member',action='store_true',help='Exercise cached citizen lifetime during a prolonged editor.')
     recovery.add_argument('--guest-offline',action='store_true',help='Leave during vehicle editing, then rejoin after host reaches Civilization.')
@@ -87,7 +88,7 @@ def main():
             command(g,'coop.join '+a.join+' DuoTribalGuest')
             guest_offline=False
             print('Guest reconnecting after offline host advancement.',flush=True)
-        if 'Civ' in mode and 'Civ' in command(g,'game.mode') and all('busy: -' in command(c,'coop.status') for c in(h,g)):break
+        if 'Civ' in mode and 'Civ' in command(g,'game.mode') and (a.stop_at_arrival or all('busy: -' in command(c,'coop.status') for c in(h,g))):break
         if 'Editor' in mode:
             detail=command(h,'coop.editor');print(detail,flush=True)
             assert not vehicle_done and f'editor {vehicle_editor:08X} key 00000000' in detail
@@ -108,6 +109,9 @@ def main():
             vehicle_done=True
         time.sleep(1)
     else:raise RuntimeError('Graduation did not become playable on both games: '+command(h,'game.mode')+' / '+command(g,'game.mode'))
+    if a.stop_at_arrival:
+        print('Native Civilization entered on both peers. Tutorial, capital and design checks remain pending.',flush=True)
+        return
     verify_capitals(h,g,a.species)
     for c in(h,g):
         assert command(c,'coop.founders')==original, 'Graduation changed immutable founder identities'
