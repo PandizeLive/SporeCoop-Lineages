@@ -3837,3 +3837,18 @@ guest reconnect with unchanged personal creations and zero faults.
 See docs/re/space.md#space-native-wreck-unlock for evidence and the read-only
 target locator. No replay of the remaining ordinary Space missions is needed
 for this result. The core ending was already checked separately.
+
+duo_civ_economic_state.py --host 4 --guest 5 compares native routes, purchase
+meter/buyer and per-buyer pricing maps on the preserved three-city trade
+checkpoint. --cycle removes/restores native routes, changes one native
+meter contribution and one pricing value, then checks stale guest entry
+cleanup. --rejoin-port 47810 first requires a new guest save slot and the
+same founder identities. These are Windows isolated-pair tests, not an
+entry that the Linux lab can launch against its unrelated baseline fixture.
+The portable packet tests run in the existing suite.py unit/make-test entry;
+net_tests --civ-economy selects only the new codec checks.
+
+BUG-9081 evidence: bug9081-before.log and bug9081-price-before.log fail;
+bug9081-pass-c.log, bug9081-pass-d.log and bug9081-pass-e.log pass the complete
+state checks. Both processes exited with zero faults. Setup/negative-control
+and final native purchase-button qualification are separate from these tests.

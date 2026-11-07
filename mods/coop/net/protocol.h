@@ -92,6 +92,7 @@ enum MsgType : uint8_t {
     MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
     MSG_TRIBE_COMBAT = 64, // reliable host snapshot: world, count, {member id, scaled native max HP}
     MSG_SPACE_LAUNCH = 63, // reliable host offer and founder reply for a missed Civilization launch
+    MSG_CIV_ECONOMY = 64, // host city routes and economic meter; civ_economy.h
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
 };

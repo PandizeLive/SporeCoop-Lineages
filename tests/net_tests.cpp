@@ -32,6 +32,8 @@
 #include "net/shared_ledger.h"
 #include "net/session.h"
 #include "net/ipmask.h"
+#include "civ_economy.h"
+#include <limits>
 
 using namespace net;
 
@@ -44,6 +46,42 @@ static bool g_nofix = false; // --nofix: the code before the wave 2 netcode fixe
             g_fail++;                                                    \
         }                                                                \
     } while (0)
+
+static void test_civ_economic_packet()
+{
+    printf("Civilization economic packet bounds\n");
+    civ::EconomicState state;
+    state.world=0x1234; state.sequence=7; state.city={0,0x2232,{424,-193,192}};
+    state.progress=16.813276f; state.buyer=0x2231;
+    for (unsigned i=1;i<=civ::EconomicState::max_routes;++i)
+        state.routes.push_back({{uint8_t(i),0x2300+i,{float(i),100,400}},0});
+    for (unsigned i=1;i<=civ::EconomicState::max_routes;++i) state.credits.push_back({0x2300+i,float(i)});
+    Writer w; state.write(w);
+    CHECK(w.size()>kMaxPacket-48 && w.size()<2*(kMaxPacket-48));
+    civ::EconomicState copy;
+    Reader full(w.data.data(),w.size());
+    CHECK(copy.read(full) && copy.routes.size()==state.routes.size() && copy.buyer==state.buyer);
+    for (size_t size=0;size<w.size();++size) {
+        Reader short_packet(w.data.data(),size);
+        CHECK(!copy.read(short_packet));
+    }
+    auto invalid=[&] {
+        Writer out; state.write(out); Reader r(out.data.data(),out.size());
+        CHECK(!copy.read(r));
+    };
+    state.routes[1]=state.routes[0]; invalid(); // Duplicate partner.
+    state.routes.clear(); state.credits[1]=state.credits[0]; invalid();
+    state.credits.clear(); state.credits.push_back({1,std::numeric_limits<float>::quiet_NaN()}); invalid();
+    state.credits.clear();
+    state.routes.clear(); state.progress=std::numeric_limits<float>::quiet_NaN(); invalid();
+    state.progress=101; invalid();
+    state.progress=0; state.world=0; invalid();
+    state.world=1; state.city.index=250; invalid();
+    state.city.index=0; state.routes.push_back({state.city,0}); invalid();
+    state.routes[0].partner.index=1; state.routes[0].kind=3; invalid();
+    state.routes.clear(); Writer extra; state.write(extra); extra.u8(0);
+    Reader trailing(extra.data.data(),extra.size()); CHECK(!copy.read(trailing));
+}
 
 static void test_buffer()
 {
@@ -2423,6 +2461,11 @@ static void test_diag_conn_stats()
 int main(int argc, char** argv)
 {
     if (!net_init()) return 1;
+    if (argc==2 && std::string(argv[1])=="--civ-economy") {
+        test_civ_economic_packet();
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n",g_fail);
+        return g_fail ? 1 : 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--campaign-profiles") {
         test_campaign_profiles();
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
@@ -2490,6 +2533,7 @@ int main(int argc, char** argv)
     test_ackbits();
     test_bulk();
     test_bulk_bad_link();
+    test_civ_economic_packet();
     test_session();
     test_session_end_in_delivery();
     test_rejoin_same_endpoint();

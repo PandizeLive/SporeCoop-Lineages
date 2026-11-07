@@ -170,3 +170,5 @@ SporeCoop::CivWall_ClearSlot ; Guest turret planner unavailable on frozen build 
 SporeCoop::CivWall_SetSlot ; Guest turret planner unavailable on frozen build (BUG-9073)
 SporeCoop::CommunityEditor_Update ; unverified planner guard on frozen build (upstream BUG-0493)
 SporeCoop::City_SetPartsOwner ; unverified city ownership repair on frozen build (upstream BUG-0593)
+SporeCoop::CityTradeMap_Index ; Native Civilization economic-state replication is disabled (BUG-9081)
+SporeCoop::FloatMap_EraseIterator ; Native Civilization economic-state replication is disabled (BUG-9081)

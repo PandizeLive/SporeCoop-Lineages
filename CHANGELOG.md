@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Synchronize Civilization trade routes, economic purchase meters and native
+  pricing credits to guests, including route removal and reconnect (BUG-9081).
+
 - Record full guest homeworld Space training, personal orbital handoff,
   reconnect and two-founder core-ending qualification (BUG-9071). The ending
   test uses drive/travel fixture shortcuts; uninterrupted campaign play

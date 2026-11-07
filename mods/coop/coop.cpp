@@ -863,7 +863,7 @@ bool host_absent_for(Absent who)
 // shared.cpp instead: res.elsewhere)
 static bool world_state_msg(uint8_t type)
 {
-    if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS))
+    if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS || type == net::MSG_CIV_ECONOMY))
         return true;
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
@@ -3561,7 +3561,7 @@ void setup_callbacks()
             squadron::on_message(type, from, r);
             return;
         }
-        if ((type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS) {
+        if ((type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS || type == net::MSG_CIV_ECONOMY) {
             civ::on_message(type, from, r);
             return;
         }

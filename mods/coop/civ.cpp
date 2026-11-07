@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "census.h"
+#include "civ_economy.h"
 
 #include <algorithm>
 #include <array>
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <functional>
 #include <map>
+#include <memory>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -70,7 +72,7 @@ static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_P
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
     a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding,
     a_NodeClaim, a_NodeUnclaim, a_SetCapture, a_SpawnNextCity, a_ExpansionGet, a_CinematicMgr, a_DestroyBuilding,
-    a_CombatantDamage, a_AddMoney;
+    a_CombatantDamage, a_AddMoney, a_AddTradeRoute, a_RemoveTradeRoute, a_TradeMapIndex, a_FloatMapErase;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -1603,6 +1605,10 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
+    a_AddTradeRoute = H->sym("Simulator::cCity::AddTradeRoute");
+    a_RemoveTradeRoute = H->sym("Simulator::cCity::RemoveTradeRoute");
+    a_TradeMapIndex = H->sym("SporeCoop::CityTradeMap_Index");
+    a_FloatMapErase = H->sym("SporeCoop::FloatMap_EraseIterator");
     struct {
         uintptr_t* a;
         const char* n;
@@ -2462,6 +2468,146 @@ static void receive_turret_health(net::Reader& r)
     last = {serial,sequence,missing,host_ids,local_ids};
 }
 
+static bool g_economic_state = true;
+COOP_FIX("civ.economic_state", "BUG-9081", g_economic_state,
+         "civ: guests receive native trade routes and economic purchase progress");
+static uint32_t g_economic_sequence;
+static std::map<uint8_t,std::pair<uint32_t,uint32_t>> g_economic_seen;
+
+struct NativeRoute { void* partner; int kind; };
+static std::vector<NativeRoute> native_routes(void* city)
+{
+    std::vector<NativeRoute> routes;
+    auto first = F<uint8_t*>(city,0x55C), last = F<uint8_t*>(city,0x560);
+    for (auto at=first; at && at<last && routes.size()<250; at+=12)
+        routes.push_back({F<void*>(at,0),F<int>(at,8)});
+    return routes;
+}
+
+static EconomicCity economic_city(size_t index,void* city)
+{
+    return {uint8_t(index),pol_of(city),city_pos(city)};
+}
+
+static bool native_trade_credits(void* city,std::vector<std::pair<void*,EconomicCredit>>& entries)
+{
+    std::vector<void*> stack;
+    if (void* root=F<void*>(city,0x57C)) stack.push_back(root);
+    std::unordered_set<void*> seen;
+    while (!stack.empty()) {
+        void* node=stack.back(); stack.pop_back();
+        if (entries.size()>=250 || !seen.insert(node).second) return false;
+        entries.push_back({node,{F<uint32_t>(node,0x10),F<float>(node,0x14)}});
+        for (int off:{0,4}) if (void* child=F<void*>(node,off)) stack.push_back(child);
+    }
+    return entries.size()==F<uint32_t>(city,0x584);
+}
+
+static void send_economic_state(size_t ci)
+{
+    if (!g_economic_state || !a_AddTradeRoute || !a_RemoveTradeRoute || !a_TradeMapIndex || !a_FloatMapErase || ci>=250 ||
+        C.sess->players().size()<2) return;
+    void* city=g_host_cities[ci];
+    if (planner_holds_city(city)) return;
+    EconomicState state;
+    state.world=modes::current_world(); state.sequence=++g_economic_sequence;
+    state.city=economic_city(ci,city);
+    state.progress=F<float>(city,0x758); state.buyer=F<uint32_t>(city,0x75C);
+    for (auto route:native_routes(city)) {
+        auto at=std::find(g_host_cities.begin(),g_host_cities.end(),route.partner);
+        if (at==g_host_cities.end() || at-g_host_cities.begin()>=250 || route.kind<0 || route.kind>2) return;
+        state.routes.push_back({economic_city(at-g_host_cities.begin(),route.partner),uint8_t(route.kind)});
+    }
+    if (state.routes.size()>EconomicState::max_routes) return; // Never publish a truncated roster.
+    std::vector<std::pair<void*,EconomicCredit>> credits;
+    if (!native_trade_credits(city,credits) || credits.size()>EconomicState::max_routes) return;
+    for (auto entry:credits) state.credits.push_back(entry.second);
+    net::Writer w; state.write(w);
+    for (const auto& player:C.sess->players()) if (player.id) {
+        if (w.size()<=net::kMaxPacket-48) C.sess->send_unreliable_to(player.id,net::MSG_CIV_ECONOMY,w);
+        else C.sess->send_reliable_to(player.id,net::MSG_CIV_ECONOMY,w);
+    }
+}
+
+static void apply_economic_state(const EconomicState& state)
+{
+    if (!active() || !is_guest() || local_play() || !g_economic_state || g_health_save_depth ||
+        world::load_queued() || world::save_busy() || state.world!=modes::current_world()) return;
+    const auto live=all_cities();
+    auto resolve=[&](const EconomicCity& id)->void* {
+        if (id.index>=g_host_cities.size()) return nullptr;
+        void* city=g_host_cities[id.index];
+        if (!city || std::find(live.begin(),live.end(),city)==live.end() ||
+            pol_of(city)!=id.faction || !(net::dist(city_pos(city),id.position)<5.f) ||
+            defer_planner_mutation(city)) return nullptr;
+        return city;
+    };
+    void* city=resolve(state.city);
+    if (!city) return;
+    auto serial=game::object_serial(city);
+    auto& seen=g_economic_seen[state.city.index];
+    if (seen.first==serial && int32_t(state.sequence-seen.second)<=0) return;
+    std::vector<NativeRoute> wanted;
+    for (auto& route:state.routes) {
+        void* partner=resolve(route.partner);
+        if (!partner) return; // Retry on a later snapshot after all cities are mapped.
+        wanted.push_back({partner,route.kind});
+    }
+    const auto old=native_routes(city);
+    for (auto route:old) if (!route.partner || std::find(live.begin(),live.end(),route.partner)==live.end() ||
+                            defer_planner_mutation(route.partner)) return;
+    const auto was_applying=g_applying;
+    g_applying=true;
+    for (auto route:old) {
+        bool keep=std::any_of(wanted.begin(),wanted.end(),[&](auto entry){
+            return entry.partner==route.partner && entry.kind==route.kind;
+        });
+        if (!keep) {
+            thiscall<void>(a_RemoveTradeRoute,city,route.partner);
+            thiscall<void>(a_RemoveTradeRoute,route.partner,city);
+        }
+    }
+    for (auto route:wanted) {
+        auto current=native_routes(city);
+        if (std::none_of(current.begin(),current.end(),[&](auto entry){return entry.partner==route.partner;})) {
+            // AddTradeRoute creates both ends. Clean a one-sided stale entry first.
+            thiscall<void>(a_RemoveTradeRoute,route.partner,city);
+            thiscall<void>(a_AddTradeRoute,city,route.partner,route.kind);
+        }
+    }
+    // Route construction alone initializes only one endpoint's pricing map.
+    // Replay the actual native map, including retained historical trade credit.
+    std::vector<std::pair<void*,EconomicCredit>> credits;
+    if (!native_trade_credits(city,credits)) { g_applying=was_applying; return; }
+    for (auto entry:credits) {
+        if (std::none_of(state.credits.begin(),state.credits.end(),[&](auto credit){return credit.faction==entry.second.faction;})) {
+            void* next=nullptr;
+            thiscall<void*>(a_FloatMapErase,static_cast<uint8_t*>(city)+0x570,&next,entry.first);
+        }
+    }
+    for (auto credit:state.credits) {
+        float* value=thiscall<float*>(a_TradeMapIndex,static_cast<uint8_t*>(city)+0x570,&credit.faction);
+        if (value) *value=credit.value;
+    }
+    F<float>(city,0x758)=state.progress;
+    F<uint32_t>(city,0x75C)=state.buyer;
+    g_applying=was_applying;
+    seen={serial,state.sequence};
+}
+
+static void receive_economic_state(net::Reader& r)
+{
+    if (!g_economic_state || !a_AddTradeRoute || !a_RemoveTradeRoute || !a_TradeMapIndex || !a_FloatMapErase) return;
+    struct Pending { EconomicState state; uint64_t epoch; };
+    auto pending=std::make_unique<Pending>();
+    if (!pending->state.read(r)) return;
+    pending->epoch=g_founder_epoch;
+    H->run_outside_frame([](void* raw){
+        std::unique_ptr<Pending> job(static_cast<Pending*>(raw));
+        if (job->epoch==g_founder_epoch) apply_economic_state(job->state);
+    },pending.release());
+}
+
 static void host_tick(double now)
 {
     if (g_health_save_depth) return; // Never broadcast the temporary native save values.
@@ -2553,7 +2699,7 @@ static void host_tick(double now)
     // what the incremental messages missed (a capture clears the ruins, ...)
     size_t bci = g_host_cities.empty() ? 0xFF : g_cycle % g_host_cities.size();
     std::vector<void*> blds;
-    if (bci != 0xFF) send_turret_health(bci);
+    if (bci != 0xFF) { send_turret_health(bci); send_economic_state(bci); }
     if (bci != 0xFF)
         for (void* bl : vec_of((uint8_t*)g_host_cities[bci] + kCityBuildings))
             if (type_for_noun(game::noun_id(bl)) && blds.size() < 32)
@@ -3501,6 +3647,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         guest_state(r);
     else if (type == net::MSG_CIV_TURRETS && is_guest() && from == 0)
         receive_turret_health(r);
+    else if (type == net::MSG_CIV_ECONOMY && is_guest() && from == 0)
+        receive_economic_state(r);
     else if (type == net::MSG_CIV_CMD && is_host())
         host_command(from, r);
     else if (type == net::MSG_CIV_CMD && is_guest() && from == 0 && r.u8() == CMD_WALL_ACK) {
@@ -3540,6 +3688,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
+    g_economic_seen.clear();
     clear_enemy_health();
     g_hud_samples = 0;
     ++g_founder_epoch;
@@ -3582,6 +3731,7 @@ void on_world_change()
     uint32_t m = game::mode_id();
     if (m == modes::kEdit || m == modes::kEditor)
         return;
+    g_economic_seen.clear();
     g_hud_samples = 0;
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;

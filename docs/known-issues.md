@@ -1735,3 +1735,12 @@ alliance and reaches friendly status with its next rival. Its repeat group
 order targets the correct NPC chief but does not start a performance within
 45 seconds. The cause is open; both games reported zero faults. See
 [BUG-9064](tickets/BUG-9064-fresh-tribal-repeat-performance-stalls.md).
+
+## Civilization economic state on Duo 22 (2026-11-07, feat/lineages-civ-combat)
+<a id="issue-civ-economic-state"></a>
+
+The private Duo 22 package omits guest trade routes, purchase progress and
+pricing credits. BUG-9081 adds and verifies their synchronization in source;
+it is not yet included in a replacement package. Final guest Buy City input
+still needs separate qualification. See
+[BUG-9081](tickets/BUG-9081-civ-economic-state-not-replicated.md).

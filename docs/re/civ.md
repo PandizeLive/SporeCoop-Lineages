@@ -1411,3 +1411,55 @@ ReligiousBonusB observed zero followers gained for the new nation after
 one such contribution; that is expected native behavior. The regression
 checks that exactly one existing conversion is undone, not two, when the
 nearby governor's preacher belongs to the other nation.
+
+## Economic state replication (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-economic-state-replication"></a>
+
+BUG-9081: the friendly TradeE fixture produced a real native route and
+delivery from guest mouse commands. Host route count became one and the
+rival's +758 meter reached 16.813276 for buyer 2231; guest route count and
+meter stayed zero. The older military-only snapshot omitted this state.
+Logs: playability-trade-e-controls.log, playability-trade-e-progress.log,
+bug9081-before.log. This is not BUG-9079's hostile-route rejection.
+
+The corrected native state includes both endpoints' +55C route vectors,
++758/+75C purchase meter/buyer, and the +570 per-buyer trade-value map.
+GetBuyPrice BE93A0 reads that map before its price tuning; a matching visible
+meter alone is insufficient. Initial route/meter-only tests passed but
+bug9081-price-map.log exposed missing/different map entries on the guest.
+The strengthened regression failed in bug9081-price-before.log.
+
+Verified live GOG-2024-layout routines:
+* AddTradeRoute BE1490: thiscall(city, partner, type), ret 8 at BE196A.
+  Appends both endpoints' route vectors but creates the +570 entry only
+  on the first endpoint. Calling it in an arbitrary endpoint order cannot
+  reproduce both native pricing maps.
+* RemoveTradeRoute BDFA70: thiscall(city, partner), ret 4. Removes only
+  the selected endpoint entry. Remove both ends before rebuilding a route.
+* CityTradeMap_Index BE08E0: thiscall(map, key pointer), ret 4, returns
+  node+14 float*. It uses signed integer key comparison and initializes a
+  missing value to zero. Callers BE14E9 and BE93E0 use city+570.
+* FloatMap_EraseIterator 8DB190: thiscall(map, output iterator pointer,
+  node iterator by value), ret 8. D05F27 confirms the hidden output pointer
+  and node order. It decrements map+14, rebalances and frees the flat scalar
+  node without a value destructor. The result is the next node pointer.
+
+MSG_CIV_ECONOMY is an optional message, leaving the old city snapshot intact.
+It validates bounded counts, duplicate keys, finite values, world, sequence,
+city index, faction and position. Native mutations are queued outside the
+render frame and revalidate live cities and the current world epoch. Open
+planners defer both endpoints; a later periodic snapshot retries. Native
+trade AI and treasury operations still run only through the existing paths.
+Ordinary snapshots fit one datagram; rosters exceeding its budget use the
+existing reliable fragmentation. The bounded format holds 60 routes and
+60 historical pricing entries per city; larger maps are not truncated.
+
+Fixture notes: native route acceptance CEEF90 first rejects a non-player
+requesting nation at relationship category <=1, then requires category >=3
+from the target for that AI-flagged nation. TradeE set one existing scalar
+diplomacy event per direction to the positive cheat event 0526E5DC with
+value 100, producing category 4. This is test setup, not earned diplomacy.
+Negative values on the original attack event did not create friendship.
+No route or purchase progress was set in the original reproduction.
+The Steam executable is packed on disk; live ASLR-adjusted bytes were used
+for signature checks. Raw on-disk disassembly was not usable evidence.

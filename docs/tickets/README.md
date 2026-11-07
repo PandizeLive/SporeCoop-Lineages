@@ -560,3 +560,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9078](BUG-9078-religious-bonus-vehicle-purpose.md) | fixed | bug | Civilization | 2026-11-06 | unreleased | Religious governor bonus looks for economic vehicles |
 | [BUG-9079](BUG-9079-guest-trade-route-not-created.md) | not-reproduced | bug | Civilization | 2026-11-06 |  | Guest trader reaches rival without creating a trade route |
 | [BUG-9080](BUG-9080-civ-test-used-space-alliance-api.md) | wontfix | test | Civilization | 2026-11-06 |  | Civilization test setup passes political IDs to Space empire API |
+| [BUG-9081](BUG-9081-civ-economic-state-not-replicated.md) | open | desync | Civilization | 2026-11-07 |  | Guest does not receive native trade routes or economic purchase progress |
