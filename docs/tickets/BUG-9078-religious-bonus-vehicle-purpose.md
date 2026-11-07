@@ -10,7 +10,7 @@ role: host guest
 versions: duo21-dev
 fixed_in: unreleased
 branch: feat/lineages-civ-combat
-commits:
+commits: f7283e26
 tests: tools/tests/duo_civ_religious_bonus.py
 signature: h_Convert requires religious role with vehicle purpose 2 instead of 1
 docs: docs/re/civ.md
