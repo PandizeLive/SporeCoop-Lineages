@@ -1,16 +1,16 @@
 ---
 id: BUG-9075
 title: Incoming capture mutates the city held by the guest planner
-status: open
+status: fixed
 kind: desync
 stage: Civilization
 reported: 2026-11-06
 source: Duo 18 open-planner capture qualification
 role: guest
 versions: duo18-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ-combat
-commits:
+commits: 39cb1737
 tests: tools/tests/duo_civ_capture_planner.py
 signature: Open planner city changes from 2231 to 2230 with mixed building owners
 docs: docs/re/civ.md

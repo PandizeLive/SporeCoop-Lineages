@@ -1,16 +1,16 @@
 ---
 id: BUG-9074
 title: A guest founder captures a rival city but its parts retain the rival on the guest
-status: open
+status: fixed
 kind: desync
 stage: Civilization
 reported: 2026-11-06
 source: Lineages reproduction of upstream 0.7.8 BUG-0593
 role: host guest
 versions: duo17-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ-combat
-commits:
+commits: bc6bfec1 39cb1737
 tests: tools/tests/duo_civ_capture_owners.py
 signature: Guest city 2231 retains buildings of faction 2232
 docs: docs/DUO.md
@@ -28,6 +28,11 @@ applying the native repair. Each side uses its own native city and nation
 pointers. NPC economy and diplomacy are separate from this repair.
 
 Upstream implementation and test: [SporeCoop BUG-0593](https://github.com/WoodyWizard/SporeCoop/commit/51228919).
+
+## Verification
+
+FAIL before the port in lineages-capture-assessment.log. PASS with the
+port in lineages-capture-b.log and the ZIP DLL in lineages-capture-c.log.
 
 The guest-founder test transferred all three buildings and one wall turret
 to 2231 on both peers. In a fresh pair the ZIP-installed DLL transferred

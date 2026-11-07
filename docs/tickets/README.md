@@ -553,5 +553,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9071](BUG-9071-personal-space-launch.md) | open | bug | Space | 2026-11-06 |  | Qualify each founder's own spacecraft, captain and Space tutorial |
 | [BUG-9072](BUG-9072-reserved-founder-balance.md) | open | bug | all | 2026-11-06 |  | Qualify hostile combat and shared rewards at reserved campaign capacity |
 | [BUG-9073](BUG-9073-guest-city-turret-planner.md) | open | desync | Civilization | 2026-11-06 |  | Guest city turret purchases and sales diverge from the host wall and treasury |
-| [BUG-9074](BUG-9074-captured-city-part-owners.md) | open | desync | Civilization | 2026-11-06 |  | A guest founder captures a rival city but its parts retain the rival on the guest |
-| [BUG-9075](BUG-9075-captured-city-held-by-planner.md) | open | desync | Civilization | 2026-11-06 |  | Incoming capture mutates the city held by the guest planner |
+| [BUG-9074](BUG-9074-captured-city-part-owners.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | A guest founder captures a rival city but its parts retain the rival on the guest |
+| [BUG-9075](BUG-9075-captured-city-held-by-planner.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | Incoming capture mutates the city held by the guest planner |
