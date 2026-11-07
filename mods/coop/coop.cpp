@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-duo20-dev"
+#define COOP_VERSION "0.7.3.6-duo21-dev"
 #endif
 
 #include <winsock2.h>
@@ -3686,6 +3686,12 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err)
         return false;
     }
     requested.extra_hunger_basis_points = uint16_t(hunger);
+    int takeover = H->config_int(M,"campaign","takeover_per_extra_founder",requested.extra_takeover_percent);
+    if (takeover < 0 || takeover > UINT16_MAX) {
+        err = "Takeover resistance must be between 0 and 65535 percent per extra founder.";
+        return false;
+    }
+    requested.extra_takeover_percent = uint16_t(takeover);
     requested.extra_health_percent = uint16_t(health);
     requested.extra_damage_percent = uint16_t(damage);
     if (!world::setup_campaign(g_sess,requested,err)) return false;

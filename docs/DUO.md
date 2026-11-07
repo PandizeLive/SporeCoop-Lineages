@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo20-dev. Use the same build on every
+The current local build is 0.7.3.6-duo21-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -35,7 +35,19 @@ the reserved-founder health bonus during combat. Rival military hits against
 founder buildings also receive the damage bonus. At four reserved founders
 and 100% Difficulty Scaling, these are +45% health and +15% damage. The guest
 receives current and maximum building HP, and native saves preserve the
-unscaled health fraction. City Hall capture resistance remains unchanged.
+unscaled health fraction.
+
+City takeovers require 5% more effort per extra reserved founder: +5% with
+two seats, +10% with three, and +15% with four. This reduces military capture
+contributions, religious conversion contributions and economic trade progress
+by the reciprocal multiplier. Small preaching contributions accumulate rather
+than being discarded, and their fractions are saved with the campaign.
+Native purchase prices, trade income and existing combat bonuses are unchanged.
+The resistance applies to founders taking non-founder cities. It does not
+increase enemy takeover power against the team. In mods/coop.ini, the
+[campaign] setting takeover_per_extra_founder controls new campaigns;
+0 disables resistance. Existing campaigns retain their saved value, with
+older builds' campaigns defaulting to 5. Reserved seats change next stage.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct

@@ -1372,7 +1372,7 @@ void receive_campaign_rules(const net::Session& session, uint8_t from, net::Read
     RemoteCampaignRules next;
     next.world = r.u32();
     next.mode = r.u32();
-    next.rules = {r.u8(),r.u16(),r.u16(),r.u16(),r.u16()};
+    next.rules = {r.u8(),r.u16(),r.u16(),r.u16(),r.u16(),r.u16()};
     if (!r.ok() || r.left() || !next.world || !in_stage(next.mode) ||
         !next.rules.seats || next.rules.seats > 4) return;
     g_remote_rules = next;
@@ -1389,6 +1389,7 @@ static void send_campaign_rules(net::Session& session, const founders::CampaignR
     w.u16(rules.extra_health_percent);
     w.u16(rules.extra_damage_percent);
     w.u16(rules.extra_hunger_basis_points);
+    w.u16(rules.extra_takeover_percent);
     session.broadcast_reliable(net::MSG_CAMPAIGN_RULES,w);
 }
 
@@ -1434,7 +1435,8 @@ static bool apply_saved_rules(net::Session& session, const std::string& key, std
         }
         session.seat_limit = rules.seats;
         g_campaign_setup.status = "Reserved founders: " + std::to_string(rules.seats) +
-            ", difficulty scaling " + std::to_string(rules.difficulty_percent) + "%";
+            ", difficulty scaling " + std::to_string(rules.difficulty_percent) + "%" +
+            ", city takeover effort " + std::to_string(rules.takeover_percent()) + "%";
         if (plan.next_seats)
             g_campaign_setup.status += ", queued " + std::to_string(plan.next_seats) +
                 (plan.queued_stage == 5 ? " on next Space load" : " for next stage");
@@ -2153,7 +2155,8 @@ std::string status()
 {
     std::string s = g_campaign_setup.status.empty() ? "" : g_campaign_setup.status + "\n";
     if (g_remote_rules.world && g_remote_rules.world == modes::current_world() && g_remote_rules.mode == game::mode_id())
-        s += "Host campaign rules: " + std::to_string(g_remote_rules.rules.seats) + " reserved founders.\n";
+        s += "Host campaign rules: " + std::to_string(g_remote_rules.rules.seats) + " reserved founders.\n" +
+             "Host city takeover effort: " + std::to_string(g_remote_rules.rules.takeover_percent()) + "%\n";
     if (!g_intro_planet.empty() && g_via_menu.on && g_via_menu.share && g_via_menu.planet == g_intro_planet)
         s += "shared orbital save waiting for your first flight\n";
     char b[200];

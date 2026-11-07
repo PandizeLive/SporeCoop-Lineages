@@ -3757,3 +3757,22 @@ After quitting and reopening a copy of that profile at the galaxy menu,
 --cold-receipt PATH loads Game0/Clyth and checks the native persisted state.
 Never point this test at a player's profile. City Halls are excluded because
 their native siege path uses capture progress rather than ordinary HP loss.
+
+## Lineages takeover resistance (2026-11-06)
+<a id="testing-lineages-takeover"></a>
+
+duo_civ_takeover.py --host 4 --guest 5 expects joined disposable Clyth
+profiles with four reserved founders and an uncaptured rival. The test
+compares native capture and buying progress with civ.takeover_resistance
+off/on, inspects native religious follower-map entries, and checks the
+military meter on the guest. --finish military completes the native capture
+meter; --finish economic fills native buying progress, spends 2,500 and
+checks shared debit/ownership. These calls qualify the native contribution
+and ownership paths, not the entire mouse-driven combat/trade UI.
+
+--save-receipt PATH records the first withheld preaching fraction and makes
+a native save. Restart a fresh copy of that host profile, host it and join
+the guest, then run --cold-receipt PATH. The next one-citizen contribution
+must convert a citizen. This catches a join-time save replacing the native
+checkpoint before its old conversion attachment is read. The cold test
+also completes native religious conversion and checks both city owners.

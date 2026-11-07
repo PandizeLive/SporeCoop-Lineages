@@ -1055,6 +1055,56 @@ struct TurretHit {
 };
 static TurretHit g_last_rival_turret_hit;
 static unsigned g_health_save_depth;
+static bool g_takeover_resistance = true;
+COOP_FIX("civ.takeover_resistance", "BUG-9077", g_takeover_resistance,
+         "civ: apply reserved-founder resistance to military, religious and economic takeovers");
+static std::vector<founders::ConversionCredit> g_conversion_credit;
+static std::string g_conversion_key;
+static uint32_t g_conversion_percent;
+static uint64_t g_conversion_save_stamp = UINT64_MAX;
+
+static uint32_t takeover_percent(void* city, uint32_t attacker)
+{
+    if (!g_takeover_resistance || !active() || !is_host() || !g_combat_roster_ready || !city ||
+        !attacker || !team_faction(attacker) || team_faction(pol_of(city))) return 100;
+    return world::rules_for_current().takeover_percent();
+}
+
+static void prune_conversion_credit()
+{
+    std::unordered_map<uint32_t,uint32_t> owners;
+    for (void* city : all_cities()) owners.emplace(game::object_serial(city),pol_of(city));
+    std::erase_if(g_conversion_credit,[&](const auto& c) {
+        auto it = owners.find(c.city);
+        return it == owners.end() || it->second != c.owner || team_faction(c.owner);
+    });
+}
+
+static void load_conversion_credit()
+{
+    const auto percent = world::rules_for_current().takeover_percent();
+    const auto key = world::current_game_key();
+    if (key != g_conversion_key || percent != g_conversion_percent) {
+        g_conversion_credit.clear();
+        g_conversion_key = key;
+        g_conversion_percent = percent;
+        founders::read_conversion_credit(key,percent,g_conversion_credit);
+    }
+}
+
+static int convert_with_resistance(void* city, uint32_t attacker, int count)
+{
+    const auto percent = takeover_percent(city,attacker);
+    if (percent == 100 || count <= 0) return count;
+    load_conversion_credit();
+    prune_conversion_credit();
+    const auto serial = game::object_serial(city);
+    for (auto& c : g_conversion_credit)
+        if (c.city == serial && c.attacker == attacker) return c.apply(count,percent);
+    if (!serial || g_conversion_credit.size() >= 1024) return int(uint64_t(count)*100/percent);
+    auto& credit = g_conversion_credit.emplace_back(founders::ConversionCredit{serial,pol_of(city),attacker,0});
+    return credit.apply(count,percent);
+}
 
 static void scale_combatant(HealthMap& entries, void* object, uintptr_t combat, uint32_t faction,
                             float factor, uint32_t opponent)
@@ -1170,8 +1220,29 @@ static void convert_vehicle_health(bool saving)
         for (void* building : vec_of(static_cast<uint8_t*>(city)+kCityBuildings))
             convert(g_building_health,building,kBuildingCombat);
 }
-void before_native_save() { if (++g_health_save_depth == 1) convert_vehicle_health(true); }
-void after_native_save() { if (g_health_save_depth && --g_health_save_depth == 0) convert_vehicle_health(false); }
+void before_native_save()
+{
+    if (++g_health_save_depth != 1) return;
+    convert_vehicle_health(true);
+    // A joining guest can trigger a new native save before anyone preaches.
+    // Read the old attachment while its checkpoint digest still matches.
+    if (active() && is_host()) load_conversion_credit();
+    g_conversion_save_stamp = active() && is_host() && !g_conversion_key.empty() &&
+        g_conversion_key == world::current_game_key() ? founders::checkpoint_stamp(g_conversion_key) : UINT64_MAX;
+}
+void after_native_save()
+{
+    if (!g_health_save_depth || --g_health_save_depth != 0) return;
+    convert_vehicle_health(false);
+    const auto before = g_conversion_save_stamp;
+    g_conversion_save_stamp = UINT64_MAX;
+    if (before == UINT64_MAX || !active() || !is_host()) return;
+    const auto after = founders::checkpoint_stamp(g_conversion_key);
+    if (!after || after == before) return;
+    prune_conversion_credit();
+    if (!founders::save_conversion_credit(g_conversion_key,g_conversion_percent,g_conversion_credit))
+        H->log(M,SK_WARN,"civ: could not retain fractional religious progress for this save");
+}
 void clear_enemy_health()
 {
     if (!g_health_save_depth) convert_vehicle_health(true);
@@ -1303,6 +1374,7 @@ static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t o
             }
         }
     }
+    if (dmg > 0 && std::isfinite(dmg)) dmg *= 100.f / takeover_percent(city,att);
     o_AddCapture(ctx, city, meter, owner, dmg, att, f);
 }
 
@@ -1332,7 +1404,15 @@ static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
             g_religious_boosts++;
         }
     }
-    o_Convert(city, pol, count);
+    o_Convert(city, pol, convert_with_resistance(city,pol,count));
+}
+
+using BuyProgress = void(SK_THISCALL*)(void*,float,uint32_t);
+static BuyProgress o_BuyProgress;
+static void SK_THISCALL h_BuyProgress(void* city, float amount, uint32_t buyer)
+{
+    if (amount > 0 && std::isfinite(amount)) amount *= 100.f / takeover_percent(city,buyer);
+    o_BuyProgress(city,amount,buyer);
 }
 
 // a player's city is attacked: everybody sees it (beacon + notice), and the other players'
@@ -1665,6 +1745,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {"Simulator::cCityHall::TakeDamage", (void*)h_HallTakeDamage, (void**)&o_HallTakeDamage},
         {"Simulator::cCity::AddCaptureDamage", (void*)h_AddCapture, (void**)&o_AddCapture},
         {"Simulator::cCity::ConvertCitizens", (void*)h_Convert, (void**)&o_Convert},
+        {"Simulator::cCity::AddBuyProgress", (void*)h_BuyProgress, (void**)&o_BuyProgress},
         {"Simulator::cCity::OnAttacked", (void*)h_OnAttacked, (void**)&o_OnAttacked},
         {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW, (void**)&o_FireSW},
     };
@@ -3501,6 +3582,10 @@ void on_world_change()
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
     g_last_rival_turret_hit = {};
+    g_conversion_key.clear();
+    g_conversion_credit.clear();
+    g_conversion_percent = 0;
+    g_conversion_save_stamp = UINT64_MAX;
     reset_wall_edits();
     g_founder_planet.clear();
     g_combat_roster_ready = false;

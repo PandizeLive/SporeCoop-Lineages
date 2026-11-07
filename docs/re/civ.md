@@ -1306,3 +1306,53 @@ Two corrected runs matched on both peers. Saving a 60% wound and restarting
 offline restored maximum 800 and current HP 479.99997, rather than baking
 1,160 into the campaign. A separate installed-package run captured the
 wounded rival city and both peers returned its buildings to native maximum.
+
+## Reserved-founder takeover resistance (2026-11-06, Lineages)
+<a id="civ-lineages-takeover-resistance"></a>
+
+The approved default adds 5% takeover effort per extra reserved founder.
+Two, three and four reserved seats therefore use 105%, 110% and 115%.
+This is a separate campaign coefficient like enemy HP/damage; the rival
+count's Difficulty Scaling percentage does not multiply it. It applies
+only when a founder acts on a city outside the founding team. NPC-versus-NPC
+actions and actions targeting a founder city keep their native progress.
+
+Military AddCaptureDamage and economic AddBuyProgress receive the native
+contribution divided by the takeover multiplier. Existing governor and
+joint-siege bonuses remain upstream of resistance. Religious ConvertCitizens
+uses integer division with a retained remainder per city serial, current
+owner and attacking founder. It changes the conversion contribution, not
+the native follower population or the UI's completion threshold.
+
+The active executable's economic entry at 0x00BDD270 takes (float amount,
+uint32 buyerPol) with this=city and ret8 at 0x00BDD31E. It updates city+0x758
+and buyer+0x75C, using amount*8/(buyerCityCount+6). The native vehicle calls
+it at 0x00DCCBFB after computing influence at 0x00BD9590. TradeDelivery and
+GetBuyPrice are separate functions and are not hooked by this feature.
+
+The native follower map is at city+0x5A0: root+0x0C, count+0x14, node right+0,
+left+4, key+0x10 and integer followers+0x14. Runtime reads matched the
+declared map count and observed native conversion changes.
+
+In the first four-seat native run, military progress changed from 10 to
+8.695652 and economic progress from 11.428572 to 9.937887. Turning the
+resistance switch off restored native contributions. One raw citizen
+produced no immediate conversion and retained 100/115 fractional credit.
+The test compared the military meter on both peers; it does not qualify
+economic or religious progress rendering on the guest.
+
+Campaign settings use FST6, appending the takeover coefficient after the
+five previous-stage seat counts. FST1 through FST5 read with the new default
+5 while retaining their prior combat/hunger fields. New campaigns may use
+campaign.takeover_per_extra_founder in coop.ini. Saved settings prevail.
+Fractional religious credit uses a bounded .spo.duo-conversion attachment,
+CCV1, with city/owner/attacker/remainder records, the applicable percentage
+and the native planet's SHA-256. A mismatched checkpoint cannot import credit.
+
+The first cold replay exposed a save-order error: joining triggered a native
+save before the first preaching action read the attachment, invalidating its
+digest. Reading the attachment before native SaveGame and publishing it after
+the native file changes fixes the loss. Two cold replays (one with the installed
+package) preserved the pending fraction and then completed religious conversion
+on both peers. The installed build also completed military capture and economic
+purchase after filling their scaled meters; the purchase still debited 2,500.

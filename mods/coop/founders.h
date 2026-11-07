@@ -16,6 +16,8 @@ struct CampaignRules {
     uint16_t difficulty_percent = 100;
     uint16_t extra_health_percent = 15, extra_damage_percent = 5;
     uint16_t extra_hunger_basis_points = 250; // 100 basis points = 1%
+    uint16_t extra_takeover_percent = 5;
+    uint32_t takeover_percent() const { return 100u + (seats - 1u) * extra_takeover_percent; }
     float hunger_factor() const { return 1.f + (seats - 1u) * extra_hunger_basis_points / 10000.f; }
     uint32_t enemy_health_percent() const { return 100u + (seats - 1u) * extra_health_percent; }
     uint32_t enemy_damage_percent() const { return 100u + (seats - 1u) * extra_damage_percent; }
@@ -64,6 +66,19 @@ struct CellCredit {
 };
 bool save_cell_credit(const std::string& planet, const CampaignRules& rules, const CellCredit& credit);
 bool read_cell_credit(const std::string& planet, const CampaignRules& rules, CellCredit& credit);
+struct ConversionCredit {
+    uint32_t city = 0, owner = 0, attacker = 0, remainder = 0;
+    int apply(int raw, uint32_t percent) {
+        if (raw <= 0 || percent < 100) return raw;
+        const uint64_t total = uint64_t(raw)*100u + remainder;
+        remainder = uint32_t(total % percent);
+        return int(total / percent);
+    }
+    bool operator==(const ConversionCredit&) const = default;
+};
+uint64_t checkpoint_stamp(const std::string& planet);
+bool save_conversion_credit(const std::string& planet, uint32_t percent, const std::vector<ConversionCredit>& credit);
+bool read_conversion_credit(const std::string& planet, uint32_t percent, std::vector<ConversionCredit>& credit);
 enum class RulesFile { Missing, Saved, Unreadable };
 // Stages are ordered Cell (1) through Space (5). Zero means no queued change.
 struct SeatPlan {

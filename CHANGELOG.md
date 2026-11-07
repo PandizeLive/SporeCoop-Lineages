@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add 5% city takeover effort per extra reserved founder across military,
+  religious and economic routes. Keep native prices/income and combat
+  bonuses, and preserve fractional conversion across saves and joining
+  guests (BUG-9077).
+
 - Apply reserved-founder combat scaling to destructible Civilization
   buildings and synchronize their partial health. Native saves retain
   unscaled maximum HP and the wound fraction (BUG-9076).

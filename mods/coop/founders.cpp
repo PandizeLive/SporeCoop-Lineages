@@ -116,6 +116,64 @@ bool read_cell_credit(const std::string& key, const CampaignRules& rules, CellCr
     return true;
 }
 
+uint64_t checkpoint_stamp(const std::string& key)
+{
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    const auto path = path_for(key,L"");
+    if (path.empty() || !GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&data)) return 0;
+    return (uint64_t(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+}
+
+static bool valid_conversion(uint32_t percent, const std::vector<ConversionCredit>& credit)
+{
+    if (percent < 100 || percent > 100u+3u*UINT16_MAX || credit.size() > 1024) return false;
+    std::vector<std::pair<uint32_t,uint32_t>> ids;
+    for (const auto& c : credit) {
+        if (!c.city || !c.owner || !c.attacker || c.owner == c.attacker || c.remainder >= percent) return false;
+        const auto id = std::pair(c.city,c.attacker);
+        if (std::find(ids.begin(),ids.end(),id) != ids.end()) return false;
+        ids.push_back(id);
+    }
+    return true;
+}
+
+bool save_conversion_credit(const std::string& key, uint32_t percent, const std::vector<ConversionCredit>& credit)
+{
+    auto path = path_for(key,L".duo-conversion");
+    if (path.empty() || !valid_conversion(percent,credit)) return false;
+    auto digest = planet_digest(key);
+    if (digest.empty()) return false;
+    net::Writer w;
+    w.u32(0x31564343u); // CCV1
+    w.u32(percent); w.u16(uint16_t(credit.size()));
+    for (const auto& c : credit) { w.u32(c.city); w.u32(c.owner); w.u32(c.attacker); w.u32(c.remainder); }
+    w.raw(digest.data(),digest.size());
+    return publish(path,w.data,true);
+}
+
+bool read_conversion_credit(const std::string& key, uint32_t percent, std::vector<ConversionCredit>& credit)
+{
+    auto path = path_for(key,L".duo-conversion");
+    if (path.empty()) return false;
+    HANDLE f = CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ | FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,0,nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    std::array<uint8_t,75+1024*16> data{};
+    DWORD got = 0;
+    bool ok = ReadFile(f,data.data(),DWORD(data.size()),&got,nullptr);
+    CloseHandle(f);
+    if (!ok || got < 74) return false;
+    net::Reader r(data.data(),got);
+    if (r.u32() != 0x31564343u || r.u32() != percent) return false;
+    const auto count = r.u16();
+    if (count > 1024 || r.left() != size_t(count)*16+64) return false;
+    std::vector<ConversionCredit> saved(count);
+    for (auto& c : saved) c = {r.u32(),r.u32(),r.u32(),r.u32()};
+    if (!r.ok() || !valid_conversion(percent,saved) ||
+        std::string((const char*)r.cur(),r.left()) != planet_digest(key)) return false;
+    credit = std::move(saved);
+    return true;
+}
+
 RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* plan)
 {
     auto path = path_for(key,L".duo-seats");
@@ -124,16 +182,16 @@ RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* pla
                               OPEN_EXISTING,0,nullptr);
     if (file == INVALID_HANDLE_VALUE)
         return GetLastError() == ERROR_FILE_NOT_FOUND ? RulesFile::Missing : RulesFile::Unreadable;
-    std::array<uint8_t,22> data{}; // largest format plus one byte to detect overlong files
+    std::array<uint8_t,24> data{}; // largest format plus one byte to detect overlong files
     DWORD count = 0;
-    bool ok = ReadFile(file,data.data(),DWORD(data.size()),&count,nullptr) && (count == 7 || count == 11 || count == 14 || count == 16 || count == 21);
+    bool ok = ReadFile(file,data.data(),DWORD(data.size()),&count,nullptr) && (count == 7 || count == 11 || count == 14 || count == 16 || count == 21 || count == 23);
     CloseHandle(file);
     if (!ok) return RulesFile::Unreadable;
     net::Reader r(data.data(),count);
     uint32_t format = r.u32();
     if (!((format == 0x31545346u && count == 7) || (format == 0x32545346u && count == 11) ||
           (format == 0x33545346u && count == 14) || (format == 0x34545346u && count == 16) ||
-          (format == 0x35545346u && count == 21)))
+          (format == 0x35545346u && count == 21) || (format == 0x36545346u && count == 23)))
         return RulesFile::Unreadable;
     CampaignRules saved{r.u8(),r.u16()};
     // FST1 campaigns used fixed combat bonuses before the fields were persisted.
@@ -156,12 +214,13 @@ RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* pla
             return RulesFile::Unreadable;
     }
     saved.extra_hunger_basis_points = count >= 16 ? r.u16() : 0;
-    if (count == 21) {
+    if (count >= 21) {
         for (auto& seats : saved_plan.previous_stage_seats) {
             seats = r.u8();
             if (seats > 4) return RulesFile::Unreadable;
         }
     }
+    if (count == 23) saved.extra_takeover_percent = r.u16();
     if (!r.ok() || r.left()) return RulesFile::Unreadable;
     if (plan) *plan = saved_plan;
     value = saved;
@@ -191,7 +250,7 @@ public:
 static bool write_rules(const std::wstring& path, const CampaignRules& rules, const SeatPlan& plan, bool replace)
 {
     net::Writer w;
-    w.u32(0x35545346u); // FST5
+    w.u32(0x36545346u); // FST6
     w.u8(rules.seats);
     w.u16(rules.difficulty_percent);
     w.u16(rules.extra_health_percent);
@@ -201,6 +260,7 @@ static bool write_rules(const std::wstring& path, const CampaignRules& rules, co
     w.u8(plan.queued_stage);
     w.u16(rules.extra_hunger_basis_points);
     for (auto seats : plan.previous_stage_seats) w.u8(seats);
+    w.u16(rules.extra_takeover_percent);
     return publish(path,w.data,replace);
 }
 
