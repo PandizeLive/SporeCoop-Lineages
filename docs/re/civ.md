@@ -1275,3 +1275,34 @@ inside it. The native parts-owner repair's own planner check could not
 protect the earlier ChangeOwner call or the independent construction path.
 The first guarded run kept the original faction and building list while
 editing and reconciled the city after the native green check closed it.
+
+## Reserved-founder destructible buildings (2026-11-06, Lineages)
+<a id="civ-lineages-building-combat"></a>
+
+BUG-9076: houses, factories and entertainment buildings use the combatant
+at object+0x120, current HP at +0x158 and maximum HP at +0x14C. The existing
+building TakeDamage hook handled governor bonuses and capture attribution,
+but omitted the reserved-founder combat scaler used by vehicles and turrets.
+The four-seat Duo 19 native test measured an incoming hit of 10 instead of
+11.5 and a rival building maximum of 800 instead of 1,160.
+
+The corrected hook reuses the vehicle/turret authority and diplomacy checks.
+A live-object health map preserves the native maximum for normalization
+before saving, after leaving, and when a hostile building changes allegiance.
+Building snapshot records now carry current HP and scaled maximum alongside
+noun, position and ruined state (25 bytes per record). The guest applies
+these to its own native building after the city planner releases it. A zero
+scaled maximum means native health. Both peers must use the same Duo build.
+
+The first corrected native run measured 800 to 1,160 maximum HP and 11.5
+incoming damage, with equal current and maximum health on the guest.
+City Hall is deliberately separate: its native Civilization damage path
+adds capture progress only when the other buildings are destroyed (or for
+special damage types). The initial test aimed at City Hall and measured
+zero HP loss; it was corrected to target an ordinary house. This change
+does not alter military capture resistance.
+
+Two corrected runs matched on both peers. Saving a 60% wound and restarting
+offline restored maximum 800 and current HP 479.99997, rather than baking
+1,160 into the campaign. A separate installed-package run captured the
+wounded rival city and both peers returned its buildings to native maximum.

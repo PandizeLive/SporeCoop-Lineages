@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Apply reserved-founder combat scaling to destructible Civilization
+  buildings and synchronize their partial health. Native saves retain
+  unscaled maximum HP and the wound fraction (BUG-9076).
+
 - Defer an incoming city capture and building changes while the guest's
   native city planner holds its objects, then reconcile after closing it
   (BUG-9075). Native economic and religious city transfers also pass local

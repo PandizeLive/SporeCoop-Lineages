@@ -3739,3 +3739,21 @@ building ownership remain stable until the green check closes the editor.
 Then both copies must converge. It creates a native rival if the fixture
 has already captured all existing ones. Use a fresh disposable campaign,
 because the test deliberately loses the guest's capital.
+
+## Lineages building combat regression (2026-11-06)
+<a id="testing-lineages-building-combat"></a>
+
+duo_civ_building_combat.py --host 4 --guest 5 expects joined, disposable
+Clyth profiles with four reserved seats, native military vehicles and an
+uncaptured rival city. It builds a founder house and invokes the buildings'
+native damage entries with real military vehicle attackers. It checks
+11.5 incoming damage from a ten-point hit, 1.45 times the rival building's
+native maximum, and native current/max HP on both peers. These are damage
+path checks; they do not prove vehicle targeting through mouse input.
+
+--save-receipt PATH saves a deterministic wound in the disposable campaign
+and records the serial, faction, native maximum and normalized wound.
+After quitting and reopening a copy of that profile at the galaxy menu,
+--cold-receipt PATH loads Game0/Clyth and checks the native persisted state.
+Never point this test at a player's profile. City Halls are excluded because
+their native siege path uses capture progress rather than ordinary HP loss.

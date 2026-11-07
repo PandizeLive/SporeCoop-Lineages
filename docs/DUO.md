@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo19-dev. Use the same build on every
+The current local build is 0.7.3.6-duo20-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -29,6 +29,13 @@ This also works when the conqueror is the guest founder.
 If a guest is editing a city when the host captures it, the guest keeps
 the city's native objects until closing the planner. The next snapshots
 then apply the capture and construction changes.
+
+Destructible rival houses, factories and entertainment buildings now receive
+the reserved-founder health bonus during combat. Rival military hits against
+founder buildings also receive the damage bonus. At four reserved founders
+and 100% Difficulty Scaling, these are +45% health and +15% damage. The guest
+receives current and maximum building HP, and native saves preserve the
+unscaled health fraction. City Hall capture resistance remains unchanged.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct

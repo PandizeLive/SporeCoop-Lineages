@@ -57,7 +57,8 @@ constexpr uintptr_t kVSpatial = 0x34, kVPos = 0x38, kVRot = 0x44, kVSelected = 0
 constexpr size_t kVehicleSnapshotBytes = 45;
 constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C, kCityCiv = 0x590,
                     kCityCapture = 0x748, // + 4: capturing political id
-                    kCityTurrets = 0x354, kTurretCombat = 0x588, kCityBuildings = 0x340, kBuildingState = 0x120 + 0x34; // combatant state, 2 = destroyed
+                    kCityTurrets = 0x354, kTurretCombat = 0x588, kBuildingCombat = 0x120,
+                    kCityBuildings = 0x340, kBuildingState = kBuildingCombat + 0x34; // combatant state, 2 = destroyed
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
 constexpr uintptr_t kCivCities = 0x9C;
 constexpr uintptr_t kNationSpecies = 0x268, kCitySpecies = 0x658;
@@ -1044,7 +1045,10 @@ struct VehicleHealth {
     bool attacked_before_war = false;
 };
 using HealthMap = std::unordered_map<void*,VehicleHealth>;
-static HealthMap g_vehicle_health, g_turret_health;
+static HealthMap g_vehicle_health, g_turret_health, g_building_health;
+static bool g_building_combat_fix = true;
+COOP_FIX("civ.building_combat", "BUG-9076", g_building_combat_fix,
+         "civ: scale hostile building HP and incoming military damage by reserved founders");
 struct TurretHit {
     uint32_t count = 0, turret = 0, victim = 0;
     float base = 0, applied = 0;
@@ -1100,7 +1104,7 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
 {
     std::erase_if(g_vehicle_health,[&](const auto& item) { return !alive.count(item.first); });
     float factor = world::rules_for_current().enemy_health_percent() / 100.f;
-    if (factor == 1.f && g_vehicle_health.empty() && g_turret_health.empty()) return;
+    if (factor == 1.f && g_vehicle_health.empty() && g_turret_health.empty() && g_building_health.empty()) return;
     // Several vehicles commonly share one faction. Query diplomacy once per pair per tick.
     std::map<std::pair<uint32_t,uint32_t>,unsigned> relations;
     auto flags = [&](uint32_t a, uint32_t b) {
@@ -1129,18 +1133,26 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
     };
     for (auto* v : live) refresh(g_vehicle_health,v,0x508,pol_of(v),F<int>(v,kVPurpose) == 0);
     for (auto& [object,entry] : g_turret_health) entry.scale.seen = false;
+    for (auto& [object,entry] : g_building_health) entry.scale.seen = false;
     for (void* city : g_host_cities) {
         for (void* turret : vec_of(static_cast<uint8_t*>(city)+kCityTurrets)) {
             refresh(g_turret_health,turret,kTurretCombat,pol_of(city),F<int>(turret,kTurretCombat+0x34) != 2);
             if (auto it = g_turret_health.find(turret); it != g_turret_health.end()) it->second.scale.seen = true;
         }
+        for (void* building : vec_of(static_cast<uint8_t*>(city)+kCityBuildings)) {
+            if (!type_for_noun(game::noun_id(building))) continue; // City Hall uses capture progress.
+            refresh(g_building_health,building,kBuildingCombat,pol_of(city),
+                    g_building_combat_fix && F<int>(building,kBuildingState) != 2);
+            if (auto it = g_building_health.find(building); it != g_building_health.end()) it->second.scale.seen = true;
+        }
     }
     std::erase_if(g_turret_health,[](const auto& item) { return !item.second.scale.seen; });
+    std::erase_if(g_building_health,[](const auto& item) { return !item.second.scale.seen; });
 }
 
 static void convert_vehicle_health(bool saving)
 {
-    if ((g_vehicle_health.empty() && g_turret_health.empty()) || !g_ok || !nm()) return;
+    if ((g_vehicle_health.empty() && g_turret_health.empty() && g_building_health.empty()) || !g_ok || !nm()) return;
     auto convert = [&](HealthMap& entries, void* object, uintptr_t combat) {
         auto it = entries.find(object);
         if (it == entries.end() || it->second.scale.serial != game::object_serial(object)) return;
@@ -1154,6 +1166,9 @@ static void convert_vehicle_health(bool saving)
     if (!g_turret_health.empty()) for (void* city : all_cities())
         for (void* turret : vec_of(static_cast<uint8_t*>(city)+kCityTurrets))
             convert(g_turret_health,turret,kTurretCombat);
+    if (!g_building_health.empty()) for (void* city : all_cities())
+        for (void* building : vec_of(static_cast<uint8_t*>(city)+kCityBuildings))
+            convert(g_building_health,building,kBuildingCombat);
 }
 void before_native_save() { if (++g_health_save_depth == 1) convert_vehicle_health(true); }
 void after_native_save() { if (g_health_save_depth && --g_health_save_depth == 0) convert_vehicle_health(false); }
@@ -1161,6 +1176,7 @@ void clear_enemy_health()
 {
     if (!g_health_save_depth) convert_vehicle_health(true);
     g_turret_health.clear();
+    g_building_health.clear();
     g_vehicle_health.clear();
 }
 
@@ -1179,30 +1195,30 @@ static void* city_turret(void* combat, uint32_t faction)
 struct CivCombatant {
     void* object;
     uint32_t faction;
-    bool turret;
-    bool armed() const { return turret || F<int>(object,kVPurpose) == 0; }
+    uintptr_t combat;
+    bool armed() const { return combat != 0x508 || F<int>(object,kVPurpose) == 0; }
 };
 
 static CivCombatant attacking_unit(void* combat, uint32_t faction)
 {
     void* vehicle = reinterpret_cast<void*>(uintptr_t(combat)-0x508);
-    if (exists(vehicle) && pol_of(vehicle) == faction) return {vehicle,faction,false};
-    return {city_turret(combat,faction),faction,true};
+    if (exists(vehicle) && pol_of(vehicle) == faction) return {vehicle,faction,0x508};
+    return {city_turret(combat,faction),faction,kTurretCombat};
 }
 
-static float combat_damage(void* target_combat, bool target_turret, float damage, uint32_t faction, void* attacker)
+static float combat_damage(void* target_combat, uintptr_t target_offset, float damage, uint32_t faction, void* attacker)
 {
     if (!active() || !is_host() || !g_combat_roster_ready || !attacker || !faction || damage <= 0)
         return damage;
-    auto* object = static_cast<uint8_t*>(target_combat)-(target_turret ? kTurretCombat : 0x508);
-    if (!target_turret && !exists(object)) return damage;
-    void* owner = target_turret ? F<void*>(object,0x688) : object;
+    auto* object = static_cast<uint8_t*>(target_combat)-target_offset;
+    if (target_offset == 0x508 && !exists(object)) return damage;
+    void* owner = target_offset == kTurretCombat ? F<void*>(object,0x688) : object;
     if (!owner || pol_of(owner) == faction) return damage;
-    CivCombatant target{object,pol_of(owner),target_turret};
+    CivCombatant target{object,pol_of(owner),target_offset};
     const bool founder_shot = team_faction(faction);
     if (founder_shot == team_faction(target.faction)) return damage;
     const auto source = attacking_unit(attacker,faction);
-    if (!source.object || !source.armed() || (source.turret && target.turret)) return damage;
+    if (!source.object || !source.armed() || (source.combat == kTurretCombat && target.combat == kTurretCombat)) return damage;
 
     const auto& rival = founder_shot ? target : source;
     const uint32_t opponent = founder_shot ? faction : target.faction;
@@ -1210,13 +1226,14 @@ static float combat_damage(void* target_combat, bool target_turret, float damage
     const auto relation = relationship_flags(rival.faction,opponent);
     if (relation & 2) return damage;
     const auto rules = world::rules_for_current();
-    auto& entries = rival.turret ? g_turret_health : g_vehicle_health;
-    scale_combatant(entries,rival.object,rival.turret ? kTurretCombat : 0x508,
+    auto& entries = rival.combat == kBuildingCombat ? g_building_health :
+                    rival.combat == kTurretCombat ? g_turret_health : g_vehicle_health;
+    scale_combatant(entries,rival.object,rival.combat,
                     rival.faction,rules.enemy_health_percent()/100.f,opponent);
     mark_engaged(entries,rival.object,opponent,relation);
     if (founder_shot) return damage;
     const float applied = damage * (rules.enemy_damage_percent()/100.f);
-    if (source.turret)
+    if (source.combat == kTurretCombat)
         g_last_rival_turret_hit = {g_last_rival_turret_hit.count+1,game::object_serial(source.object),
                                    game::object_serial(target.object),damage,applied};
     return applied;
@@ -1227,12 +1244,12 @@ static VehicleDamage o_VehicleDamage, o_TurretDamage;
 static int SK_THISCALL h_VehicleDamage(void* combat, float damage, uint32_t faction, int type,
                                        const void* direction, void* attacker)
 {
-    return o_VehicleDamage(combat,combat_damage(combat,false,damage,faction,attacker),faction,type,direction,attacker);
+    return o_VehicleDamage(combat,combat_damage(combat,0x508,damage,faction,attacker),faction,type,direction,attacker);
 }
 static int SK_THISCALL h_TurretDamage(void* combat, float damage, uint32_t faction, int type,
                                       const void* direction, void* attacker)
 {
-    return o_TurretDamage(combat,combat_damage(combat,true,damage,faction,attacker),faction,type,direction,attacker);
+    return o_TurretDamage(combat,combat_damage(combat,kTurretCombat,damage,faction,attacker),faction,type,direction,attacker);
 }
 
 // building / city hall TakeDamage (this = building+0x120): a military governor's vehicles hit harder;
@@ -1256,7 +1273,8 @@ static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int
 }
 static int SK_THISCALL h_BTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
 {
-    return b_damage(o_BTakeDamage, s, d, pol, t, dir, a);
+    return b_damage(o_BTakeDamage, s, g_building_combat_fix ? combat_damage(s,kBuildingCombat,d,pol,a) : d,
+                    pol, t, dir, a);
 }
 static int SK_THISCALL h_HallTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
 {
@@ -2479,7 +2497,7 @@ static void host_tick(double now)
         c.n1 = i + 1;
     }
     if (bci != 0xFF)
-        place(1 + 17 * blds.size()).bld = true;
+        place(1 + 25 * blds.size()).bld = true;
     for (size_t i = 0; i < vehicles.size(); i++) {
         Chunk& c = place(kVehicleSnapshotBytes);
         if (c.v1 == c.v0)
@@ -2520,6 +2538,8 @@ static void host_tick(double now)
                 w.u32(game::noun_id(bl));
                 w.f32(bp.x); w.f32(bp.y); w.f32(bp.z);
                 w.u8(F<int>(bl, kBuildingState) == 2 ? 1 : 0);
+                w.f32(F<float>(bl,kBuildingCombat+0x38));
+                w.f32(g_building_health.count(bl) ? F<float>(bl,kBuildingCombat+0x2C) : 0.f);
             }
         }
         w.u8((uint8_t)(c.v1 - c.v0));
@@ -2839,8 +2859,13 @@ static bool g_ruin_repair_fix = true;
 COOP_FIX("civ.ruin_repair", "BUG-0324", g_ruin_repair_fix,
          "civ: a guest replaces a ruin the host has whole again with the host's building");
 static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ, g_ruins_in;
-static void reconcile_buildings(void* city, size_t n,
-                                const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
+struct BuildingState {
+    uint32_t noun;
+    net::Vec3 position;
+    bool ruin;
+    float hp, scaled_max;
+};
+static void reconcile_buildings(void* city, const std::vector<BuildingState>& buildings)
 {
     if (defer_planner_mutation(city)) return;
     auto local = vec_of((uint8_t*)city + kCityBuildings);
@@ -2848,11 +2873,11 @@ static void reconcile_buildings(void* city, size_t n,
     std::vector<size_t> missing;
     std::vector<void*> ruin_now;
     int ruins = 0;
-    for (size_t i = 0; i < n; i++) {
-        uint32_t noun;
-        net::Vec3 p;
-        bool ruin;
-        host_b(i, noun, p, ruin);
+    for (size_t i = 0; i < buildings.size(); i++) {
+        const auto& b = buildings[i];
+        const auto noun = b.noun;
+        const auto& p = b.position;
+        const bool ruin = b.ruin;
         bool found = false;
         for (size_t k = 0; k < local.size() && !found; k++) {
             net::Vec3 lp;
@@ -2866,6 +2891,8 @@ static void reconcile_buildings(void* city, size_t n,
             used[k] = found = true;
             if (ruin && F<int>(local[k], kBuildingState) != 2)
                 ruin_now.push_back(local[k]);
+            else if (!ruin)
+                apply_mirror_health(g_building_health,local[k],kBuildingCombat,pol_of(city),b.hp,b.scaled_max);
             ruins += ruin != (F<int>(local[k], kBuildingState) == 2);
         }
         if (!found)
@@ -2896,16 +2923,17 @@ static void reconcile_buildings(void* city, size_t n,
     seen = 0;
     g_applying = true;
     for (void* b : extra) {
+        g_building_health.erase(b);
         thiscall<void>(a_DestroyBuilding, city, b);
         g_bfix_removed++;
     }
     for (size_t i : missing) {
-        uint32_t noun;
-        net::Vec3 p;
-        bool ruin;
-        host_b(i, noun, p, ruin);
-        if (build_in_city(city, noun, p, false))
+        const auto& b = buildings[i];
+        if (void* added = build_in_city(city, b.noun, b.position, false)) {
+            if (!b.ruin)
+                apply_mirror_health(g_building_health,added,kBuildingCombat,pol_of(city),b.hp,b.scaled_max);
             g_bfix_added++;
+        }
     }
     g_applying = false;
 }
@@ -3052,7 +3080,7 @@ static bool guest_cities(net::Reader& r) // false: the list does not fit the mes
     return true;
 }
 
-static void guest_nodes_and_buildings(net::Reader& r)
+static bool guest_nodes_and_buildings(net::Reader& r)
 {
     uint8_t nn = r.u8(); // spice node owners (a guest's derricks appear where the host's vehicles claimed)
     for (int i = 0; i < nn && r.ok(); i++) {
@@ -3060,7 +3088,7 @@ static void guest_nodes_and_buildings(net::Reader& r)
         p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
         uint32_t pol = r.u32();
         if (!r.ok())
-            return;
+            return false;
         void* node = game::find_object(kNodeNoun, p, 5.f);
         if (!node || pol_of(node) == pol)
             continue;
@@ -3074,23 +3102,23 @@ static void guest_nodes_and_buildings(net::Reader& r)
     }
     uint8_t ci = r.u8();
     if (!r.ok() || ci == 0xFF)
-        return;
-    struct HB {
-        uint32_t noun;
-        net::Vec3 p;
-        bool ruin;
-    };
-    std::vector<HB> hb(r.u8());
+        return r.ok();
+    const auto count = r.u8();
+    if (!r.ok() || count > 32 || r.left() < size_t(count)*25) return false;
+    std::vector<BuildingState> hb(count);
     for (auto& b : hb) {
         b.noun = r.u32();
-        b.p.x = r.f32(); b.p.y = r.f32(); b.p.z = r.f32();
+        b.position.x = r.f32(); b.position.y = r.f32(); b.position.z = r.f32();
         b.ruin = r.u8() != 0;
+        b.hp = r.f32(); b.scaled_max = r.f32();
+        if (!type_for_noun(b.noun) || !std::isfinite(b.position.x) || !std::isfinite(b.position.y) ||
+            !std::isfinite(b.position.z) || !std::isfinite(b.hp) || !std::isfinite(b.scaled_max) ||
+            b.scaled_max < 0 || (!b.ruin && b.hp < 0)) return false;
     }
     void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
     if (r.ok() && city)
-        reconcile_buildings(city, hb.size(), [&](size_t i, uint32_t& noun, net::Vec3& p, bool& ruin) {
-            noun = hb[i].noun; p = hb[i].p; ruin = hb[i].ruin;
-        });
+        reconcile_buildings(city, hb);
+    return r.ok();
 }
 
 // BUG-0469: the design key a mirror vehicle of that purpose and locomotion is built with, and the
@@ -3157,7 +3185,7 @@ static void guest_state(net::Reader& r)
     }
     if (!guest_cities(r))
         return;
-    guest_nodes_and_buildings(r);
+    if (!guest_nodes_and_buildings(r)) return;
     double now = H->time_seconds();
     uint8_t n = r.u8();
     // Duo 13 always includes the sender clock. Older snapshots omitted max HP
@@ -3483,6 +3511,7 @@ void on_world_change()
     g_progress_queued = false;
     g_progress_poll = g_campaign_share_at = 0;
     g_turret_health.clear();
+    g_building_health.clear();
     g_vehicle_health.clear(); // Old world objects have already been freed.
     g_world_resets++;
     caption_disarm();
