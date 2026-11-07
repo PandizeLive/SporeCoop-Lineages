@@ -569,3 +569,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9087](BUG-9087-multistage-catchup-history-stale.md) | not-reproduced | bug | Space | 2026-11-07 |  | Tribal returner loads Civilization but History still offers Enter Civilization |
 | [BUG-9088](BUG-9088-first-use-civ-capture-tutorial-driver.md) | not-reproduced | bug | Civilization | 2026-11-07 |  | First-use capture regression leaves Communications Panel tutorial unanswered |
 | [BUG-9089](BUG-9089-adventure-shared-mission.md) | open | bug | Adventure | 2026-11-07 |  | Adventures only share a single move-to objective and partner markers |
+| [BUG-9090](BUG-9090-reject-old-tribal-civilization-snapshots.md) | fixed | bug | Tribe Civilization | 2026-11-07 | unreleased | Reject late Tribal and Civilization snapshots |
+| [BUG-9091](BUG-9091-leave-moving-chiefs-alone-at-arrival.md) | fixed | bug | Tribe | 2026-11-07 | unreleased | Arrival placement must leave moved chiefs alone |
+| [BUG-9092](BUG-9092-separate-dna-budget-and-earned-progress.md) | fixed | bug | Creature | 2026-11-07 | unreleased | DNA spending incorrectly removes partner earned progress |

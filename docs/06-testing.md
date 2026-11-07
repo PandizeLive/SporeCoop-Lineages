@@ -4029,3 +4029,9 @@ launch resolved it. This failure is separate from the tested DLL. Git Bash build
 need an unsandboxed process on this Windows setup; use -j2 for the background
 resource budget. The DLL, fix registry, RE/docs checks and focused units are the
 local gates; the Linux/Wine lab smoke and sanitizer suite were not run.
+
+Both test games returned to the galaxy menu with zero recorded native faults.
+Native exit-menu automation was blocked by registration/menu handling; the
+QA console quit command deliberately ended both processes with exit code 0.
+This qualifies return-to-menu and pre-exit fault checks, not graceful native
+shutdown. No test game remains running.
