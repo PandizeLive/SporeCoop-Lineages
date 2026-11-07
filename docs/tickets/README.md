@@ -556,4 +556,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9074](BUG-9074-captured-city-part-owners.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | A guest founder captures a rival city but its parts retain the rival on the guest |
 | [BUG-9075](BUG-9075-captured-city-held-by-planner.md) | fixed | desync | Civilization | 2026-11-06 | unreleased | Incoming capture mutates the city held by the guest planner |
 | [BUG-9076](BUG-9076-civilization-building-combat-scaling.md) | fixed | bug | Civilization | 2026-11-06 | unreleased | Destructible city buildings miss reserved-founder health and incoming damage scaling |
-| [BUG-9077](BUG-9077-city-takeover-resistance.md) | open | feature | Civilization | 2026-11-06 |  | Reserved-founder city takeover resistance across all three routes |
+| [BUG-9077](BUG-9077-city-takeover-resistance.md) | fixed | feature | Civilization | 2026-11-06 | unreleased | Reserved-founder city takeover resistance across all three routes |

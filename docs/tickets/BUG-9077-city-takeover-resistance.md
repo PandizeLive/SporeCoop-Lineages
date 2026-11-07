@@ -1,16 +1,16 @@
 ---
 id: BUG-9077
 title: Reserved-founder city takeover resistance across all three routes
-status: open
+status: fixed
 kind: feature
 stage: Civilization
 reported: 2026-11-06
 source: Approved five percent per extra reserved founder
 role: host guest
 versions: duo20-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ-combat
-commits:
+commits: 3ad8b6de
 tests: tools/tests/duo_civ_takeover.py
 signature: Military religious and economic takeover effort lacks reserved-seat resistance
 docs: docs/re/civ.md
