@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Initialize missing native city preaching capacity for remote religious
+  battles without moving the host camera or spawning visual crowds (BUG-9086).
+
+- Use Lineages for new build labels. Synchronize native religious follower
+  counts and conversion meters, including reconnect (BUG-9084). Give Civilization
+  economy its own message ID so it cannot intercept Tribal combat (BUG-9085).
+
 - Let guests negotiate economic city purchases as their own founder. The host
   validates and settles payment/capture once; refused offers reset shared
   trade eligibility without charging (BUG-9082).

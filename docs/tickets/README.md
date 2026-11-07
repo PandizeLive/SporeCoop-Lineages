@@ -563,3 +563,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9081](BUG-9081-civ-economic-state-not-replicated.md) | fixed | desync | Civilization | 2026-11-07 | 0.7.3.6-duo23-dev | Guest does not receive native trade routes or economic purchase progress |
 | [BUG-9082](BUG-9082-guest-native-city-purchase.md) | fixed | bug | Civilization | 2026-11-07 | 0.7.3.6-duo23-dev | Guest native Buy City interaction does not complete |
 | [BUG-9083](BUG-9083-packed-steam-symbol-hot-reload.md) | open | bug | Framework | 2026-11-07 |  | Symbol hot reload drops the packed Steam executable's database |
+| [BUG-9084](BUG-9084-guest-religious-conversion-meter.md) | fixed | desync | Civilization | 2026-11-07 | 0.7.3.6-lineages24-dev | Guest native religious conversion meter stays at zero |
+| [BUG-9085](BUG-9085-economic-tribal-message-id-collision.md) | fixed | desync | Tribal | 2026-11-07 | 0.7.3.6-lineages24-dev | Civilization economy and Tribal combat share a wire message ID |
+| [BUG-9086](BUG-9086-remote-city-preaching-uninitialized.md) | fixed | bug | Civilization | 2026-11-07 | 0.7.3.6-lineages25-dev | Guest preaching stalls at cities the host has not viewed |

@@ -3877,3 +3877,38 @@ For packed Steam 3010a413, the documented sym.reload development loop loses
 the selected database (BUG-9083). A subsequent mod.reload cannot initialize.
 Core quit still works. Cold-launch the same saved checkpoint when symbols
 change; do not replay the stage or bypass executable verification.
+
+## Lineages religious checkpoints (2026-11-07)
+<a id="testing-lineages-religious-checkpoints"></a>
+
+`tools/tests/lineages_civ_religious_state.py --host 4 --guest 5 --cycle`
+compares the game's follower maps, converter and meter on isolated Clyth
+profiles. It adds bounded native conversion as explicit setup, checks live
+updates and removes an intentionally stale guest entry. `--rejoin-port 47810`
+also verifies a new guest save slot and preserved founders. This is state
+replication evidence, not native preaching or a full stage playthrough.
+
+`tools/tests/lineages_civ_religious_controls.py --host 4 --guest 5` prepares
+a partial conversion and a native religious design, removes fixture defenses,
+then uses the guest's actual city command. Only native AI may finish the
+conversion. It fails if the vehicle dies and never reads its stale pointer.
+Add `--cold-city` for BUG-9086: all four native capacities must initially
+be zero, the host camera must stay stationary during preaching, and the
+active slot must acquire the native visible-city baseline of 10/2. Toggle
+`coop.fix civ.remote_preaching off` on the host for the failing control.
+This fixture removes defenders and seeds near-majority followers; it proves
+remote native conversion/capture, not unattended siege balance.
+These Windows checkpoint scripts require the isolated profiles and are not
+silently added to the Linux baseline fixture suite.
+
+`tools/tests/protocol_ids_selftest.py` is platform independent and registered
+in smoke. It catches duplicate IDs such as BUG-9085. The native network test's
+`--civ-economy` subset covers both economy and religious packet validation:
+truncation, duplicate factions, invalid counts/coordinates and packet budget.
+
+The saved DuoQAFourWarriorsB Tribal fixture retains its historical 25% HP /
+10% damage settings. Run `duo_tribal_reserved_combat.py --host 4 --guest 5
+--health-per-founder 25 --damage-per-founder 10` against its isolated clone.
+New fixtures default to the approved 15% / 5%. The test checks the guest's
+native rival maximum HP and the founder victim's current HP after a native
+hit. Saved rules must not be silently changed just to match current defaults.

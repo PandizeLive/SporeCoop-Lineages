@@ -594,9 +594,16 @@ Simulator::cCivilization::FinishBuyCity=0x00BF0600 ; verified active build: this
 Simulator::cCity::AddTradeRoute=0x00BE1490 ; verified BUG-9081 live code: thiscall(city, partnerCity, int type), ret 8 at BE196A; creates partner-pol map entry +570, appends both +55C vectors (stride C), type 0 creates native ground route.
 Simulator::cCity::RemoveTradeRoute=0x00BDFA70 ; verified BUG-9081 live code: thiscall(city, partnerCity), ret 4 at BDFB2B; matches +55C entries by partner pointer, destroys route object and erases one city's entry. Remove both endpoint entries separately.
 SporeCoop::CityTradeMap_Index=0x00BE08E0 ; verified BUG-9081 live body/callers BE14E9 and BE93E0: thiscall(city+570 map<int,float>, const uint32* key), ret 4; creates missing node with zero value, returns node+14 float*.
+SporeCoop::CityFollowersMap_Index=0x00643A00 ; verified BUG-9084 live body and ConvertCitizens BEB235/BEB2A1 callers: thiscall(city+5A0 map<uint32,int>, const uint32* key), ret 4 at 643A6E/643A7A; unsigned jb/jae comparison, inserts zero value, returns node+14 int*.
 SporeCoop::FloatMap_EraseIterator=0x008DB190 ; verified BUG-9081 live body and D05F27 caller: thiscall(flat scalar map*, void** resultIterator, void* nodeIterator), ret 8; decrements map+14 size, advances/rebalances, frees scalar node, writes next node to result. No value destructor. Compatible int/uint float node layout.
 Simulator::cCity::CanBuyCity=0x00BD8110 ; verified BUG-9082 live body: bool thiscall(city,uint32 buyer), ret 4 at BD8144; requires different owner, +75C matching buyer and +758 at least 100.
 Simulator::cCity::GetBuyPrice=0x00BE93A0 ; verified BUG-9082 live body: float ST0 thiscall(city,uint32 buyer), ret 4 at BE9419/BE9426; missing +570 key returns -1. Caller CF361F pops ST0.
 SporeCoop::CityBuy_Eligibility_Ret=0x00CF35F6 ; verified BUG-9082 live native Buy City command calls CanBuyCity at CF35F1 then tests AL; argument is native player political ID.
 SporeCoop::CityBuy_Price_Ret=0x00CF3624 ; verified BUG-9082 live native Buy City command calls GetBuyPrice at CF361F, fstp at CF362F passes float to BuyCity at CF3643.
 SporeCoop::CityBuy_FairOfferTolerance=0x013F1EF4 ; verified BUG-9082 CFFCC9 subtracts this float (120) from quoted price before fair-offer acceptance; native overpayment also accepts, lower offers refuse. Live value and relocated operand verified.
+
+SporeCoop::City_PreachTick=0x00BEB310 ; verified BUG-9086 live body ret 8 at BEB708; sole caller BEB7EA passes slot index then integer active-preacher count. thiscall(city, int slot, int preachers); native conversion and retaliation.
+SporeCoop::City_SetPreachingCapacity=0x00BD9FF0 ; verified BUG-9086 body ret 12, bounds slot 0..3, writes slot+0/+4 only; sole caller D57D16 passes counts from two cCommunityLayout vectors. thiscall(city, int slot, int inner, int outer).
+SporeCoop::City_PreachingRadius=0x01486054 ; verified BUG-9086 float 7, D57C9E uses for inner cCommunityLayout radius; AFDF60 truncates radius squared / spacing squared * 0.5 for slot count.
+SporeCoop::City_PreachingOuterRadius=0x013EB950 ; verified BUG-9086 float 3, D57BE5 uses for outer cCommunityLayout radius.
+SporeCoop::City_PreachingSpacing=0x013EED94 ; verified BUG-9086 float 1.5, D57C4B/D57CCA pass to AFDF60 to generate crowd slots.

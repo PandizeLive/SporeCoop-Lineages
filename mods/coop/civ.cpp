@@ -1,6 +1,7 @@
 #include "civ.h"
 #include "census.h"
 #include "civ_economy.h"
+#include "civ_influence.h"
 
 #include <algorithm>
 #include <array>
@@ -72,7 +73,8 @@ static uintptr_t a_GetAllCivs, a_GetAllCities, a_GetAllVehicles, a_CivByPol, a_P
     a_SetBuildingModel, a_SnapToSlot, a_ChangeOwner, a_Capture, a_SetOrder, a_SetMoveOrder, a_OrderStamp, a_Die,
     a_SetSelected, a_PushEvent, a_BTTick, a_CreateInstance, a_UIMessage, a_CreateBuilding,
     a_NodeClaim, a_NodeUnclaim, a_SetCapture, a_SpawnNextCity, a_ExpansionGet, a_CinematicMgr, a_DestroyBuilding,
-    a_CombatantDamage, a_AddMoney, a_AddTradeRoute, a_RemoveTradeRoute, a_TradeMapIndex, a_FloatMapErase;
+    a_CombatantDamage, a_AddMoney, a_AddTradeRoute, a_RemoveTradeRoute, a_TradeMapIndex, a_FloatMapErase,
+    a_FollowersMapIndex;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -1447,6 +1449,45 @@ static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t o
     o_AddCapture(ctx, city, meter, owner, dmg, att, f);
 }
 
+// The native crowd controller initializes only the camera's current city. Remote
+// preaching still runs, but zero crowd capacities prevent any conversion (BUG-9086).
+// Match cCommunityLayout's count calculation without creating visual citizens or
+// touching the controller shared by the host's currently viewed city.
+static bool g_remote_preaching = true;
+COOP_FIX("civ.remote_preaching", "BUG-9086", g_remote_preaching,
+         "civ: initialize native preaching capacity independently of the host camera");
+static uintptr_t a_SetPreachingCapacity, a_PreachingRadius, a_PreachingOuterRadius, a_PreachingSpacing;
+using PreachTick = void(SK_THISCALL*)(void*, int, int);
+static PreachTick o_PreachTick;
+static int preaching_capacity(uintptr_t radius_address)
+{
+    const float radius = *reinterpret_cast<const float*>(radius_address);
+    const float spacing = *reinterpret_cast<const float*>(a_PreachingSpacing);
+    if (!std::isfinite(radius) || !std::isfinite(spacing) || radius <= 0 || spacing <= 0) return 0;
+    // AFDF60: truncate half the ratio of the two circular areas. No terrain
+    // filtering changes the count; terrain only projects the resulting positions.
+    const float count = (radius * radius) / (spacing * spacing) * .5f;
+    return std::isfinite(count) && count >= 1 && count <= 128 ? int(count) : 0;
+}
+static void SK_THISCALL h_PreachTick(void* city, int slot, int preachers)
+{
+    if (g_remote_preaching && active() && is_host() && city && slot >= 0 && slot < 4 &&
+        a_SetPreachingCapacity && a_PreachingRadius && a_PreachingOuterRadius && a_PreachingSpacing) {
+        const uintptr_t begin = F<uintptr_t>(city, 0x618), end = F<uintptr_t>(city, 0x61C);
+        if (begin && end >= begin && end - begin == 4 * 0x80) {
+            void* entry = reinterpret_cast<void*>(begin + slot * 0x80);
+            // Never reset active counters or override a crowd already initialized
+            // by the native controller (including another mod's nonzero values).
+            if (F<int>(entry, 0) == 0 && F<int>(entry, 4) == 0 && F<void*>(entry, 0x78)) {
+                const int inner = preaching_capacity(a_PreachingRadius);
+                const int outer = preaching_capacity(a_PreachingOuterRadius);
+                if (inner && outer) thiscall<void>(a_SetPreachingCapacity, city, slot, inner, outer);
+            }
+        }
+    }
+    o_PreachTick(city, slot, preachers);
+}
+
 // religious conversion: a religious governor's preachers near the city convert faster, and even
 // more while another player's army besieges it
 using Convert_t = void(SK_THISCALL*)(void*, uint32_t, int);
@@ -1675,6 +1716,11 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_AddTradeRoute = H->sym("Simulator::cCity::AddTradeRoute");
     a_RemoveTradeRoute = H->sym("Simulator::cCity::RemoveTradeRoute");
     a_TradeMapIndex = H->sym("SporeCoop::CityTradeMap_Index");
+    a_FollowersMapIndex = H->sym("SporeCoop::CityFollowersMap_Index");
+    a_SetPreachingCapacity = H->sym("SporeCoop::City_SetPreachingCapacity");
+    a_PreachingRadius = H->sym("SporeCoop::City_PreachingRadius");
+    a_PreachingOuterRadius = H->sym("SporeCoop::City_PreachingOuterRadius");
+    a_PreachingSpacing = H->sym("SporeCoop::City_PreachingSpacing");
     a_FloatMapErase = H->sym("SporeCoop::FloatMap_EraseIterator");
     struct {
         uintptr_t* a;
@@ -1838,6 +1884,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {"Simulator::cCityHall::TakeDamage", (void*)h_HallTakeDamage, (void**)&o_HallTakeDamage},
         {"Simulator::cCity::AddCaptureDamage", (void*)h_AddCapture, (void**)&o_AddCapture},
         {"Simulator::cCity::ConvertCitizens", (void*)h_Convert, (void**)&o_Convert},
+        {"SporeCoop::City_PreachTick", (void*)h_PreachTick, (void**)&o_PreachTick},
         {"Simulator::cCity::AddBuyProgress", (void*)h_BuyProgress, (void**)&o_BuyProgress},
         {"Simulator::cCity::OnAttacked", (void*)h_OnAttacked, (void**)&o_OnAttacked},
         {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW, (void**)&o_FireSW},
@@ -2690,6 +2737,93 @@ static void receive_economic_state(net::Reader& r)
     },pending.release());
 }
 
+static bool g_religious_state = true;
+COOP_FIX("civ.religious_state", "BUG-9084", g_religious_state,
+         "civ: guests receive native religious followers and conversion progress");
+static uint32_t g_religious_sequence;
+static std::map<uint8_t,std::pair<uint32_t,uint32_t>> g_religious_seen;
+
+static bool native_followers(void* city,std::vector<std::pair<void*,ReligiousFollowers>>& entries)
+{
+    std::vector<void*> stack;
+    if (void* root=F<void*>(city,0x5AC)) stack.push_back(root);
+    std::unordered_set<void*> seen;
+    while (!stack.empty()) {
+        void* node=stack.back(); stack.pop_back();
+        if (entries.size()>=ReligiousState::max_factions || !seen.insert(node).second) return false;
+        ReligiousFollowers entry{F<uint32_t>(node,0x10),F<int32_t>(node,0x14)};
+        if (!entry.faction || entry.count<0) return false;
+        entries.push_back({node,entry});
+        for (int off:{0,4}) if (void* child=F<void*>(node,off)) stack.push_back(child);
+    }
+    return entries.size()==F<uint32_t>(city,0x5B4);
+}
+
+static void send_religious_state(size_t ci)
+{
+    if (!g_religious_state || !a_FollowersMapIndex || !a_FloatMapErase || ci>=250 ||
+        C.sess->players().size()<2) return;
+    void* city=g_host_cities[ci];
+    if (planner_holds_city(city)) return;
+    std::vector<std::pair<void*,ReligiousFollowers>> entries;
+    if (!native_followers(city,entries)) return;
+    ReligiousState state;
+    state.world=modes::current_world(); state.sequence=++g_religious_sequence;
+    state.city=economic_city(ci,city);
+    state.progress=F<float>(city,0x750); state.converter=F<uint32_t>(city,0x754);
+    for (auto entry:entries) state.followers.push_back(entry.second);
+    net::Writer w; state.write(w);
+    // The bounded maximum (1058 bytes) fits one datagram, refreshed every city cycle.
+    for (const auto& player:C.sess->players()) if (player.id)
+        C.sess->send_unreliable_to(player.id,net::MSG_CIV_INFLUENCE,w);
+}
+
+static void apply_religious_state(const ReligiousState& state)
+{
+    if (!active() || !is_guest() || local_play() || !g_religious_state || g_health_save_depth ||
+        world::load_queued() || world::save_busy() || state.world!=modes::current_world() ||
+        state.city.index>=g_host_cities.size()) return;
+    const auto live=all_cities();
+    void* city=g_host_cities[state.city.index];
+    if (!city || std::find(live.begin(),live.end(),city)==live.end() ||
+        pol_of(city)!=state.city.faction || !(net::dist(city_pos(city),state.city.position)<5.f) ||
+        defer_planner_mutation(city)) return;
+    const auto serial=game::object_serial(city);
+    auto& seen=g_religious_seen[state.city.index];
+    if (seen.first==serial && int32_t(state.sequence-seen.second)<=0) return;
+    std::vector<std::pair<void*,ReligiousFollowers>> entries;
+    if (!native_followers(city,entries)) return;
+    // Native scalar-node erase has no value destructor. Indexing must use the
+    // unsigned-key follower map, not the signed-key economic map.
+    for (auto entry:entries) {
+        if (std::none_of(state.followers.begin(),state.followers.end(),[&](auto wanted){return wanted.faction==entry.second.faction;})) {
+            void* next=nullptr;
+            thiscall<void*>(a_FloatMapErase,static_cast<uint8_t*>(city)+0x5A0,&next,entry.first);
+        }
+    }
+    for (auto entry:state.followers) {
+        int32_t* value=thiscall<int32_t*>(a_FollowersMapIndex,static_cast<uint8_t*>(city)+0x5A0,&entry.faction);
+        if (!value) return;
+        *value=entry.count;
+    }
+    F<float>(city,0x750)=state.progress;
+    F<uint32_t>(city,0x754)=state.converter;
+    seen={serial,state.sequence};
+}
+
+static void receive_religious_state(net::Reader& r)
+{
+    if (!g_religious_state || !a_FollowersMapIndex || !a_FloatMapErase) return;
+    struct Pending { ReligiousState state; uint64_t epoch; };
+    auto pending=std::make_unique<Pending>();
+    if (!pending->state.read(r)) return;
+    pending->epoch=g_founder_epoch;
+    H->run_outside_frame([](void* raw){
+        std::unique_ptr<Pending> job(static_cast<Pending*>(raw));
+        if (job->epoch==g_founder_epoch) apply_religious_state(job->state);
+    },pending.release());
+}
+
 static void host_tick(double now)
 {
     if (g_health_save_depth) return; // Never broadcast the temporary native save values.
@@ -2781,7 +2915,7 @@ static void host_tick(double now)
     // what the incremental messages missed (a capture clears the ruins, ...)
     size_t bci = g_host_cities.empty() ? 0xFF : g_cycle % g_host_cities.size();
     std::vector<void*> blds;
-    if (bci != 0xFF) { send_turret_health(bci); send_economic_state(bci); }
+    if (bci != 0xFF) { send_turret_health(bci); send_economic_state(bci); send_religious_state(bci); }
     if (bci != 0xFF)
         for (void* bl : vec_of((uint8_t*)g_host_cities[bci] + kCityBuildings))
             if (type_for_noun(game::noun_id(bl)) && blds.size() < 32)
@@ -3777,6 +3911,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         receive_turret_health(r);
     else if (type == net::MSG_CIV_ECONOMY && is_guest() && from == 0)
         receive_economic_state(r);
+    else if (type == net::MSG_CIV_INFLUENCE && is_guest() && from == 0)
+        receive_religious_state(r);
     else if (type == net::MSG_CIV_CMD && is_host())
         host_command(from, r);
     else if (type == net::MSG_CIV_CMD && is_guest() && from == 0 && r.u8() == CMD_WALL_ACK) {
@@ -3817,6 +3953,7 @@ static void clear_coop_tables(bool restore_speed)
 void on_session_end()
 {
     g_economic_seen.clear();
+    g_religious_seen.clear();
     clear_enemy_health();
     g_hud_samples = 0;
     ++g_founder_epoch;
@@ -3861,6 +3998,7 @@ void on_world_change()
         return;
     g_economic_seen.clear();
     g_hud_samples = 0;
+    g_religious_seen.clear();
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;

@@ -13,11 +13,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host',type=int,required=True)
     parser.add_argument('--guest',type=int,required=True)
+    parser.add_argument('--health-per-founder',type=float,default=15)
+    parser.add_argument('--damage-per-founder',type=float,default=5)
     args = parser.parse_args()
     h,g = Console(args.host),Console(args.guest)
     for c in (h,g):
         assert 'duoqa' in command(c,'coop.savedb').lower() and 'Tribe' in command(c,'game.mode')
     assert 'Reserved founders: 4' in command(h,'coop.status')
+    health_factor=1+3*args.health_per_founder/100
+    expected_damage=4*(1+3*args.damage_per_founder/100)
     def stats(peer,idx):
         out = command(peer,f'coop.tribe combat_hp {idx}')
         m = re.search(r'hp=([\d.]+) max=([\d.]+) faction=([A-F0-9]+) founder=(\d) native=([\d.]+)',out)
@@ -44,16 +48,20 @@ def main():
         if base[2] in attempted: continue
         attempted.add(base[2])
         old = stats(h,victim_id)
+        wait_until(lambda:stats(g,victim_id) and abs(stats(g,victim_id)[0]-old[0])<.1,
+                   'Guest initial native victim HP differs',15)
         outcome = command(h,f'coop.tribe pincer {victim_id} {idx} 4')
         native_hit = re.search(r'hp ([\d.]+) -> ([\d.]+)',outcome)
         hit = stats(h,victim_id)
         actual = stats(h,idx)
-        if abs(actual[1]-base[4]*1.75) < .02:
+        if abs(actual[1]-base[4]*health_factor) < .02:
             loss = float(native_hit[1])-float(native_hit[2])
-            assert abs(loss-5.2)<.05, ('Unexpected native damage',old,hit,outcome)
+            assert abs(loss-expected_damage)<.05, ('Unexpected native damage',old,hit,outcome)
             assert abs(old[1]-hit[1])<.01, 'Founder HP was buffed'
             wait_until(lambda:stats(g,idx) and abs(stats(g,idx)[1]-actual[1])<.02,
                        'Guest did not receive the warrior max HP',15)
+            wait_until(lambda:stats(g,victim_id) and abs(stats(g,victim_id)[0]-hit[0])<.1,
+                       'Guest did not receive the damaged native victim HP',15)
             matched = (idx,loss,base[4],actual[1]);break
     assert matched, 'No non-allied rival entered combat'
     assert all('total faults: 0' in command(c,'exc') for c in (h,g))

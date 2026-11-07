@@ -1498,3 +1498,69 @@ Oops., which calls FinishBuyCity(false) and clears eligibility. Both behaviors
 were exercised through the guest dialogue: bug9082-purchase-k3.log and
 bug9082-purchase-l2.log. The latter also verifies captured city parts and
 single team history credit after reconnect into a new native save slot.
+
+## Religious state replication (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-religious-state-replication"></a>
+
+BUG-9084: host native follower counts at city+5A0 and converter at +754 were
+absent on the guest. In bug9084-before.log the host had three guest followers
+and convert=6.666667, while the guest had none and convert=0. Writing only
+the meter cannot repair this because the native city update recomputes it.
+
+CityFollowersMap_Index 643A00 is thiscall(map, const uint32* key), ret 4.
+Live disassembly of ConvertCitizens BEB235 and BEB2A1 calls and the complete
+index function verifies unsigned jb/jae comparisons and a node+14 int return.
+Do not reuse the economic BE08E0 index: its keys compare as signed integers.
+FloatMap_EraseIterator 8DB190 operates on the same scalar node layout with no
+value destructor: map+14 count, map+4 anchor, output iterator pointer and
+node iterator value, ret 8. Religious entries are integer values, not floats.
+
+The bounded influence packet carries world, sequence, city index/faction/
+position, progress, converter and up to 128 native follower entries. Its
+maximum 1058-byte payload fits one datagram. Apply outside the frame only
+after session epoch, world, live city identity and planner/save guards pass.
+Do not replay ConvertCitizens on the guest: capture, history and diplomacy
+remain host-authoritative. The transient +5BC/+5D8 delta maps are not replayed.
+
+BUG-9085: economy originally used ID 64, colliding with Tribal combat and
+intercepting its dispatch. Assign economy 68 and influence 69. The registry
+test checks every declared message ID for uniqueness. Keep Tribal combat
+explicitly in the world gate after removing the accidental alias.
+
+The preliminary religious-control fixture reused military vehicle art for a
+religious-purpose vehicle. That is adequate for attribution tests, but does
+not qualify the native preaching AI. The control test now requests the actual
+religious design. Earlier unit deaths or cached paths are test limitations,
+not evidence that religious city capture is broken.
+
+## Camera-independent native preaching (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-remote-preaching"></a>
+
+BUG-9086: a cold rival city's four 128-byte preaching slots (city+618/+61C)
+have zero capacities at +0/+4 until the host camera visits. The native
+preacher attaches and suffers retaliation from BEB6F8, but cannot convert.
+Moving only the host camera initializes capacities to 10/2 and the same
+native AI captures the city. CORRECTION (2026-11-07): the earlier tentative
+explanation that more preachers were needed is superseded by BUG-9086 and
+lineages-religion-n5-controls.log.
+
+D57B00 updates the city crowd controller's formations; controller+AF0 holds
+the city. Its callers are D616DF (city binding) and D61A55 (refresh). The
+manager at AC8C80 has a single controller at +A4, conditional on that city.
+Do not repeatedly bind it to remote cities: it owns the current visual crowd.
+
+The two formations use cCommunityLayout::SetParameters AF9C70, ret 16,
+and AFDF60, ret 4, with float spacing 1.5 (13EED94). Inner radius is 7
+(1486054), outer radius 3 (13EB950). AFDF60 computes trunc(radius squared
+/ spacing squared * 0.5); its loop appends exactly that many 24-byte slots.
+Terrain projects positions without rejecting entries. D57D16 passes both
+vector lengths to BD9FF0, thiscall(city, slot, innerCount, outerCount), ret 12.
+That setter changes only slot+0/+4, not timers or active conversion counters.
+
+BEB310 is thiscall(city, int slot, int activePreachers), ret 8 at BEB708.
+Its sole caller BEB7EA passes the slot and the integer count of active
+preaching slot objects. It is not a delta-time argument. The hook only
+initializes both-zero capacities with a valid native slot spatial object
+at +78, on the authoritative connected Civilization host. Existing nonzero
+capacities are retained. It then runs the original native logic unchanged.
+No controller, rendered crowd, camera or persistent raw pointer is created.

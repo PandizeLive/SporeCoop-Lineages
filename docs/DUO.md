@@ -1,6 +1,11 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo23-dev. Use the same build on every
+The current development build is 0.7.3.6-lineages25-dev. New builds use the
+Lineages name; historical Duo filenames remain for traceability. This build
+synchronizes native religious followers and fixes a network message collision
+between Civilization economy and Tribal combat. It also initializes missing
+native preaching capacity when the host has not viewed the target city.
+Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -75,7 +80,7 @@ bp1content folder into the Galactic Adventures folder. https://launcherkit.spore
 
 ## Play with a friend
 
-Use the same Duo build, content and gameplay mods on both machines. Start with only
+Use the same Lineages build, content and gameplay mods on both machines. Start with only
 Galactic Adventures and the matching Creepy & Cute configuration. In the galaxy menu
 choose Co-op (or press F9). One player selects Host. The other selects Join and enters
 the host's virtual LAN address. The host then loads the disposable save.

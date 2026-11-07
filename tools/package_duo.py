@@ -1,4 +1,4 @@
-"""Package a Windows Duo build for private testing. Pass the pinned toolchain's llvm-strip."""
+"""Package a Windows Lineages build for private testing. Pass the pinned toolchain's llvm-strip."""
 import argparse
 from pathlib import Path
 import shutil

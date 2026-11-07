@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-duo23-dev"
+#define COOP_VERSION "0.7.3.6-lineages25-dev"
 #endif
 
 #include <winsock2.h>
@@ -863,12 +863,12 @@ bool host_absent_for(Absent who)
 // shared.cpp instead: res.elsewhere)
 static bool world_state_msg(uint8_t type)
 {
-    if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS || type == net::MSG_CIV_ECONOMY))
+    if (g_world_gate_fix && (type == net::MSG_CIV_STATE || type == net::MSG_CIV_BUILD || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS || type == net::MSG_CIV_ECONOMY || type == net::MSG_CIV_INFLUENCE))
         return true;
     return type == net::MSG_DNA || type == net::MSG_WORLD_TIME ||
            (type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
            type == net::MSG_CELL_COMBAT || type == net::MSG_CELL_BITTEN || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD || type == net::MSG_TRIBE_BUILDINGS ||
-           type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE ||
+           type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE || type == net::MSG_TRIBE_COMBAT ||
            type == net::MSG_SPECIES || type == net::MSG_SOCIAL || type == net::MSG_NEST || type == net::MSG_PARTS;
 }
 
@@ -3561,7 +3561,7 @@ void setup_callbacks()
             squadron::on_message(type, from, r);
             return;
         }
-        if ((type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS || type == net::MSG_CIV_ECONOMY) {
+        if ((type >= net::MSG_CIV_STATE && type <= net::MSG_CIV_BUILD) || type == net::MSG_CIV_ALARM || type == net::MSG_CIV_TURRETS || type == net::MSG_CIV_ECONOMY || type == net::MSG_CIV_INFLUENCE) {
             civ::on_message(type, from, r);
             return;
         }

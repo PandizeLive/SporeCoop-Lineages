@@ -33,6 +33,7 @@
 #include "net/session.h"
 #include "net/ipmask.h"
 #include "civ_economy.h"
+#include "civ_influence.h"
 #include <limits>
 
 using namespace net;
@@ -80,6 +81,39 @@ static void test_civ_economic_packet()
     state.city.index=0; state.routes.push_back({state.city,0}); invalid();
     state.routes[0].partner.index=1; state.routes[0].kind=3; invalid();
     state.routes.clear(); Writer extra; state.write(extra); extra.u8(0);
+    Reader trailing(extra.data.data(),extra.size()); CHECK(!copy.read(trailing));
+}
+
+static void test_civ_religious_packet()
+{
+    printf("Civilization religious packet bounds\n");
+    civ::ReligiousState state;
+    state.world=0x1234; state.sequence=9; state.city={2,0x2232,{424,-193,192}};
+    state.converter=0x800021CA; state.progress=32;
+    for (unsigned i=0;i<civ::ReligiousState::max_factions;++i)
+        state.followers.push_back({0x800021CA+i,int32_t(i)});
+    Writer w; state.write(w);
+    CHECK(w.size()<=kMaxPacket-48);
+    civ::ReligiousState copy;
+    Reader full(w.data.data(),w.size());
+    CHECK(copy.read(full) && copy.followers.size()==128 && copy.converter==state.converter && copy.progress==32);
+    CHECK(copy.followers[127].count==127 && copy.followers[0].faction==0x800021CA);
+    for (size_t size=0;size<w.size();++size) {
+        Reader shortened(w.data.data(),size); CHECK(!copy.read(shortened));
+    }
+    auto invalid=[&] {
+        Writer out; state.write(out); Reader r(out.data.data(),out.size()); CHECK(!copy.read(r));
+    };
+    state.followers.push_back({1,0}); invalid();
+    state.followers.resize(2); state.followers[1]=state.followers[0]; invalid();
+    state.followers.resize(1); state.followers[0].count=-1; invalid();
+    state.followers[0]={0,1}; invalid();
+    state.followers.clear(); state.progress=std::numeric_limits<float>::quiet_NaN(); invalid();
+    state.progress=-1; invalid(); state.progress=101; invalid();
+    state.progress=0; state.city.position.x=std::numeric_limits<float>::infinity(); invalid();
+    state.city.position.x=0; state.city.index=250; invalid();
+    state.city.index=0; state.world=0; invalid();
+    state.world=1; Writer extra; state.write(extra); extra.u8(0);
     Reader trailing(extra.data.data(),extra.size()); CHECK(!copy.read(trailing));
 }
 
@@ -2463,6 +2497,7 @@ int main(int argc, char** argv)
     if (!net_init()) return 1;
     if (argc==2 && std::string(argv[1])=="--civ-economy") {
         test_civ_economic_packet();
+        test_civ_religious_packet();
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n",g_fail);
         return g_fail ? 1 : 0;
     }
@@ -2534,6 +2569,7 @@ int main(int argc, char** argv)
     test_bulk();
     test_bulk_bad_link();
     test_civ_economic_packet();
+    test_civ_religious_packet();
     test_session();
     test_session_end_in_delivery();
     test_rejoin_same_endpoint();
