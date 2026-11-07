@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-duo15-dev"
+#define COOP_VERSION "0.7.3.6-duo16-dev"
 #endif
 
 #include <winsock2.h>
@@ -5606,7 +5606,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            SAY("%s", civ::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                            return 0;
                        }
-                       SAY("%s%s", civ::status().c_str(), civ::list().c_str());
+                       const auto report = civ::status() + civ::list();
+                       for (size_t at = 0; at < report.size(); at += 6000)
+                           SAY("%s", report.substr(at, 6000).c_str());
                        return 0;
                    },
                    nullptr, MT);

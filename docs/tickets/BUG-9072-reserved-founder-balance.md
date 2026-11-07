@@ -40,3 +40,17 @@ combat loss the unpaused AI refilled the slot on its own in approximately 37
 real seconds. A mixed-fleet fixture then filled the nation's 36th position
 with a nonmilitary vehicle. The funded military purchase was refused and the
 native budget retained its full balance.
+
+Duo 16 adds military overflow. At four seats and 100% scaling, the same
+funded AI bought three additional military vehicles in a 36-vehicle mixed
+fleet. It paid for a replacement after a loss. Both peers agreed on the
+39 live IDs, and the ZIP-installed DLL cold-loaded all 39 native serials
+and purposes. At 600% custom scaling the host filled 47 slots, refused a
+48th purchase without a charge, and matched the guest's complete fleet
+after replacement. Economic and religious slot checks returned zero above
+the native total.
+
+The installed DLL cold-loaded all 47 native identities in the stress save.
+In a two-seat campaign the unpaused AI replaced a lost 37th vehicle on its
+own. This last fixture started the clock one second before the 36-second
+threshold to separate production from a rival capturing its target city.

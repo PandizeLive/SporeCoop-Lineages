@@ -113,10 +113,15 @@ static void test_founders()
     CHECK(pair.civ_military_limit(3) == 4 && pair.civ_military_interval_ms() == 36000);
     CHECK(quartet.civ_military_limit(10) == 13 && quartet.civ_military_interval_ms() == 28000);
     CHECK(partial.civ_military_limit(10) == 12 && partial.civ_military_interval_ms() == 34000);
-    CHECK(quartet.civ_military_limit(35) == 36 && quartet.civ_military_limit(0) == 0);
+    CHECK(quartet.civ_military_limit(35) == 46 && quartet.civ_military_limit(0) == 0);
+    CHECK(pair.civ_overflow_slots(7,36,7) == 1 && pair.civ_overflow_slots(7,37,7) == 0);
+    CHECK(quartet.civ_overflow_slots(7,36,7) == 3 && quartet.civ_overflow_slots(7,38,8) == 1);
+    CHECK(quartet.civ_overflow_slots(7,36,10) == 0 && one_seat.civ_overflow_slots(36,36,36) == 0);
+    CHECK(quartet.civ_overflow_slots(36,36,36) == 11 && quartet.civ_overflow_slots(36,47,46) == 0);
     const founders::CampaignRules disabled{4,0}, high{4,UINT16_MAX};
     CHECK(disabled.civ_military_limit(7) == 7 && disabled.civ_military_interval_ms() == 40000);
-    CHECK(high.civ_military_limit(7) == 36 && high.civ_military_interval_ms() == 1);
+    CHECK(high.civ_military_limit(7) == 47 && high.civ_military_interval_ms() == 1);
+    CHECK(disabled.civ_overflow_slots(7,36,6) == 0 && high.civ_overflow_slots(7,46,6) == 1);
     CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{5,100},err));
     CHECK(founders::reserve(key,quartet,err) && founders::reserve(key,quartet,err));
     CHECK(!founders::reserve(key,partial,err));

@@ -993,8 +993,30 @@ static VehicleLimit o_VehicleLimit;
 static int SK_THISCALL h_VehicleLimit(void* country, int purpose)
 {
     int base = o_VehicleLimit(country,purpose);
-    if (purpose != 0 || base <= 0 || base >= 36 || !rival_production(country)) return base;
+    if (purpose != 0 || base <= 0 || base > 36 || !rival_production(country)) return base;
     return world::rules_for_current().civ_military_limit(base);
+}
+
+static VehicleLimit o_SlotsLeft;
+static int SK_THISCALL h_SlotsLeft(void* country, int purpose)
+{
+    int native = o_SlotsLeft(country,purpose);
+    if (native || purpose != 0 || !country || !o_VehicleLimit) return native;
+    auto first = F<void**>(country,0xB0), last = F<void**>(country,0xB4);
+    if (!first || !last || last < first) return native;
+    const unsigned total = unsigned(last-first);
+    using Rules = founders::CampaignRules;
+    if (total < Rules::native_fleet_limit || total >= Rules::native_fleet_limit + Rules::max_fleet_overflow ||
+        !rival_production(country)) return native;
+    // Use the original purpose allowance so an existing bonus is never counted twice.
+    const int base = o_VehicleLimit(country,purpose);
+    if (base <= 0 || base > 36) return native;
+    unsigned military = 0;
+    for (auto it = first; it != last; ++it) {
+        if (!*it) return native;
+        if (F<int>(*it,kVPurpose) == 0) ++military;
+    }
+    return world::rules_for_current().civ_overflow_slots(base,total,military);
 }
 
 using TimerElapsed = uint64_t(SK_THISCALL*)(void*);
@@ -1595,7 +1617,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     auto elapsed = H->sym("SporeCoop::GonzagoElapsedMs");
     a_MilitaryElapsedRet = H->sym("SporeCoop::CivMilitaryElapsedRet");
     if (limit && elapsed && a_MilitaryElapsedRet && a_Relationships && a_RelationshipMap && a_RelationshipData) {
-        H->hook_create(M,(void*)limit,(void*)h_VehicleLimit,(void**)&o_VehicleLimit);
+        if (H->hook_create(M,(void*)limit,(void*)h_VehicleLimit,(void**)&o_VehicleLimit) == 0)
+            H->hook_create(M,(void*)a_SlotsLeft,(void*)h_SlotsLeft,(void**)&o_SlotsLeft);
         H->hook_create(M,(void*)elapsed,(void*)h_TimerElapsed,(void**)&o_TimerElapsed);
     }
     if (uintptr_t damage = H->sym("SporeCoop::CivVehicle_TakeDamage"); damage &&

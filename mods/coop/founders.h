@@ -1,6 +1,7 @@
 // Campaign-scoped founding species. Political IDs here belong to the host's save.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <array>
 #include <string>
@@ -20,9 +21,18 @@ struct CampaignRules {
     uint32_t enemy_damage_percent() const { return 100u + (seats - 1u) * extra_damage_percent; }
     bool operator==(const CampaignRules&) const = default;
     uint32_t workload_percent() const { return 100u + (seats - 1u) * difficulty_percent; }
+    static constexpr unsigned native_fleet_limit = 36;
+    static constexpr unsigned max_fleet_overflow = 11; // ceil(36 * 30%) at four seats
     unsigned civ_military_limit(unsigned base) const {
         const unsigned extra = (base * (workload_percent() - 100u) + 999u) / 1000u;
-        return base + extra < 36u ? base + extra : 36u;
+        return std::min<unsigned>(base + extra, native_fleet_limit + max_fleet_overflow);
+    }
+    unsigned civ_overflow_slots(unsigned base, unsigned total, unsigned military) const {
+        if (base > native_fleet_limit || total < native_fleet_limit) return 0;
+        const unsigned limit = civ_military_limit(base);
+        const unsigned fleet_limit = native_fleet_limit + std::min<unsigned>(limit - base, max_fleet_overflow);
+        if (total >= fleet_limit || military >= limit) return 0;
+        return std::min<unsigned>(fleet_limit - total, limit - military);
     }
     unsigned civ_military_interval_ms() const {
         // The native AI compares elapsed milliseconds to 40,000. Keep a

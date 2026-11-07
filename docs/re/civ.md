@@ -678,7 +678,16 @@ and BUG-0106:
 vector holds 36 pointers. Otherwise it counts vehicles of the requested
 purpose and subtracts that count from the native purpose allowance at
 `0x00BF2110`. Duo 15 scales the allowance for military purpose 0 on the
-host. The native function still counts the vehicles and enforces its total.
+host. Duo 16 uses the native result below 36. When the native check refuses a
+military purchase at 36 or more, the host reads the original purpose allowance
+and counts military entries in the nation's native vehicle vector. Free slots
+are the smaller of the remaining military allowance and the remaining national
+overflow. A full fleet never produces a negative or duplicate allowance.
+The purchase, budget debit, and fleet serialization still run through Spore.
+This is an admission check on purchases. In a two-seat live run a rival
+captured a second city. Its fleet then held 32 economic and seven military
+vehicles, and the military slot query returned zero. A changed owner or
+allowance never causes this hook to discard existing units.
 At 50% Difficulty Scaling the bonus is 5% per extra reserved seat. The host
 rounds the total extra slots up once. A disabled or one-seat campaign takes
 the native capacity and timing. Founder nations, neutral nations and formal
