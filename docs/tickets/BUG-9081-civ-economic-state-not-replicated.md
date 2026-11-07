@@ -1,16 +1,16 @@
 ---
 id: BUG-9081
 title: Guest does not receive native trade routes or economic purchase progress
-status: open
+status: fixed
 kind: desync
 stage: Civilization
 reported: 2026-11-07
 source: Targeted economic playability check
 role: guest
 versions: duo22-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ-combat
-commits:
+commits: aba17900
 tests: tools/tests/duo_civ_economic_state.py
 signature: Host route count 1 and buy 16.813276; guest route count 0 and buy 0
 docs: docs/re/civ.md
@@ -39,7 +39,7 @@ Replicate host-owned route and economic progress state to guest native cities.
 Preserve native trade AI, prices, shared treasury, city ownership and campaign
 credit. Test removal and reconnect separately from the final purchase action.
 
-## Fix and verification
+## Verification
 
 The optional host economic snapshot replays native routes, meter/buyer and
 the complete per-buyer pricing map outside the render frame. It validates
@@ -64,3 +64,7 @@ Docs/symbol lints pass. Both final games reported zero faults and exited
 normally; the newest crash report remained the older BUG-9080 test report.
 
 This does not qualify the guest's final native Buy City interaction.
+
+## History
+
+2026-11-07: Fixed and verified on isolated Windows peers; packaging pending.
