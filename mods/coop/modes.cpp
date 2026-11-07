@@ -146,6 +146,45 @@ static void creature_despawn(void* p)
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 
+// Experimental until act changes, teardown and captain model ownership pass.
+static bool g_adventure_bodies = false;
+COOP_FIX("adventure.captain_bodies", "BUG-9089", g_adventure_bodies, "adventure: scenario-bound partner captain bodies (experimental)");
+struct AdventureBody { void* avatar; uint32_t serial; };
+static std::unordered_map<void*,AdventureBody> g_adventure_body_ids;
+
+static void* adventure_spawn(const net::PlayerState& s, void* av)
+{
+    auto play=adventure_play();
+    if (!g_adventure_bodies || !play || *(int*)(play+0x90)!=3 ||
+        !av || !skg::readable(av,0x20) || *(int*)((uint8_t*)av+0x1C)!=-2) return nullptr;
+    auto marker=*(void**)((uint8_t*)av+0x18);
+    auto herd=game::avatar_herd();
+    auto species=g_species_for_player ? g_species_for_player(s.id) : nullptr;
+    if (!marker || !skg::readable(marker,0x28) || !herd || !species) return nullptr;
+    // SetCurrentAct excludes the native avatar herd from NPC act resets.
+    // The captain class/marker are resource-owned and live for this scenario.
+    void* p=game::spawn_creature(s.pos,species,herd);
+    if (!p) return nullptr;
+    *(void**)((uint8_t*)p+0x18)=marker;
+    *(int*)((uint8_t*)p+0x1C)=-2;
+    game::puppet_register(p);
+    game::teleport(p,s.pos,s.rot);
+    g_adventure_body_ids[p]={av,game::object_serial(p)};
+    return p;
+}
+
+static bool adventure_alive(void* p)
+{
+    auto it=g_adventure_body_ids.find(p);
+    return it!=g_adventure_body_ids.end() && it->second.avatar==game::avatar() &&
+           game::creature_listed(p) && game::object_serial(p)==it->second.serial;
+}
+static void adventure_despawn(void* p)
+{
+    if (adventure_alive(p)) creature_despawn(p);
+    g_adventure_body_ids.erase(p);
+}
+
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
 static uint32_t S2(const char* n);
 static uint8_t* scenario_mode()
@@ -1151,8 +1190,9 @@ static const Adapter kAdapters[] = {
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag},
     // BUG-9003: the scenario initializes its cast on act changes. A regular Creature-stage
-    // animal in that cast crashed SetCurrentAct. Keep the captain local and draw remote names.
-    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, nullptr, nullptr, nullptr, nullptr},
+    // animal crashed SetCurrentAct. The scenario-bound body prototype is opt-in.
+    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill,
+     adventure_spawn, creature_drive, adventure_despawn, creature_tag, adventure_alive},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 
@@ -1166,6 +1206,9 @@ net::Vec3 entity_pos(const Adapter* a, void* e)
 
 const Adapter* for_mode(uint32_t mode)
 {
+    static const Adapter marker{"Adventure",kScenario,adventure_place,true,
+                                creature_local,creature_fill,nullptr,nullptr,nullptr,nullptr};
+    if (mode==kScenario && !g_adventure_bodies) return &marker;
     for (auto& a : kAdapters)
         if (a.mode == mode)
             return &a;

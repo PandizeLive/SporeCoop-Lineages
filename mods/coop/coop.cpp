@@ -2308,7 +2308,7 @@ const char* puppet_why(const Remote& r, double now)
         return "hidden: partner in another mode";
     if (s.world != g_world || !g_world)
         return "hidden: partner in another world";
-    if (g_mode == modes::kScenario)
+    if (g_mode == modes::kScenario && !r.puppet)
         return "captain marker";
     return r.puppet ? "shown" : "hidden: not spawned (yet)";
 }
@@ -2657,8 +2657,8 @@ void on_frame(void*, int, void*)
                 peer = &s;
         }
     }
-    if (duo && g_mode == modes::kScenario)
-        adventure::tick(g_world, peer && !(peer->flags & net::PF_DEAD) ? peer : nullptr);
+    if (g_local && g_sess.connected() && g_mode == modes::kScenario)
+        adventure::tick();
     else
         adventure::reset();
     if (g_local && g_sess.connected() && g_mode == modes::kCreature && (duo || creature_rescue::continuing()))
@@ -2779,13 +2779,24 @@ void on_frame(void*, int, void*)
     }
 
     (void)av;
+    // Scenario models and their act-owned metadata are created outside Present.
+    static bool adventure_drive_pending=false;
+    if (g_mode==modes::kScenario && !adventure_drive_pending) {
+        adventure_drive_pending=true;
+        H->run_outside_frame([](void*) {
+            adventure_drive_pending=false;
+            if (g_mode!=modes::kScenario || game::mode_id()!=g_mode ||
+                !g_local || g_local!=game::avatar() || !g_sess.connected()) return;
+            for (auto& [id,r]:g_remotes) drive_puppet(r,H->time_seconds());
+        },nullptr);
+    }
     for (auto& [id, r] : g_remotes) {
         if (!g_local) {
             if (r.puppet)
                 forget_puppets();
             continue;
         }
-        drive_puppet(r, now);
+        if (g_mode!=modes::kScenario) drive_puppet(r, now);
     }
     track_tick(now);
     trace_tick(now);
@@ -3367,6 +3378,10 @@ void setup_callbacks()
         }
     };
     g_sess.cb.custom = [](uint8_t type, uint8_t from, net::Reader& r) {
+        if (type == net::MSG_ADVENTURE) {
+            adventure::message(from,r);
+            return;
+        }
         if (type == net::MSG_CREATURE_RESCUE) {
             creature_rescue::message(from, r);
             return;
@@ -5267,6 +5282,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
+    adventure::init(H, M, &g_sess);
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     *(int32_t*)(g_blank_e84 + 0x32C) = -1;

@@ -1,10 +1,13 @@
 #pragma once
 
 #include "net/protocol.h"
+#include "net/session.h"
+#include "sporekit.h"
 
 namespace adventure {
-// Only a pair already playing the same objective can share credit for it.
-void tick(uint32_t world, const net::PlayerState* peer);
+void init(const SkHost*, SkMod*, net::Session*);
+void tick();
+void message(uint8_t from, net::Reader&);
 void reset();
 net::AdventureGate outgoing();
 }

@@ -909,7 +909,8 @@ std::string world_missing_parts()
 
 static Key avatar_species_key()
 {
-    void* av = game::mode_id() == modes::kCreature ? game::avatar() : nullptr;
+    uint32_t mode=game::mode_id();
+    void* av = mode == modes::kCreature || mode == modes::kScenario ? game::avatar() : nullptr;
     if (!av)
         return {};
     auto* k = (uint32_t*)((uint8_t*)av + 0xB28);
@@ -962,6 +963,14 @@ static void choose_campaign_creature(const Key& key)
 
 Option mine(Kind k)
 {
+    // Adventure captains are selected by the native mission picker. A campaign
+    // creature/F9 default must not replace the captain sent to other players.
+    if (k==kCreature && game::mode_id()==modes::kScenario) {
+        Key captain=avatar_species_key();
+        for (const auto& option:g_opts[k])
+            if (option.key==captain) return option;
+        return {captain,""};
+    }
     bool guest = C.sess && C.sess->role() == net::Role::Client;
     // BUG-0278: a choice of a creation of the host's world that is not one of ours (taken over from
     // an editor by 0.7.3.0) is not a choice; "the world's own" follows the host's creature

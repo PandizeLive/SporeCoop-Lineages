@@ -2324,3 +2324,60 @@ ancestors and the current mode before clicking. No production state rewrite,
 telemetry flush or forced stage transition was required. This qualifies the
 named Tribal returner path, not arbitrary Cell-to-Space catch-up or a new
 founder's first-ever mid-stage join. It does not replay flight training.
+
+## Adventure objective journal and actor boundary (2026-11-07, feat/lineages-adventures)
+<a id="space-adventure-objective-journal"></a>
+
+The lineages25 baseline reproduced a native Talk divergence: completing the
+mayor's five-page conversation advanced host act/summary 1/1 to 2/2, while the
+idle guest remained at 1/1. See build/local/adventure-talk-baseline-fail.log.
+ScenarioCreditGoal was called once with the speaker NPC spatial at object+C0,
+the current goal entry, and a null second spatial. A separate disposable guest
+probe confirmed that the already-verified null-spatial fallback also credits
+this Talk goal and enters act 2 without faults. This probe qualifies the native
+API; it is not an end-to-end multiplayer test.
+
+The new host journal intercepts required-once MoveTo and Talk credits, retains
+only goal values, and applies host-ordered credits outside Present. Parallel
+goals are distinguished by act, slot and complete descriptor. The wire identity
+contains all three mission resource-key words, a host run token and recipient
+instance token. Resource-key equality is not a content hash. Other goal kinds
+remain unsupported until actor ownership and object lifetime are synchronized.
+
+Normal native conversation input passed host-to-idle-guest and guest-to-idle-host
+within the three-goal act (adventure-talk-patch-a.log and -b.log). Only the
+intended native goal completed, each summary incremented once, the idle captain
+stayed still, and both fault counters stayed zero. In adventure-talk-reconnect.log
+the guest left before the final parallel conversation, stayed at summary 4 while
+offline, then rejoined and reached act 3/summary 5 through journal catch-up.
+These runs used two native games, not four, and do not qualify captain rewards.
+
+The old partner crash has a concrete class dependency: canonical C0714E reads
+byte [EBP+1], where EBP is the current ScenarioClassAct. GetScenarioClass at
+B18470 returns null for class index -1. SetCurrentAct calls the per-animal act
+update for the native creature list. The normal captain has class index -2
+and a non-null scenario marker; an ordinary Creature-stage animal lacks this
+registration. Do not re-enable Creature puppets merely by waiting until act 0.
+Both later act transitions and actor-specific state need valid scenario data.
+
+The opt-in adventure.captain_bodies prototype binds each remote animal to the
+native avatar herd, class -2 and resource-owned captain marker. Both peers
+received their actual captain models after mine(kCreature) was corrected to
+use the native Scenario avatar instead of an F9/campaign default. Two native
+SetCurrentAct(currentAct,false) resets per game preserved each puppet identity
+and produced zero faults (adventure-captain-act-probe.log). This is a bounded
+callback fixture, not earned progression. Body scale is visibly too small;
+the prototype stays disabled by default. Combat/targeting remain unqualified.
+
+A backward SetCurrentAct(0,false) shortcut was invalid: the earlier move target
+had been removed, both native missions failed with an unavailable-goal message,
+and the test read an invalid movement location. Do not use that shortcut to
+replay an earlier act. Native Replay restored the mission correctly, after
+which duo_adventure.py --host 4 --guest 5 --gate host passed on the new journal
+(adventure-new-journal-gate.log), with bodies disabled and zero faults.
+
+Both games returned through native Adventure Options > Exit to Main Menu > Quit,
+then galaxy Options > Quit Spore. Logs record App::cSporeApp::Shutdown and
+ExitProcess 0, faults 0, for both. No new crash dump appeared. Sync diagnostics
+still report missing/extra player objects when marker-only mode is active;
+these runs do not establish a generally desync-free Adventure implementation.

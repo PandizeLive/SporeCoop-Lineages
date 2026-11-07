@@ -568,3 +568,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9086](BUG-9086-remote-city-preaching-uninitialized.md) | fixed | bug | Civilization | 2026-11-07 | 0.7.3.6-lineages25-dev | Guest preaching stalls at cities the host has not viewed |
 | [BUG-9087](BUG-9087-multistage-catchup-history-stale.md) | not-reproduced | bug | Space | 2026-11-07 |  | Tribal returner loads Civilization but History still offers Enter Civilization |
 | [BUG-9088](BUG-9088-first-use-civ-capture-tutorial-driver.md) | not-reproduced | bug | Civilization | 2026-11-07 |  | First-use capture regression leaves Communications Panel tutorial unanswered |
+| [BUG-9089](BUG-9089-adventure-shared-mission.md) | open | bug | Adventure | 2026-11-07 |  | Adventures only share a single move-to objective and partner markers |

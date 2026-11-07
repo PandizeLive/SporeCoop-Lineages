@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Share required-once Adventure conversations through a host-ordered journal,
+  including parallel goals and warm reconnect catch-up (BUG-9089, partial).
+  Combat objectives, partner bodies and terminal rewards remain unfinished.
+
 - Initialize missing native city preaching capacity for remote religious
   battles without moving the host camera or spawning visual crowds (BUG-9086).
 

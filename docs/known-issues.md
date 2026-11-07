@@ -1752,3 +1752,19 @@ symbol database and leave the mod unloaded. Cold-launch a preserved checkpoint
 when symbols change. Normal startup works; this is a development-console
 limitation, not a campaign blocker. See
 [BUG-9083](tickets/BUG-9083-packed-steam-symbol-hot-reload.md).
+
+## Adventure: shared mission work remains partial (2026-11-07, feat/lineages-adventures)
+<a id="issue-adventure-shared-mission"></a>
+
+* What happens: shared MoveTo/Talk credits now work, but combat and other goal
+  types still run independently. Remote captain bodies are an opt-in prototype
+  with incorrect visual scale; the default still shows position markers.
+* Reproduce: use a paired Adventure with combat, collection or defend objectives.
+* Known: required-once conversations, parallel goals and warm reconnect passed
+  native two-instance checks. The replayed first gate also passed. Marker-only
+  mode still reports player-object sync mismatches.
+* Not checked: four native peers, simultaneous dialogue, full actor replication,
+  terminal rewards, campaign Adventure return and arbitrary modded missions.
+* Next steps: finish native captain scale/lifetime, then shared actor ownership
+  and combat before broadening objective types. Do not package as complete.
+* Ticket: BUG-9089

@@ -3960,3 +3960,39 @@ manual input after the driver change. Both clients retained two separate
 species/nations, matching technology/unlocks and native campaign state.
 BUG-9088 records the failed run, assisted continuation and uninterrupted pass.
 No combat victories were earned in this fixture and no full stage was replayed.
+
+## Targeted Adventure conversation checks (2026-11-07, feat/lineages-adventures)
+<a id="testing-adventure-dialogue"></a>
+
+lineages_adventure_state.py reads the native mission key, act, summary and each
+goal descriptor/count/completion flag. --expect-shared compares native peers.
+lineages_adventure_dialogue.py finishes an already-open conversation using the
+observed native next button 062EF353 and finish button 0445C99D. Both are at
+1148,634 in the 1176x664 Windows fixture. It bounds page count, asserts one
+shared native credit and checks idle-player position and fault counters.
+--reconnect leaves guest 5 offline until host 4 completes the conversation,
+then joins port 47810 and checks native catch-up. Use disposable DuoQA profiles.
+
+The setup can shorten travel with coop.npc gopos, then click the projected
+scenario NPC. No credit or goal memory writes occur in the regression itself.
+Native input clicks are deferred: wait for focus before sending text, and wait
+for visible conversation controls instead of clicking during camera fades.
+The initial driver stopped at the final page because it recognized only the
+next-arrow ID; recognizing the separately observed finish ID fixed the driver.
+
+Evidence in build/local: adventure-baseline-gate.log,
+adventure-talk-baseline-fail.log, adventure-talk-patch-a.log,
+adventure-talk-patch-b.log and adventure-talk-reconnect.log. The first new
+passes qualify required-once Talk goals, parallel completion and warm reconnect.
+They do not qualify full combat, simultaneous conversations, four native peers,
+restarting a mission, final rewards or return from a campaign Adventure.
+
+Additional targeted evidence: adventure-captain-act-probe.log records two native
+same-act resets per peer with stable prototype body identities and zero faults.
+The prototype remains off by default because its displayed scale is wrong.
+A backward act-reset shortcut failed because its goal object was already gone;
+native Replay, not SetCurrentAct, is required to restore an earlier mission.
+adventure-new-journal-gate.log then passed the existing first-gate test on the
+new journal. Native shutdown logs show ExitProcess 0/faults 0 for both games.
+lineages_adventure_captain_probe.py is explicitly a disposable fixture and must
+not be counted as an earned act transition or full Adventure qualification.
