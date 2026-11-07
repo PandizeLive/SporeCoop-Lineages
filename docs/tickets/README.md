@@ -552,3 +552,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9070](BUG-9070-civ-space-editor-remains-paused.md) | fixed | bug | Civilization | 2026-11-06 | 0.7.3.6-duo10-dev | Civilization launch vote leaves the spacecraft editor waiting on its own pause |
 | [BUG-9071](BUG-9071-personal-space-launch.md) | open | bug | Space | 2026-11-06 |  | Qualify each founder's own spacecraft, captain and Space tutorial |
 | [BUG-9072](BUG-9072-reserved-founder-balance.md) | open | bug | all | 2026-11-06 |  | Qualify hostile combat and shared rewards at reserved campaign capacity |
+| [BUG-9073](BUG-9073-guest-city-turret-planner.md) | open | desync | Civilization | 2026-11-06 |  | Guest city turret purchases and sales diverge from the host wall and treasury |

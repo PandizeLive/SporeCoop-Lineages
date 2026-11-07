@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo16-dev. Use the same build on every
+The current local build is 0.7.3.6-duo17-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -15,6 +15,12 @@ At custom Difficulty Scaling above 100%, a rival can buy up to a fleet of
 also inherit vehicles when it captures a city. It keeps those units and waits
 for a vacancy before buying more. Spore can still respond immediately to a
 change of target.
+
+In Civilization, a guest can select their military vehicle and right-click a
+rival to attack. The host checks that both vehicles still exist before issuing
+the order. A guest can also buy, move and sell turrets on their city's wall.
+The host settles each completed edit from the shared treasury. Picking up a
+turret or dropping it outside a wall slot costs nothing.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct
@@ -506,8 +512,11 @@ placements. Founder city construction continues to use its existing controls.
 After a cold restart, that turret kept its wall slot and 579.31 HP out of
 600. On rehosting, the turret automatically fired on an attacking founder
 vehicle. The native three-point shot applied 3.45 damage. These combat runs
-issued vehicle orders through the native command routine. A battle initiated
-with ordinary mouse controls is a separate check.
+issued vehicle orders through the native command routine. In a separate
+two-game test, the guest drag-selected its military vehicle and right-clicked
+a rival. The host received the attack order against that exact vehicle and
+both peers showed the resulting wound. A second order delayed by 1.5 seconds
+was rejected when its target died in transit.
 
 On QuartetTribe the solo host had one native village. The read-only terrain
 probe found 23 more compatible positions for four founders and twenty rivals

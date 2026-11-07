@@ -176,6 +176,7 @@ struct HV {
     uint16_t id;
     uint8_t owner;
     uint32_t pol; // the vehicle's political id when it was listed (BUG-0059: a reused address)
+    uint32_t serial;
     bool gifted = false;
 };
 // test switches (`coop.civ fix boost|world 0|1`): 0 brings back the code before the fix
@@ -587,7 +588,8 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4 };
+enum : uint8_t { CMD_ORDER = 0, CMD_MOVE = 1, CMD_BUY = 2, CMD_BUILD = 3, CMD_GIVE = 4,
+                 CMD_WALL_EDIT = 6, CMD_WALL_ACK = 7 };
 
 static void send_cmd(net::Writer& w)
 {
@@ -837,11 +839,14 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
 // civilization; their spending still reaches the host (SpendMoney is another function).
 using AddMoney_t = void(SK_THISCALL*)(void*, float, int);
 static AddMoney_t o_AddMoney;
+static uintptr_t a_PlannerRefundRet;
 static uint32_t g_income_blocked;
 static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
 {
     if (founder_country(civ)) civ = player_civ();
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && civ == player_civ() && amount > 0) {
+    const bool planner_refund = uintptr_t(__builtin_return_address(0)) == a_PlannerRefundRet;
+    if (!g_applying && !planner_refund && is_guest() && game::mode_id() == modes::kCiv &&
+        civ == player_civ() && amount > 0) {
         g_income_blocked++;
         return;
     }
@@ -1488,6 +1493,8 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
         g_votes++;
 }
 
+static void init_wall_editor();
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -1559,6 +1566,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_CreateBuilding, (void*)h_CreateBuilding, (void**)&o_CreateBuilding);
     H->hook_create(M, (void*)a_SpawnNextCity, (void*)h_SpawnNextCity, (void**)&o_SpawnNextCity);
     H->hook_create(M, (void*)a_AddMoney, (void*)h_AddMoney, (void**)&o_AddMoney);
+    a_PlannerRefundRet = H->sym("SporeCoop::CivPlanner_Refund_Ret");
     {
         auto city_owned = H->sym("SporeCoop::City_IsPlayerOwned");
         auto vehicle_owned = H->sym("SporeCoop::Vehicle_IsPlayerOwned");
@@ -1628,6 +1636,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_RemoveTurret = H->sym("SporeCoop::CivCity_RemoveTurret");
     if (auto turret = H->sym("SporeCoop::CivTurret_TakeDamage"); turret && o_VehicleDamage)
         H->hook_create(M,(void*)turret,(void*)h_TurretDamage,(void**)&o_TurretDamage);
+    init_wall_editor();
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -2074,13 +2083,150 @@ static TurretSlots turret_slots(void* city)
     return {reinterpret_cast<uint8_t*>(first),(end-first)/0x18};
 }
 static uint32_t g_turret_sequence;
-struct WallUpdate { uint32_t serial = 0, sequence = 0, missing = 0; };
+struct WallUpdate {
+    uint32_t serial = 0, sequence = 0, missing = 0;
+    std::array<uint32_t,32> host_ids{}, local_ids{};
+};
 static std::unordered_map<void*,WallUpdate> g_wall_updates;
+constexpr uint8_t kNoWallSlot = 0xff;
+struct WallDrag {
+    void* city = nullptr;
+    void* turret = nullptr;
+    uint32_t serial = 0, source_id = 0, city_serial = 0;
+    uint8_t source = kNoWallSlot;
+    int refund = 0;
+};
+static WallDrag g_wall_drag;
+static bool g_finishing_wall_drag;
+static uint32_t g_wall_request, g_pending_wall, g_wall_min_sequence;
+static void* g_pending_city;
+static bool g_wall_editor_ready;
+static uintptr_t a_TurretPrice, a_SellFraction, a_ClearWallSlot, a_SetWallSlot;
+static uintptr_t a_BuyQuote, a_SellQuote, a_CancelQuote;
+static std::unordered_map<uint32_t,uint8_t> g_wall_purchases;
+using BeginDrag = void(SK_THISCALL*)(void*,void*);
+using FinishDrag = int(SK_THISCALL*)(void*,int,int);
+using ObjectCost = int(SK_THISCALL*)(void*,void*,int,int);
+static BeginDrag o_BeginDrag;
+static FinishDrag o_FinishDrag;
+static ObjectCost o_ObjectCost;
+
+static void* planner_turret(void* spatial)
+{
+    return spatial ? vcall<void*>(spatial,0xB8/4,0x0436F315u) : nullptr;
+}
+
+static bool linked_wall_editor()
+{
+    return g_wall_editor_ready && is_guest() && active() && !local_play();
+}
+
+static void SK_THISCALL h_BeginDrag(void* editor, void* spatial)
+{
+    if (!spatial && !g_finishing_wall_drag) g_wall_drag = {};
+    if (spatial && g_wall_editor_ready && active() && !local_play()) {
+        if (void* turret = planner_turret(spatial)) {
+            void* city = F<void*>(turret,0x688);
+            if (city && host_index_of_city(city) >= 0) {
+                g_wall_drag = {city,turret,game::object_serial(turret),0,game::object_serial(city)};
+                const auto it = g_wall_updates.find(city);
+                if (it != g_wall_updates.end() && it->second.serial == g_wall_drag.city_serial) {
+                    for (size_t i = 0; i < it->second.local_ids.size(); ++i) {
+                        if (it->second.local_ids[i] != g_wall_drag.serial) continue;
+                        g_wall_drag.source = uint8_t(i);
+                        g_wall_drag.source_id = it->second.host_ids[i];
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    o_BeginDrag(editor,spatial);
+}
+
+static int SK_THISCALL h_ObjectCost(void* editor, void* spatial, int sale, int extra)
+{
+    const uintptr_t caller = uintptr_t(__builtin_return_address(0));
+    const int price = o_ObjectCost(editor,spatial,sale,extra);
+    if ((caller == a_BuyQuote || caller == a_SellQuote || caller == a_CancelQuote) && linked_wall_editor()) {
+        void* turret = planner_turret(spatial);
+        // The native sale detaches the turret from the city before asking for its refund.
+        if (turret && (turret == g_wall_drag.turret || host_index_of_city(F<void*>(turret,0x688)) >= 0)) {
+            if (sale && turret == g_wall_drag.turret) g_wall_drag.refund = price;
+            return 0; // The host settles a completed edit. Hovering or disconnecting costs nothing.
+        }
+    }
+    return price;
+}
+
+static int SK_THISCALL h_FinishDrag(void* editor, int first, int second)
+{
+    g_finishing_wall_drag = true;
+    const int result = o_FinishDrag(editor,first,second);
+    g_finishing_wall_drag = false;
+    const auto drag = g_wall_drag;
+    g_wall_drag = {};
+    if (!drag.city || !linked_wall_editor()) return result;
+    if (g_pending_wall) {
+        if (C.notice) C.notice("The host is settling the previous wall edit. Try this edit again.");
+        return result;
+    }
+    const int ci = host_index_of_city(drag.city);
+    const auto cities = all_cities();
+    if (ci < 0 || std::find(cities.begin(),cities.end(),drag.city) == cities.end() ||
+        game::object_serial(drag.city) != drag.city_serial) return result;
+    uint8_t dest = kNoWallSlot;
+    const auto slots = turret_slots(drag.city);
+    for (size_t i = 0; i < slots.count; ++i)
+        if (slots.at(i) == drag.turret && game::object_serial(slots.at(i)) == drag.serial) dest = uint8_t(i);
+    if (dest == drag.source) return result;
+    g_pending_wall = ++g_wall_request;
+    if (!g_pending_wall) g_pending_wall = ++g_wall_request;
+    g_pending_city = drag.city;
+    const auto pos = city_pos(drag.city);
+    net::Writer w;
+    w.u8(CMD_WALL_EDIT); w.u32(g_pending_wall); w.u32(modes::current_world()); w.u8(uint8_t(ci));
+    w.u32(pol_of(drag.city)); w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
+    w.u8(drag.source); w.u8(dest); w.u32(drag.source_id); w.u32(uint32_t(drag.refund));
+    if (drag.source != kNoWallSlot && dest != kNoWallSlot)
+        for (int i=0; i<4; ++i) w.f32(F<float>(drag.turret,kVRot+4*i));
+    send_cmd(w);
+    return result;
+}
+
+static void init_wall_editor()
+{
+    a_TurretPrice = H->sym("SporeCoop::CivTurret_Price");
+    a_SellFraction = H->sym("SporeCoop::CivPlanner_SellFraction");
+    a_ClearWallSlot = H->sym("SporeCoop::CivWall_ClearSlot");
+    a_SetWallSlot = H->sym("SporeCoop::CivWall_SetSlot");
+    a_BuyQuote = H->sym("SporeCoop::CivPlanner_BuyCost_Ret");
+    a_SellQuote = H->sym("SporeCoop::CivPlanner_SaleCost_Ret");
+    a_CancelQuote = H->sym("SporeCoop::CivPlanner_CancelCost_Ret");
+    const auto begin = H->sym("SporeCoop::CivPlanner_BeginDrag");
+    const auto finish = H->sym("SporeCoop::CivPlanner_FinishDrag");
+    const auto quote = H->sym("SporeCoop::CivPlanner_ObjectCost");
+    if (begin && finish && quote && a_TurretPrice && a_SellFraction && a_ClearWallSlot && a_SetWallSlot &&
+        a_BuyQuote && a_SellQuote && a_CancelQuote && a_PlaceTurretSlot && a_RemoveTurret && o_TurretDamage)
+        g_wall_editor_ready = H->hook_create(M,(void*)begin,(void*)h_BeginDrag,(void**)&o_BeginDrag) == 0 &&
+            H->hook_create(M,(void*)finish,(void*)h_FinishDrag,(void**)&o_FinishDrag) == 0 &&
+            H->hook_create(M,(void*)quote,(void*)h_ObjectCost,(void**)&o_ObjectCost) == 0;
+}
+
+static void reset_wall_edits()
+{
+    g_wall_updates.clear();
+    g_wall_drag = {};
+    g_pending_wall = g_wall_min_sequence = 0;
+    g_pending_city = nullptr;
+    g_wall_purchases.clear();
+}
 
 static void send_turret_health(size_t ci)
 {
     if (!o_TurretDamage || !g_combat_roster_ready || C.sess->players().size() < 2) return;
     void* city = g_host_cities[ci];
+    if (city == g_wall_drag.city) return; // A host hover is not a committed purchase or sale.
     const auto slots = turret_slots(city);
     if (!slots.count) return;
     uint32_t live = 0;
@@ -2097,6 +2243,7 @@ static void send_turret_health(size_t ci)
     w.f32(pos.x); w.f32(pos.y); w.f32(pos.z); w.u8(uint8_t(slots.count)); w.u32(live);
     for (size_t i = 0; i < slots.count; ++i) if (live & (1u<<i)) {
         void* t = slots.at(i);
+        w.u32(game::object_serial(t));
         w.f32(F<float>(t,kTurretCombat+0x38));
         w.f32(g_turret_health.count(t) ? F<float>(t,kTurretCombat+0x2C) : 0.f);
     }
@@ -2114,7 +2261,9 @@ static void receive_turret_health(net::Reader& r)
     if (!world || world != modes::current_world() || ci >= g_host_cities.size() ||
         rival > 1 || count > 32 || (count < 32 && (live >> count))) return;
     std::array<float,32> hp{}, max{};
+    std::array<uint32_t,32> host_ids{}, local_ids{};
     for (size_t i = 0; i < count; ++i) if (live & (1u<<i)) {
+        host_ids[i] = r.u32();
         hp[i] = r.f32(); max[i] = r.f32();
         if (!std::isfinite(hp[i]) || hp[i] < 0 || !std::isfinite(max[i]) || max[i] < 0) return;
     }
@@ -2125,6 +2274,8 @@ static void receive_turret_health(net::Reader& r)
         pol_of(city) != pol || !(net::dist(city_pos(city),pos) < 5.f)) return;
     const auto slots = turret_slots(city);
     if (!slots.count || slots.count != count) return;
+    if (city == g_wall_drag.city || (city == g_pending_city &&
+        (g_pending_wall || int32_t(sequence-g_wall_min_sequence) <= 0))) return;
     auto& last = g_wall_updates[city];
     auto serial = game::object_serial(city);
     if (last.serial == serial && int32_t(sequence-last.sequence) <= 0) return;
@@ -2136,7 +2287,7 @@ static void receive_turret_health(net::Reader& r)
         if (turret && std::find(listed.begin(),listed.end(),turret) == listed.end()) continue;
         uint32_t bit = 1u<<i;
         if (!(live & bit)) {
-            if (rival && turret) {
+            if ((rival || g_wall_editor_ready) && turret) {
                 missing |= bit;
                 if (last.missing & bit) {
                     g_turret_health.erase(turret);
@@ -2145,13 +2296,16 @@ static void receive_turret_health(net::Reader& r)
             }
             continue;
         }
-        if (!turret && rival && thiscall<bool>(a_PlaceTurretSlot,city,int(i))) {
+        if (!turret && (rival || g_wall_editor_ready) && thiscall<bool>(a_PlaceTurretSlot,city,int(i))) {
             const auto updated = turret_slots(city);
             if (updated.count == count) turret = updated.at(i);
         }
-        if (turret) apply_mirror_health(g_turret_health,turret,kTurretCombat,pol,hp[i],max[i]);
+        if (turret) {
+            local_ids[i] = game::object_serial(turret);
+            apply_mirror_health(g_turret_health,turret,kTurretCombat,pol,hp[i],max[i]);
+        }
     }
-    last = {serial,sequence,missing};
+    last = {serial,sequence,missing,host_ids,local_ids};
 }
 
 static void host_tick(double now)
@@ -2186,7 +2340,7 @@ static void host_tick(double now)
         // a vehicle of another world (or another nation) at an address we knew: assigned anew
         bool gone = !alive.count(it->first);
         bool other = !gone && g_fix_world && pol_of(it->first) != it->second.pol;
-        if (gone || other) {
+        if (gone || other || game::object_serial(it->first) != it->second.serial) {
             g_hv_by_id.erase(it->second.id);
             it = g_hv.erase(it);
         } else
@@ -2227,7 +2381,7 @@ static void host_tick(double now)
                 owner = 0;
         }
         uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154: never a live id, never 0
-        g_hv[v] = {id, owner, pol_of(v)};
+        g_hv[v] = {id, owner, pol_of(v), game::object_serial(v)};
         g_hv_by_id[id] = v;
     }
     g_cycle++;
@@ -2392,17 +2546,93 @@ static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool
     return b;
 }
 
-static void* resolve_target(const Target& t)
+// Commands can arrive between snapshots, after the game removed a vehicle
+// or allocated a new vehicle from the same nation at the same address.
+static void* command_vehicle(uint16_t id, const std::vector<void*>& live)
 {
-    if (t.kind == 1) {
-        auto it = g_hv_by_id.find(t.id);
-        return it == g_hv_by_id.end() ? nullptr : it->second;
-    }
-    if (t.kind == 2)
-        return t.id < g_host_cities.size() ? g_host_cities[t.id] : nullptr;
+    auto by_id = g_hv_by_id.find(id);
+    if (by_id == g_hv_by_id.end()) return nullptr;
+    void* v = by_id->second;
+    if (std::find(live.begin(),live.end(),v) == live.end()) return nullptr;
+    auto it = g_hv.find(v);
+    if (it == g_hv.end() || it->second.id != id || it->second.serial != game::object_serial(v) ||
+        it->second.pol != pol_of(v)) return nullptr;
+    return v;
+}
+
+static void* command_city(uint16_t index)
+{
+    if (index >= g_host_cities.size()) return nullptr;
+    void* city = g_host_cities[index];
+    const auto cities = all_cities();
+    return std::find(cities.begin(),cities.end(),city) != cities.end() ? city : nullptr;
+}
+
+static void* resolve_target(const Target& t, const std::vector<void*>& live)
+{
+    if (t.kind == 1) return command_vehicle(t.id,live);
+    if (t.kind == 2) return command_city(t.id);
     if (t.kind == 3 && t.noun)
         return game::find_object(t.noun, t.pos, 10.f);
     return nullptr;
+}
+
+static bool host_wall_edit(uint8_t from, net::Reader& r)
+{
+    const auto world = r.u32(); const auto ci = r.u8(); const auto faction = r.u32();
+    const net::Vec3 pos{r.f32(),r.f32(),r.f32()};
+    const auto source = r.u8(), dest = r.u8(); const auto id = r.u32(), refund = r.u32();
+    std::array<float,4> rotation{};
+    if (source != kNoWallSlot && dest != kNoWallSlot) {
+        float length = 0;
+        for (auto& value : rotation) { value = r.f32(); length += value*value; }
+        if (!(length > .99f && length < 1.01f)) return false;
+    }
+    if (!r.ok() || r.left() || !g_wall_editor_ready || !world || world != modes::current_world() ||
+        source == dest || !net::is_player(*C.sess,from)) return false;
+    void* city = command_city(ci);
+    if (!city || city == g_wall_drag.city || pol_of(city) != faction || !(net::dist(city_pos(city),pos) < 5.f)) return false;
+    const auto owner = owner_of_city(city);
+    if (owner != from && owner != kShared) return false;
+    const auto slots = turret_slots(city);
+    if ((source != kNoWallSlot && source >= slots.count) ||
+        (dest != kNoWallSlot && (dest >= slots.count || slots.at(dest)))) return false;
+    void* wallet = player_civ();
+    if (!wallet) return false;
+    if (source == kNoWallSlot) {
+        if (id || !thiscall<bool>(a_PlaceTurretSlot,city,int(dest))) return false;
+        void* placed = slots.at(dest);
+        if (!placed) return false;
+        const float cost = std::trunc(thiscall<float>(a_TurretPrice,placed));
+        if (!std::isfinite(cost) || cost < 0 || !(o_GetMoney(wallet) >= cost)) {
+            thiscall<void>(a_RemoveTurret,city,placed,1);
+            return false;
+        }
+        o_SpendMoney(wallet,cost);
+        g_wall_purchases[game::object_serial(placed)] = from;
+        return true;
+    }
+    void* turret = slots.at(source);
+    const auto listed = vec_of(static_cast<uint8_t*>(city)+kCityTurrets);
+    if (!turret || std::find(listed.begin(),listed.end(),turret) == listed.end() ||
+        game::object_serial(turret) != id || F<int>(turret,kTurretCombat+0x34) == 2) return false;
+    if (dest != kNoWallSlot) {
+        // The city's turret list owns a reference throughout the slot transfer.
+        auto target = slots.first + dest*0x18;
+        thiscall<void>(a_ClearWallSlot,slots.first+source*0x18);
+        thiscall<void>(a_SetWallSlot,target,turret);
+        vcall<void>(static_cast<uint8_t*>(turret)+kVSpatial,0x44/4,target+0x0C,rotation.data());
+        return true;
+    }
+    const auto bought = g_wall_purchases.find(id);
+    const float fraction = bought != g_wall_purchases.end() && bought->second == from ?
+        1.f : skg::cdecl_call<float>(a_SellFraction);
+    const float limit = std::trunc(thiscall<float>(a_TurretPrice,turret)*fraction);
+    if (!(limit >= 0) || !std::isfinite(limit)) return false;
+    thiscall<void>(a_RemoveTurret,city,turret,1);
+    g_wall_purchases.erase(id);
+    o_AddMoney(wallet,std::min(float(refund),limit),0);
+    return true;
 }
 
 static void host_command(uint8_t from, net::Reader& r)
@@ -2415,12 +2645,21 @@ static void host_command(uint8_t from, net::Reader& r)
                 H->log(M, SK_INFO, "civ: rejected command kind %u from player %u", (unsigned)kind, (unsigned)from);
         }
     };
+    const auto live = kind == CMD_ORDER || kind == CMD_MOVE || kind == CMD_GIVE ? all_vehicles() : std::vector<void*>{};
     auto own_vehicle = [&](uint16_t id) -> void* {
-        auto it = g_hv_by_id.find(id);
-        if (it == g_hv_by_id.end() || g_hv[it->second].owner != from)
-            return nullptr;
-        return it->second;
+        void* v = command_vehicle(id,live);
+        return v && g_hv.at(v).owner == from ? v : nullptr;
     };
+    if (kind == CMD_WALL_EDIT) {
+        const auto request = r.u32();
+        const bool accepted = request && host_wall_edit(from,r);
+        net::Writer ack;
+        ack.u8(CMD_WALL_ACK); ack.u32(request); ack.u32(g_turret_sequence); ack.u8(accepted);
+        C.sess->send_reliable_to(from,net::MSG_CIV_CMD,ack);
+        if (accepted) ++g_cmds_done;
+        else reject();
+        return;
+    }
     if (kind == 5) { // a guest wants to fire a superweapon: everybody votes
         host_superweapon_request(from, r);
         return;
@@ -2438,8 +2677,7 @@ static void host_command(uint8_t from, net::Reader& r)
                     g_hv[v].gifted = true;
                     given++;
                 }
-            } else if (id < g_host_cities.size()) {
-                void* city = g_host_cities[id];
+            } else if (void* city = command_city(id)) {
                 if (owner_of_city(city) == from) {
                     g_city_owner[city] = to;
                     g_city_gifted.insert(city);
@@ -2463,8 +2701,8 @@ static void host_command(uint8_t from, net::Reader& r)
         int type = (int)r.u32(), flag = (int)r.u32();
         Target t = read_target(r);
         void* v = own_vehicle(id);
-        void* target = resolve_target(t);
-        if (!r.ok() || !v || (t.kind && !target))
+        void* target = resolve_target(t,live);
+        if (!r.ok() || !v || ((t.kind || type == 1) && !target))
             return reject();
         o_SetOrder(v, target, type, flag);
         thiscall<void>(a_OrderStamp, v, 0);
@@ -2479,15 +2717,22 @@ static void host_command(uint8_t from, net::Reader& r)
         thiscall<void>(a_OrderStamp, v, 0);
     } else if (kind == CMD_BUY) {
         uint8_t ci = r.u8(), loco = r.u8();
-        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* city = command_city(ci);
         uint8_t co = city ? owner_of_city(city) : 0xFF;
         if (!r.ok() || !city || (co != from && co != kShared) || loco > 2)
             return reject();
         g_pending_owner = from;
         void* v = host_buy(city, loco);
+        if (v) {
+            auto previous = g_hv.find(v);
+            if (previous != g_hv.end() && previous->second.serial != game::object_serial(v)) {
+                g_hv_by_id.erase(previous->second.id);
+                g_hv.erase(previous);
+            }
+        }
         if (v && !g_hv.count(v)) {
             uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154 (this one could hand out 0)
-            g_hv[v] = {id, from, pol_of(v)};
+            g_hv[v] = {id, from, pol_of(v), game::object_serial(v)};
             g_hv_by_id[id] = v;
         }
         g_pending_owner = -1;
@@ -2505,7 +2750,7 @@ static void host_command(uint8_t from, net::Reader& r)
         uint32_t noun = r.u32();
         net::Vec3 p;
         p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
-        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* city = command_city(ci);
         uint8_t co = city ? owner_of_city(city) : 0xFF;
         if (!r.ok() || !city || (co != from && co != kShared))
             return reject();
@@ -3090,6 +3335,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         receive_turret_health(r);
     else if (type == net::MSG_CIV_CMD && is_host())
         host_command(from, r);
+    else if (type == net::MSG_CIV_CMD && is_guest() && from == 0 && r.u8() == CMD_WALL_ACK) {
+        auto request = r.u32(), sequence = r.u32();
+        const auto accepted = r.u8();
+        if (r.ok() && !r.left() && accepted <= 1 && request && request == g_pending_wall) {
+            g_pending_wall = 0;
+            g_wall_min_sequence = sequence;
+            if (!accepted && C.notice) C.notice("The host declined the wall edit. Check the city and team funds.");
+        }
+    }
     else if (type == net::MSG_CIV_BUILD && is_guest())
         guest_build(r);
     else if (type == net::MSG_CIV_ALARM && is_guest()) {
@@ -3124,7 +3378,7 @@ void on_session_end()
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
     g_last_rival_turret_hit = {};
-    g_wall_updates.clear();
+    reset_wall_edits();
     g_founder_planet.clear();
     g_combat_roster_ready = false;
     g_founder_notice.clear();
@@ -3165,7 +3419,7 @@ void on_world_change()
     g_founder_queued = g_founder_spawned = false;
     g_founder_poll = 0;
     g_last_rival_turret_hit = {};
-    g_wall_updates.clear();
+    reset_wall_edits();
     g_founder_planet.clear();
     g_combat_roster_ready = false;
     g_founder_nations = {};

@@ -27,7 +27,10 @@ military hit at 11.5 instead of 10, mirrored its boosted maximum HP, and
 restored the base maximum on disconnect. A native rival city turret dealt 11.5
 instead of ten to a founder vehicle. Local peers agreed on wounded turret health,
 its 870 maximum (600 offline), and new and removed rival wall emplacements.
-Ordinary player-issued combat and four simultaneous founders need separate runs.
+The guest drag-selection and right-click attack passed on a separate local
+pair. Both peers showed the same wound and the host rejected an attack whose
+target died during 1.5 seconds of simulated network delay. Four simultaneous
+founders still need a separate run.
 
 In the four-seat military production test, the rival's purpose allowance rose
 from seven to ten. With the simulation paused and a fixed target and budget,
