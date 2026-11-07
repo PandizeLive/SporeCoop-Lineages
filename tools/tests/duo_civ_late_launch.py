@@ -14,7 +14,7 @@ from duo_space_tutorial_choices import context
 from duo_villages import Console, command
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host',type=int,required=True)
     parser.add_argument('--guest',type=int,required=True)
@@ -22,7 +22,7 @@ def main():
                         help='Wait for the host to supply its saved Civilization victory first.')
     parser.add_argument('--rejoin-at-tutorial', type=int, metavar='PORT',
                         help='Reconnect at Mission Control and verify both models and the tutorial choice.')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     h, g = Console(args.host), Console(args.guest)
     for peer in (h,g):
         assert 'duoqa' in command(peer,'coop.savedb').lower()
@@ -43,15 +43,25 @@ def main():
         return 'shared orbital save waiting for your first flight' in command(g,'coop.status')
     wait_until(received,'Guest did not stage the orbital checkpoint',90)
     command(g,'coop.uistate 0')
-    acknowledge(g)
-    click(g,1136,648)
-    time.sleep(2)
-    button(g,'FFFFFFF1')
-    click(g,1152,641)
-    def editor():
+    # A returner from Tribe can still have the prior History page open while
+    # the native Civilization arrival cinematic waits. City readiness alone
+    # does not mean the HUD accepts the launch click. Close that view through
+    # its ordinary checkmark and let the arrival finish before opening History.
+    def launch_editor():
+        if 'Editor' in command(g, 'game.mode'):
+            return True
         acknowledge(g)
-        return 'Editor' in command(g,'game.mode')
-    wait_until(editor,'Returning guest could not open its own ship editor',45)
+        # The root History window stays enabled while its children are hidden.
+        # Check caption ancestry, and stop as soon as the real editor opens.
+        if uifind.shown(g, 'History'):
+            click(g,1152,641)
+            return False
+        if ('movie playing=0' in command(g, 'coop.civ movie') and
+                'input_lock=0' in command(g, 'coop.uistate')):
+            click(g,1136,648)
+            time.sleep(1)
+        return False
+    wait_until(launch_editor, 'Returning guest could not open its own ship editor', 90)
     assert 'editor 96B24187' in command(g,'coop.editor')
     create_first_ship(g,'LateFounderVoyager',170)
     def captain():

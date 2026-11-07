@@ -566,3 +566,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9084](BUG-9084-guest-religious-conversion-meter.md) | fixed | desync | Civilization | 2026-11-07 | 0.7.3.6-lineages24-dev | Guest native religious conversion meter stays at zero |
 | [BUG-9085](BUG-9085-economic-tribal-message-id-collision.md) | fixed | desync | Tribal | 2026-11-07 | 0.7.3.6-lineages24-dev | Civilization economy and Tribal combat share a wire message ID |
 | [BUG-9086](BUG-9086-remote-city-preaching-uninitialized.md) | fixed | bug | Civilization | 2026-11-07 | 0.7.3.6-lineages25-dev | Guest preaching stalls at cities the host has not viewed |
+| [BUG-9087](BUG-9087-multistage-catchup-history-stale.md) | not-reproduced | bug | Space | 2026-11-07 |  | Tribal returner loads Civilization but History still offers Enter Civilization |

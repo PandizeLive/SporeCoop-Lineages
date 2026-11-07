@@ -3912,3 +3912,16 @@ The saved DuoQAFourWarriorsB Tribal fixture retains its historical 25% HP /
 New fixtures default to the approved 15% / 5%. The test checks the guest's
 native rival maximum HP and the founder victim's current HP after a native
 hit. Saved rules must not be silently changed just to match current defaults.
+## Targeted multi-stage returner (2026-11-07, Lineages)
+<a id="testing-lineages-multistage-returner"></a>
+
+tools/tests/lineages_multistage_launch.py --host 4 --guest 5 --port 47810
+requires fresh isolated profiles, an already loaded orbital Vantiegan host
+(EarlyLaunchB/Game0), and a disconnected Tribal guest (FourWarriorsB/Game4).
+It joins normally and reuses duo_civ_late_launch.py to check the retained
+Civilization victory, native personal editors, Mission Control choices and
+reconnect. No victories or lesson completion are injected. Game2 in the
+guest fixture lacks the founder sidecar and is not a valid substitute.
+lineages-catchup-c.log passed the complete run on the packaged lineages25
+DLL. See docs/re/space.md#space-tribal-returner-launch for bounds and the
+earlier test-driver failures preserved under BUG-9087.

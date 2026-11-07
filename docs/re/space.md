@@ -2302,3 +2302,25 @@ ship close enough for the scanner. These coordinates are fixture-specific.
 The mission's generic +1E8 target planet pointed to Asten while the visible
 current objective concerned Nicus. Do not assume that field is always the
 current HUD destination. This observation alone does not establish a bug.
+## Tribal returner personal launch (2026-11-07, Lineages)
+<a id="space-tribal-returner-launch"></a>
+
+The packaged lineages25 DLL passed a targeted two-stage catch-up from
+FourWarriorsB/Game4 (Tribe) to EarlyLaunchB/Game0 (orbital Space). The host
+offered its retained ten-city Civilization victory. The guest confirmed
+native History, created a spacecraft and a captain of its original species,
+received both Mission Control tutorial choices, and reconnected without
+losing the creations or open lesson. Founders 291489FF and 7CF26CCB remained
+unchanged and the host remained in Space. Both processes exited with zero
+native faults. Complete evidence: lineages-catchup-c.log; additional native
+launch/reconnect passes: lineages-catchup-a-finish.log and
+lineages-catchup-b-finish.log.
+
+BUG-9087 was a test-driver misdiagnosis, not a confirmed campaign defect.
+Native city readiness can precede the arrival cinematic and its History
+confirmation. The History root 8C509D6C also remains enabled after the real
+editor opens; root existence is not visibility. Check the History caption's
+ancestors and the current mode before clicking. No production state rewrite,
+telemetry flush or forced stage transition was required. This qualifies the
+named Tribal returner path, not arbitrary Cell-to-Space catch-up or a new
+founder's first-ever mid-stage join. It does not replay flight training.
