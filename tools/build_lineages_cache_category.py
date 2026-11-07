@@ -16,6 +16,7 @@ from part_substitutes import parse
 
 CATEGORY = fnv('LineagesCacheCategory')
 ITEM = fnv('LineagesCacheItems')
+LOCALE = fnv('LineagesCacheLabels')
 ROOTS = ('2EA8FB98', '1B327962', 'FDECEF02')
 
 
@@ -33,7 +34,8 @@ def text(pid, value):
     encoded = value.encode('utf-16le')
     if len(encoded) > 510:
         raise ValueError('Localized text is too long')
-    return array(pid, 0x22, [bytes(8) + encoded + bytes(512 - len(encoded))], 520)
+    # This browser resolves locale references; it ignores the embedded fallback.
+    return array(pid, 0x22, [struct.pack('<II', LOCALE, fnv(value)) + encoded + bytes(512 - len(encoded))], 520)
 
 
 def props(*fields):
@@ -60,6 +62,27 @@ def extend_root(data):
     return props(*fields)
 
 
+def cache_records(keys=()):
+    """Standalone resources; the DLL appends to live roots, preserving other mods."""
+    records = {}
+    records[f'0x06B38241!0x{CATEGORY:08X}.prop'] = props(
+        struct.pack('>IHH', 0x00B2CCCB, 0x20, 0) + key(0x4529F96F, 0x00B1B104, 0x06B38241) + bytes(4),
+        text(0x744717C2, 'Lineages Cache'),
+        array(0x744717C1, 0x20, [key(ITEM)], 12),
+        struct.pack('>IHHB', 0x06397993, 1, 0, 1))
+    # Use the native keylist_Template item type. Rare Statues also has a key list,
+    # but is FeedItemMessage and dispatches a game-specific message instead.
+    records[f'0x4E5892EB!0x{ITEM:08X}.prop'] = props(
+        struct.pack('>IHH', 0x00B2CCCB, 0x20, 0) + key(0xFE003A17, 0x00B1B104, 0x4E5892EB) + bytes(4),
+        text(0x744717C5, 'Shared Creations'),
+        struct.pack('>IHH', 0x744717C3, 0x20, 0) + key(fnv('FeedItemKeyList')) + bytes(4),
+        array(0x0662081E, 0x20, [key(*k) for k in keys], 12))
+    records[f'0x02FABF01!0x{LOCALE:08X}.0x02FAC0B6'] = (
+        '\ufeff' + ''.join(f'0x{fnv(label):08X} {label}\r\n' for label in ('Lineages Cache', 'Shared Creations'))
+    ).encode('utf-8')
+    return records
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('probe', type=Path)
@@ -79,21 +102,13 @@ def main():
         # These exact roots were observed in base/PatchData and GA respectively.
         pack = 'PatchData' if root == '2EA8FB98' else 'Spore_EP1_Data'
         records[f'0x6EDC12D4!0x{root}.prop'] = extend_root((args.probe / pack / name).read_bytes())
-    records[f'0x06B38241!0x{CATEGORY:08X}.prop'] = props(
-        text(0x744717C2, 'Lineages Cache'),
-        array(0x744717C1, 0x20, [key(ITEM)], 12),
-        struct.pack('>IHHB', 0x06397993, 1, 0, 1))
-    # Native Rare Statues feed supplies the explicit-key-list item type.
-    # Its operation for creature/vehicle keys remains a runtime test requirement.
-    records[f'0x4E5892EB!0x{ITEM:08X}.prop'] = props(
-        text(0x744717C5, 'Shared Creations'),
-        struct.pack('>IHH', 0x744717C3, 0x20, 0) + key(2864613225) + bytes(4),
-        array(0x0662081E, 0x20, [key(*k) for k in keys], 12))
+    records.update(cache_records(keys))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory() as tmp:
         specs = []
         for i, (resource, data) in enumerate(records.items()):
-            parse(data)  # refuse malformed output before creating a package
+            if resource.endswith('.prop'):
+                parse(data)  # refuse malformed property output before creating a package
             path = Path(tmp) / f'{i}.prop'
             path.write_bytes(data)
             specs.append(f'{resource}={path}')

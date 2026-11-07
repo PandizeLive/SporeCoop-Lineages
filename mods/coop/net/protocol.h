@@ -95,6 +95,7 @@ enum MsgType : uint8_t {
     MSG_CIV_ECONOMY = 68, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
     MSG_CIV_INFLUENCE = 69, // host native religious followers and meter; civ_influence.h
     MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
+    MSG_LIBRARY = 71, // optional CAP_LIBRARY persistent creation PNG exchange
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
 };
@@ -166,8 +167,9 @@ enum Caps : uint32_t {
     CAP_VERSION = 4,
     CAP_PERSONAL_LAUNCH = 16, // HELLO: this guest understands the optional Civilization launch offer
     CAP_CAMPAIGN_PROFILE = 8, // str8: fork rules and required content
+    CAP_LIBRARY = 32, // persistent, paced creation-library exchange (MSG_LIBRARY)
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION; // what this build supports (the token bit is per HELLO)
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY; // token bit is per HELLO
 
 struct Hello {
     uint16_t proto = kProtoVersion;

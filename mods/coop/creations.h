@@ -131,5 +131,9 @@ std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
 std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
+// Native PNG import, called only outside Present. Development probe.
+bool import_library_png(const std::wstring& path, Key& key, std::string& error);
+bool inspect_library_png(const std::wstring& path, uint32_t& group, std::string& author, std::string& name);
+bool regenerate_library_png(const std::wstring& image, const Key& source, const std::wstring& output);
 
 } // namespace creations

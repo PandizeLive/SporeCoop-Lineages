@@ -898,6 +898,7 @@ unknown-field/wrong-stride rejection). This is a UI prototype, not a shipped
 cache implementation. Stock fixture creature: instance 8933CC09, type
 2B978C46, group 40626200; confirm against stock-key.json before reuse.
 
+~ superseded (2026-11-07): see [native cache correction](#creations-cache-native-feed).
 Runtime result: FAIL for category visibility. One isolated Windows instance
 (LineagesCacheQA, 800x600, 10 FPS; final startup at 30 FPS) opened native
 Sporepedia offline, but `coop.ui find Lineages` found nothing with both empty
@@ -985,3 +986,82 @@ Sources inspected on 2026-11-07:
 - https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/ShopperRequest.h
 - https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/AssetBrowserQuery.h
 - https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/OTDBParameters.h
+
+## Native Lineages Cache and library exchange (2026-11-07, feat/lineages-cache)
+<a id="creations-cache-native-feed"></a>
+
+CORRECTION (2026-11-07, feat/lineages-cache): the earlier missing-category probe
+actually displayed `***`. Resolved native feed roots contained our category.
+The browser ignores text fallback and requires an installed locale resource.
+Verified locale group 02FABF01/type 02FAC0B6, UTF-8 BOM, with real text IDs.
+FeedItemMessage (Rare Statues) was also the wrong template. FeedItemKeyList
+enumerates a resource group, ignoring the explicit key array used by the probe.
+Live code and the negative/positive native UI tests establish both corrections.
+
+The shipping resource builder emits only our category, item and locale alongside
+the existing icons. It never replaces vanilla root packages. The DLL appends
+category C2FEF27B to the resolved default/scenario roots using Property::Set
+(type 20, flags 14, 12-byte keys copied by the native property). This preserves
+other categories. The FeedItem_GetAssetKeys hook matches only our cached item
+property list at object+180 and returns native 16-byte asset entries using the
+game's vector allocator. Other feeds use the original function. The `library.feed`
+fix switch supplies a regression negative control. Native cards, thumbnails,
+names, authors and resource provenance passed on isolated Steam profiles.
+
+Native ImportPNG is now runtime-verified. A duplicate may return false with a
+valid existing key; that is not rejection. The Pollination database (011AC19D)
+must Flush (vtable+24) before the cache records success. The developer console's
+quit command calls TerminateProcess and does not save normally. Explicit flush
+preserved all eleven received native resources across this abrupt cold restart.
+
+DecodePNG's stack FileStream must receive an explicit AddRef before decoding,
+matching the native importer. Without the pin, the decoder's temporary smart
+reference deletes a stack stream (BUG-9094). Verified stream storage 230 bytes,
+metadata 90 bytes, native strings at 28/40/50/60, metadata group at 8. Release
+the decoded stream, destroy native metadata, then destroy the pinned FileStream.
+Native services run outside Present; authored decoding and imports also wait
+until editors/loading/cinematics are inactive. A completed network transfer can
+be persisted while import waits. Wire captions never replace embedded authorship.
+
+Cell-to-Creature provisional catalog records copy the Cell PNG picture, including
+its old embedded model. Comparing PNG metadata against the record's group catches
+this mismatch (BUG-9095). The cache encoder loads the current model and metadata
+explicitly from EditorSaves, reuses the picture, and writes a cache-only PNG via
+Thumbnail_EncodeCreation and PngEncoder_WriteImage. It does not invoke SavePNG,
+write My Spore Creations, or change original editor/campaign records. Repeated
+exports use a digest of source metadata, PNG and BEM. Native tests decoded the
+repaired output as a Creature and imported the correct current model group.
+
+Library policy: inventory only EditorSaves PNG records with matching metadata;
+never treat received Pollination assets as locally authored. The profile-wide
+SporeCoop/LineagesCache folder holds immutable SHA-256 PNG objects, a persistent
+source identity, repaired exports and an atomically replaced index. A co-op name
+is separate transport attribution, not a fabricated EA account. Received keys
+remain in native Pollination after disconnect and can be browsed offline. Removing
+the mod does not remove imported creations or personal saves.
+
+MSG_LIBRARY 71/CAP_LIBRARY 32 is an optional extension. Offer/Need/Chunk/Ack/Cancel
+messages implement incremental exchange with one inbound and outbound file per
+peer. The host relays only creations offered in the current session; clients
+offer their active locally authored inventory. Reconnect resets partial transfers
+and compares digests. Limits: 8 MiB per PNG, 1024-square RGB/RGBA pixels, 50,000
+index entries, 800-byte chunks, one chunk per peer per 50 ms, gameplay queue
+backpressure. CRCs, offsets, lengths, UTF-8 and whole-file digests are checked.
+Imports are queued individually; inventory scans read one creation per work tick
+and rerun only after EditorSaves changes. Large libraries synchronize gradually.
+
+Qualification: native two-peer creature/outfitted creature, building, vehicle
+and spaceship imports, reconnect, offline cards and cold restart; portable
+four-seat host relay, malformed packets and integrity checks. This does not prove
+four simultaneous native clients, arbitrary missing-part compatibility, all
+Adventure/flora payloads, revision collisions, or natural world selection. Native
+pollination remains responsible for deciding which eligible creation to spawn;
+visible cards alone do not establish its similarity or spawn-selection policy.
+
+Primary references, checked against live supported-build call sites:
+
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/Thumbnail_cImportExport.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/Property.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/PropertyList.h
+
+See [targeted validation](../06-testing.md#test-lineages-cache-native).

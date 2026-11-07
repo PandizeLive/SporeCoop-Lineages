@@ -27,7 +27,27 @@ Close Spore, open the same setup and click Uninstall. The installer restores
 the original Steam API loader and preserves saves, settings and logs. Use your
 pre-mod backup for vanilla play; custom-founder campaigns can depend on the mod.
 
-## Preview limits
+## Lineages Cache
+
+Cache-enabled builds automatically exchange locally authored creations with
+connected friends in the background. In Sporepedia, open **Lineages Cache >
+Shared Creations**. Creatures, buildings, vehicles and ships retain their embedded
+names and authors. The co-op display name is recorded separately as the sharer.
+The host relays guests' creations to other connected guests. Large libraries take
+time to finish; imports wait while an editor or loading cinematic is active.
+
+Received creations persist in that Spore profile's native library across solo
+and co-op games, without an EA login. They are available to the game's normal
+selection system; the cache does not force them to spawn or alter existing worlds.
+Use matching installed content/mods. Arbitrary missing-part combinations and
+Adventure/flora libraries have not been qualified.
+
+Uninstall removes the mod's category, but retains imported native creations and
+the profile's SporeCoop/LineagesCache files. Deleting only the cache folder does
+not remove creations already imported into Spore. Manage those through the
+normal Sporepedia; do not delete Pollination.package or campaign saves.
+
+## Preview qualification
 
 This package includes selected upstream 0.7.9 stability fixes and the current
 Lineages campaign code. Targeted two-instance Tribal and Creature checks passed.

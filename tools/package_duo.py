@@ -19,6 +19,7 @@ def main():
     dist = root / "out/dist"
     dist.mkdir(parents=True, exist_ok=True)
     output = dist / f"SporeCoop-{version}-Windows.zip"
+    subprocess.run([sys.executable, root / "tools/build_lineages_resources.py", build / "SporeCoop.package"], check=True)
     with tempfile.TemporaryDirectory(dir=dist) as folder:
         stage = Path(folder)
         mod = stage / "SporeCoop"

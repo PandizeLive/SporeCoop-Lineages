@@ -1,0 +1,663 @@
+// Persistent, profile-wide shared creations, separate from campaign model sync.
+#include "library.h"
+#include "../../updater/sha256.h"
+#include "creations.h"
+#include "fixes.h"
+#include "net/dbpf.h"
+#include "net/library_sync.h"
+#include "slotfs.h"
+#include "sporekit_game.hpp"
+#include <algorithm>
+#include <cstring>
+#include <deque>
+#include <filesystem>
+#include <map>
+#include <set>
+#include <tuple>
+
+namespace library {
+using namespace skg;
+static const SkHost *H;
+static constexpr size_t kMaxEntries = 50000;
+static SkMod *M;
+static net::Session *S;
+static uintptr_t a_Reserve, a_GetKeys, a_GetProps;
+struct Entry {
+    library_sync::Item item;
+    dbpf::Key key;
+    bool local = false, failed = false;
+};
+static std::map<std::string, Entry> g_entries;
+static std::set<std::string> g_relay;
+static std::set<uint8_t> g_peers;
+static std::deque<dbpf::Entry> g_scan;
+static std::vector<dbpf::Entry> g_source_index;
+static std::map<std::pair<uint32_t, uint32_t>, dbpf::Entry> g_metadata;
+static std::deque<std::string> g_imports;
+static std::set<std::string> g_active_local;
+static std::set<std::string> g_scan_active;
+static bool g_scanning = false;
+static unsigned g_local_dirty = 0, g_repaired = 0, g_export_failed = 0;
+static uint64_t g_editor_stamp = 0;
+static std::wstring g_dir, g_editor;
+static std::string g_identity, g_error;
+static bool g_loaded = false, g_pending = false, g_index_bad = false, g_safe = false;
+struct Incoming {
+    uint8_t peer;
+    std::vector<uint8_t> data;
+};
+static std::deque<Incoming> g_incoming;
+static double g_scan_at = -100, g_step_at = -100;
+static library_sync::Exchange g_exchange;
+static std::vector<library_sync::Item> g_offers;
+static std::set<std::string> g_offered;
+static void offer(const Entry &e) {
+    if (!S->connected() || !g_offered.insert(e.item.hash).second)
+        return;
+    auto item = e.item;
+    if (e.local)
+        item.sharer = S->name_of(S->my_id());
+    g_offers.push_back(std::move(item));
+}
+static bool g_roots_added = false;
+
+static void add_category() {
+    if (g_roots_added || !a_GetProps || !a_GetKeys)
+        return;
+    auto set = H->sym("App::Property::Set");
+    void *pm = cdecl_call<void *>(a_GetProps);
+    if (!set || !pm)
+        return;
+    void *category = nullptr;
+    if (!vcall<bool>(pm, 0x2C / 4, uint32_t(0xC2FEF27B), uint32_t(0x06B38241), &category) || !category)
+        return;
+    vcall<int>(category, 0x04 / 4);
+    bool all = true;
+    for (uint32_t root : {0x2EA8FB98u, 0x1B327962u, 0xFDECEF02u}) {
+        void *list = nullptr;
+        if (!vcall<bool>(pm, 0x2C / 4, root, uint32_t(0x6EDC12D4), &list) || !list) {
+            all = false;
+            continue;
+        }
+        size_t count = 0;
+        dbpf::Key *keys = nullptr;
+        void *property = nullptr;
+        if (cdecl_call<bool>(a_GetKeys, list, uint32_t(0x744717C0), &count, &keys) && count < 1000 &&
+            (!count || readable(keys, count * sizeof(*keys))) &&
+            vcall<bool>(list, 0x24 / 4, uint32_t(0x744717C0), &property) && property) {
+            std::vector<dbpf::Key> values;
+            if (count)
+                values.assign(keys, keys + count);
+            const dbpf::Key our{0xC2FEF27B, 0, 0};
+            if (std::find(values.begin(), values.end(), our) == values.end()) {
+                values.push_back(our);
+                if (!thiscall<bool>(set, property, int(0x20), int(0x14), values.data(), sizeof(dbpf::Key),
+                                    values.size()))
+                    all = false;
+            }
+        } else
+            all = false;
+        vcall<int>(list, 0x04 / 4);
+    }
+    g_roots_added = all;
+}
+
+static bool read_at(const std::wstring &path, uint64_t offset, size_t count, std::vector<uint8_t> &out) {
+    if (count > (64u << 20))
+        return false;
+    HANDLE f =
+        CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return false;
+    LARGE_INTEGER where{};
+    where.QuadPart = offset;
+    out.resize(count);
+    DWORD got = 0;
+    bool ok = SetFilePointerEx(f, where, nullptr, FILE_BEGIN) && ReadFile(f, out.data(), DWORD(count), &got, nullptr) &&
+              got == count;
+    CloseHandle(f);
+    if (!ok)
+        out.clear();
+    return ok;
+}
+static bool read_file(const std::wstring &path, std::vector<uint8_t> &out, size_t limit = library_sync::kMaxFile) {
+    WIN32_FILE_ATTRIBUTE_DATA st{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &st) || st.nFileSizeHigh || st.nFileSizeLow > limit)
+        return false;
+    return read_at(path, 0, st.nFileSizeLow, out);
+}
+static bool atomic_file(const std::wstring &path, const std::vector<uint8_t> &bytes) {
+    const auto temporary = path + L".tmp";
+    HANDLE f = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return false;
+    DWORD written = 0;
+    bool ok = WriteFile(f, bytes.data(), DWORD(bytes.size()), &written, nullptr) && written == bytes.size() &&
+              FlushFileBuffers(f);
+    CloseHandle(f);
+    return ok && MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+}
+static std::wstring object_path(const std::string &hash) {
+    return g_dir + L"\\objects\\" + slotfs::widen(hash) + L".png";
+}
+static bool save_index() {
+    if (g_index_bad)
+        return false;
+    net::Writer w;
+    w.u32(0x31434E4C);
+    w.u32(uint32_t(g_entries.size()));
+    for (auto &[hash, e] : g_entries) {
+        library_sync::write_item(w, e.item);
+        w.u32(e.key.instance);
+        w.u32(e.key.type);
+        w.u32(e.key.group);
+        w.u8(e.local);
+        w.u8(e.failed);
+    }
+    if (!atomic_file(g_dir + L"\\index.bin", w.data)) {
+        g_error = "Cannot save library index.";
+        return false;
+    }
+    return true;
+}
+static bool load_index() {
+    auto path = g_dir + L"\\index.bin";
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+        return true;
+    std::vector<uint8_t> bytes;
+    if (!read_file(path, bytes, 64u << 20))
+        return false;
+    net::Reader r(bytes.data(), bytes.size());
+    if (r.u32() != 0x31434E4C)
+        return false;
+    uint32_t count = r.u32();
+    if (count > kMaxEntries)
+        return false;
+    std::map<std::string, Entry> entries;
+    for (uint32_t n = 0; n < count; ++n) {
+        Entry e;
+        if (!library_sync::read_item(r, e.item))
+            return false;
+        e.key = {r.u32(), r.u32(), r.u32()};
+        uint8_t local = r.u8(), failed = r.u8();
+        if (!r.ok() || local > 1 || failed > 1 || entries.count(e.item.hash))
+            return false;
+        e.local = local;
+        e.failed = failed;
+        entries.emplace(e.item.hash, std::move(e));
+    }
+    if (!r.ok() || r.left())
+        return false;
+    g_entries = std::move(entries);
+    for (auto &[hash, e] : g_entries)
+        if (!e.local && !e.failed)
+            g_imports.push_back(hash);
+    return true;
+}
+static bool paths() {
+    if (g_loaded)
+        return !g_index_bad;
+    auto get = H->sym("Resource::GetDatabaseByID");
+    void *db = get ? cdecl_call<void *>(get, uint32_t(0x11AC199)) : nullptr;
+    const wchar_t *loc = db ? vcall<const wchar_t *>(db, 0x28 / 4) : nullptr;
+    if (!loc || !*loc)
+        return false;
+    g_editor = loc;
+    g_dir = std::filesystem::path(g_editor).parent_path().wstring() + L"\\SporeCoop\\LineagesCache";
+    std::error_code ec;
+    std::filesystem::create_directories(g_dir + L"\\objects", ec);
+    if (!ec)
+        std::filesystem::create_directories(g_dir + L"\\exports", ec);
+    if (ec) {
+        g_error = "Cannot create library cache.";
+        return false;
+    }
+    std::vector<uint8_t> id;
+    if (read_file(g_dir + L"\\identity", id, 64) && library_sync::valid_hash(std::string(id.begin(), id.end())))
+        g_identity.assign(id.begin(), id.end());
+    else {
+        FILETIME ft{};
+        LARGE_INTEGER counter{};
+        GetSystemTimeAsFileTime(&ft);
+        QueryPerformanceCounter(&counter);
+        net::Writer seed;
+        seed.raw(&ft, sizeof ft);
+        seed.raw(&counter, sizeof counter);
+        seed.u32(GetCurrentProcessId());
+        seed.str16(slotfs::narrow(g_dir));
+        g_identity = upd::sha256_hex(seed.data);
+        if (!atomic_file(g_dir + L"\\identity", std::vector<uint8_t>(g_identity.begin(), g_identity.end())))
+            return false;
+    }
+    g_loaded = true;
+    if (!load_index()) {
+        g_index_bad = true;
+        g_error = "Library index is unreadable; preserved without overwriting.";
+        return false;
+    }
+    return true;
+}
+static bool read_record(const dbpf::Entry &entry, std::vector<uint8_t> &bytes) {
+    std::vector<uint8_t> raw;
+    return entry.size <= library_sync::kMaxFile && entry.usize <= library_sync::kMaxFile &&
+           read_at(g_editor, entry.offset, entry.size, raw) && dbpf::decode(entry, raw.data(), bytes);
+}
+static std::string clean(std::string s) {
+    s.erase(std::remove_if(s.begin(), s.end(), [](unsigned char c) { return c < 32 || c == 127; }), s.end());
+    s.resize(utf8::cut_bytes(s, 255));
+    return s;
+}
+static void scan_index() {
+    WIN32_FILE_ATTRIBUTE_DATA st{};
+    if (!GetFileAttributesExW(g_editor.c_str(), GetFileExInfoStandard, &st))
+        return;
+    uint64_t stamp = (uint64_t(st.ftLastWriteTime.dwHighDateTime) << 32) | st.ftLastWriteTime.dwLowDateTime;
+    if (stamp == g_editor_stamp)
+        return;
+    std::vector<uint8_t> hdr, idx;
+    dbpf::IndexInfo info;
+    if (!read_at(g_editor, 0, 96, hdr) || !dbpf::index_info(hdr.data(), hdr.size(), info) ||
+        !read_at(g_editor, info.offset, info.size, idx) ||
+        !dbpf::parse_index(idx.data(), idx.size(), info, g_source_index))
+        return;
+    g_editor_stamp = stamp;
+    g_metadata.clear();
+    g_scan_active.clear();
+    g_scanning = true;
+    for (auto &e : g_source_index)
+        if (e.key.type == 0x030BDEE3)
+            g_metadata[{e.key.group, e.key.instance}] = e;
+    for (auto &e : g_source_index)
+        if (e.key.type == 0x2F7D0004 && (e.key.group & 0xFF) == 0)
+            g_scan.push_back(e);
+}
+static void scan_one() {
+    if (g_scan.empty())
+        return;
+    auto resource = g_scan.front();
+    g_scan.pop_front();
+    // A thumbnail alone is not an authored creation. Native metadata must share its key.
+    auto meta = g_metadata.find({resource.key.group, resource.key.instance});
+    if (meta == g_metadata.end())
+        return;
+    std::vector<uint8_t> png, metadata;
+    if (!read_record(resource, png) || !library_sync::valid_png(png) || !read_record(meta->second, metadata))
+        return;
+    std::string hash = upd::sha256_hex(png);
+    const auto input = g_dir + L"\\inspect.png";
+    uint32_t group = 0;
+    std::string author, title;
+    if (!atomic_file(input, png) || !creations::inspect_library_png(input, group, author, title)) {
+        ++g_export_failed;
+        g_error = "An authored PNG could not be decoded.";
+        return;
+    }
+    if (group != resource.key.group) {
+        // The Cell-to-Creature provisional catalog copies a thumbnail whose
+        // steganographic payload is still a cell. Encode the CURRENT model into
+        // a separate cache PNG, keeping the original records and saves intact.
+        uint32_t type = 0;
+        switch (resource.key.group) {
+        case 0x40616200:
+            type = 0x3D97A8E4;
+            break;
+        case 0x40626200:
+            type = 0x2B978C46;
+            break;
+        case 0x40636200:
+            type = 0x2399BE55;
+            break;
+        case 0x40646200:
+            type = 0x24682294;
+            break;
+        case 0x40656200:
+            type = 0x476A98C7;
+            break;
+        case 0x40666200:
+            type = 0x438F6347;
+            break;
+        }
+        std::vector<uint8_t> signature = metadata;
+        signature.insert(signature.end(), png.begin(), png.end());
+        for (auto &rec : g_source_index)
+            if (rec.key.instance == resource.key.instance && rec.key.group == resource.key.group &&
+                rec.key.type == 0x1A99B06B) {
+                std::vector<uint8_t> model;
+                if (read_record(rec, model))
+                    signature.insert(signature.end(), model.begin(), model.end());
+            }
+        auto output = g_dir + L"\\exports\\" + slotfs::widen(upd::sha256_hex(signature)) + L".png";
+        std::vector<uint8_t> repaired;
+        bool ready = read_file(output, repaired) && library_sync::valid_png(repaired) &&
+                     creations::inspect_library_png(output, group, author, title) && group == resource.key.group;
+        if (!ready && type) {
+            ready =
+                creations::regenerate_library_png(input, {resource.key.instance, type, resource.key.group}, output) &&
+                read_file(output, repaired) && library_sync::valid_png(repaired) &&
+                creations::inspect_library_png(output, group, author, title) && group == resource.key.group;
+        }
+        if (!ready) {
+            ++g_export_failed;
+            g_error = "A generated creation could not be exported consistently.";
+            return;
+        }
+        // Retire an earlier development cache entry that held the stale PNG.
+        auto old = g_entries.find(hash);
+        if (old != g_entries.end() && old->second.local)
+            g_entries.erase(old);
+        png = std::move(repaired);
+        hash = upd::sha256_hex(png);
+        ++g_repaired;
+    }
+    auto old = g_entries.find(hash);
+    if (old != g_entries.end() && old->second.local) {
+        g_active_local.insert(hash);
+        g_scan_active.insert(hash);
+        offer(old->second);
+        return;
+    }
+    if (old == g_entries.end() && g_entries.size() >= kMaxEntries) {
+        ++g_export_failed;
+        g_error = "Library index is full.";
+        return;
+    }
+    Entry e;
+    e.local = true;
+    e.key = resource.key;
+    e.item.hash = hash;
+    e.item.size = uint32_t(png.size());
+    e.item.author = std::move(author);
+    e.item.name = std::move(title);
+    e.item.author = clean(e.item.author);
+    e.item.name = clean(e.item.name);
+    e.item.source = g_identity;
+    e.item.sharer = clean(S->name_of(S->my_id()));
+    if (!atomic_file(object_path(hash), png)) {
+        g_error = "Cannot cache authored creation.";
+        return;
+    }
+    // A locally edited copy has its own native author metadata and PNG digest.
+    g_entries[hash] = std::move(e);
+    g_active_local.insert(hash);
+    g_scan_active.insert(hash);
+    ++g_local_dirty;
+    offer(g_entries.at(hash));
+}
+static void import_one() {
+    while (!g_imports.empty()) {
+        std::string hash = std::move(g_imports.front());
+        g_imports.pop_front();
+        auto it = g_entries.find(hash);
+        if (it == g_entries.end())
+            continue;
+        auto &e = it->second;
+        if (e.local || e.failed || (e.key.instance && creations::key_known(e.key)))
+            continue;
+        std::vector<uint8_t> png;
+        if (!read_file(object_path(hash), png) || png.size() != e.item.size || upd::sha256_hex(png) != hash ||
+            !library_sync::valid_png(png)) {
+            e.failed = true;
+            g_error = "Cached creation failed its integrity check.";
+            save_index();
+            return;
+        }
+        uint32_t group = 0;
+        std::string author, name;
+        if (!creations::inspect_library_png(object_path(hash), group, author, name)) {
+            e.failed = true;
+            g_error = "Received PNG has no readable creation.";
+            save_index();
+            return;
+        }
+        // Native decoding/import must wait until the editor/loading cinematic
+        // releases the shared thumbnail service. Wire captions are only hints.
+        e.item.author = clean(author);
+        e.item.name = clean(name);
+        if (!creations::import_library_png(object_path(hash), e.key, g_error))
+            e.failed = true;
+        save_index();
+        H->log(M, e.failed ? SK_WARN : SK_INFO, "library: %s %s", e.failed ? "import rejected" : "imported",
+               hash.c_str());
+        return;
+    }
+}
+static bool g_feed_fix = true;
+COOP_FIX("library.feed", "BUG-9093", g_feed_fix, "Lineages Cache lists its imported creation keys");
+struct Asset {
+    dbpf::Key key;
+    uint32_t flags;
+};
+struct Vector {
+    Asset *begin, *end, *capacity;
+};
+static void(SK_THISCALL *o_FeedKeys)(void *, Vector *);
+static void SK_THISCALL h_FeedKeys(void *self, Vector *out) {
+    // Only the cached property list of our own feed is intercepted. Native
+    // FeedItemKeyList otherwise enumerates resources by group, not this array.
+    void *pm = a_GetProps ? cdecl_call<void *>(a_GetProps) : nullptr;
+    void *list = nullptr;
+    if (g_feed_fix && pm && a_GetKeys && a_Reserve &&
+        vcall<bool>(pm, 0x2C / 4, uint32_t(0x97954265), uint32_t(0x4E5892EB), &list) && list) {
+        const bool ours = list == field<void *>(self, 0x180);
+        if (ours && paths()) {
+            std::vector<dbpf::Key> keys;
+            std::set<std::tuple<uint32_t, uint32_t, uint32_t>> unique;
+            for (auto &[hash, e] : g_entries)
+                if (!e.local && !e.failed && e.key.instance && creations::key_known(e.key) &&
+                    unique.emplace(e.key.instance, e.key.type, e.key.group).second)
+                    keys.push_back(e.key);
+            thiscall<void>(a_Reserve, out, keys.size());
+            out->end = out->begin;
+            for (auto &key : keys)
+                *out->end++ = {key, 0};
+        }
+        vcall<int>(list, 0x04 / 4);
+        if (ours)
+            return;
+    }
+    o_FeedKeys(self, out);
+}
+
+static bool store_item(uint8_t peer, const library_sync::Item &item, const std::vector<uint8_t> &png) {
+    if (!paths() || (g_entries.size() >= kMaxEntries && !g_entries.count(item.hash))) {
+        g_error = "Library index unavailable or full.";
+        return false;
+    }
+    if (!atomic_file(object_path(item.hash), png)) {
+        g_error = "Cannot save received creation.";
+        return false;
+    }
+    Entry e;
+    e.item = item;
+    // The direct sender's co-op name is transport attribution, not an EA author ID.
+    if (S->role() == net::Role::Host)
+        e.item.sharer = clean(S->name_of(peer));
+    auto old = g_entries.find(item.hash);
+    if (old == g_entries.end()) {
+        g_entries.emplace(item.hash, std::move(e));
+        g_imports.push_back(item.hash);
+    } else if (!old->second.local && old->second.failed) {
+        old->second = std::move(e);
+        g_imports.push_back(item.hash);
+    }
+    return save_index();
+}
+void init(const SkHost *host, SkMod *mod, net::Session *session) {
+    H = host;
+    M = mod;
+    S = session;
+    a_Reserve = H->sym("SporeCoop::AssetKeyVector_Reserve");
+    a_GetKeys = H->sym("App::Property::GetArrayKey");
+    a_GetProps = H->sym("App::IPropManager::Get");
+    auto feed = H->sym("SporeCoop::FeedItem_GetAssetKeys");
+    if (feed && a_Reserve && a_GetKeys && a_GetProps)
+        H->hook_create(mod, (void *)feed, (void *)h_FeedKeys, (void **)&o_FeedKeys);
+    g_exchange.inventory = []() -> const std::vector<library_sync::Item> & { return g_offers; };
+    g_exchange.eligible = [](const library_sync::Item &i) {
+        auto e = g_entries.find(i.hash);
+        return e != g_entries.end() && ((e->second.local && g_active_local.count(i.hash)) ||
+                                        (!e->second.local && S->role() == net::Role::Host && g_relay.count(i.hash)));
+    };
+    g_exchange.have = [](const library_sync::Item &item) {
+        auto it = g_entries.find(item.hash);
+        if (it == g_entries.end() || it->second.item.size != item.size)
+            return false;
+        std::vector<uint8_t> data;
+        return read_file(object_path(item.hash), data) && data.size() == item.size &&
+               upd::sha256_hex(data) == item.hash;
+    };
+    g_exchange.load = [](const std::string &hash, std::vector<uint8_t> &data) {
+        return read_file(object_path(hash), data);
+    };
+    g_exchange.store = store_item;
+    g_exchange.seen = [](uint8_t, const library_sync::Item &item) {
+        if (S->role() == net::Role::Host) {
+            g_relay.insert(item.hash);
+            auto e = g_entries.find(item.hash);
+            if (e != g_entries.end())
+                offer(e->second);
+        }
+    };
+    g_exchange.send = [](uint8_t peer, const net::Writer &w) { return S->send_reliable_to(peer, net::MSG_LIBRARY, w); };
+}
+void on_session_end() {
+    g_exchange.reset();
+    g_peers.clear();
+    g_relay.clear();
+    g_incoming.clear();
+    g_offers.clear();
+    g_offered.clear();
+    g_editor_stamp = 0;
+    g_scan_at = -100;
+}
+void on_player_leave(uint8_t id) {
+    g_exchange.leave(id);
+    g_peers.erase(id);
+    std::erase_if(g_incoming, [&](const Incoming &m) { return m.peer == id; });
+}
+static bool peer_ready(uint8_t peer) {
+    return S && S->connected() && peer != S->my_id() && (S->role() == net::Role::Host || peer == 0) &&
+           (S->peer_caps(peer) & net::CAP_LIBRARY);
+}
+void on_message(uint8_t peer, net::Reader &r) {
+    if (!peer_ready(peer) || !r.ok() || r.left() > 2048 || g_incoming.size() >= 2048)
+        return;
+    g_incoming.push_back({peer, std::vector<uint8_t>(r.cur(), r.cur() + r.left())});
+}
+static void work(void *) {
+    g_pending = false;
+    add_category();
+    if (!paths())
+        return;
+    if (S->connected()) {
+        if (g_offers.empty())
+            for (auto &hash : g_active_local) {
+                auto e = g_entries.find(hash);
+                if (e != g_entries.end())
+                    offer(e->second);
+            }
+        for (auto &player : S->players())
+            if (peer_ready(player.id) && g_peers.insert(player.id).second)
+                g_exchange.join(player.id);
+    } else if (!g_peers.empty())
+        on_session_end();
+    for (unsigned n = 0; n < 32 && !g_incoming.empty(); ++n) {
+        auto m = std::move(g_incoming.front());
+        g_incoming.pop_front();
+        if (peer_ready(m.peer)) {
+            net::Reader r(m.data.data(), m.data.size());
+            g_exchange.receive(m.peer, r);
+        }
+    }
+    if (g_safe) {
+        scan_one();
+        if (g_scanning && g_scan.empty()) {
+            for (auto &hash : g_active_local)
+                if (!g_scan_active.count(hash))
+                    g_offered.erase(hash);
+            g_active_local = std::move(g_scan_active);
+            g_scan_active.clear();
+            g_scanning = false;
+        }
+        import_one();
+        if (g_local_dirty && (g_local_dirty >= 16 || g_scan.empty())) {
+            if (save_index())
+                g_local_dirty = 0;
+        }
+    }
+    for (auto peer : g_peers)
+        if (peer_ready(peer) && S->pending_to(peer) < 16)
+            g_exchange.tick(peer);
+}
+void tick(double now, bool safe) {
+    g_safe = safe;
+    if (g_pending || now - g_step_at < 0.05)
+        return;
+    g_step_at = now;
+    if (g_loaded && !g_index_bad && g_scan.empty() && now - g_scan_at >= 30 && S->connected() && safe) {
+        g_scan_at = now;
+        // Index reading is deferred with the other work, not performed in Present.
+        H->run_outside_frame(
+            [](void *) {
+                if (paths())
+                    scan_index();
+            },
+            nullptr);
+    }
+    g_pending = true;
+    H->run_outside_frame(work, nullptr);
+}
+std::string debug(const std::vector<std::string> &args) {
+    if (!paths())
+        return g_error.empty() ? "Native library database unavailable." : g_error;
+    if (!args.empty() && args[0] == "scan") {
+        g_editor_stamp = 0;
+        g_scan.clear();
+        scan_index();
+    }
+    if (args.size() == 2 && args[0] == "inspect") {
+        uint32_t group = 0;
+        std::string author, name;
+        bool ok = creations::inspect_library_png(slotfs::widen(args[1]), group, author, name);
+        char text[32];
+        snprintf(text, sizeof text, "%08X", group);
+        return std::string(ok ? "PNG " : "Invalid PNG ") + text + " " + name + " by " + author;
+    }
+    if (args.size() == 2 && args[0] == "import") {
+        std::vector<uint8_t> png;
+        if (!read_file(slotfs::widen(args[1]), png) || !library_sync::valid_png(png))
+            return "Invalid creation PNG.";
+        library_sync::Item item;
+        item.hash = upd::sha256_hex(png);
+        item.size = uint32_t(png.size());
+        item.source = "manual-test";
+        item.sharer = "QA import";
+        if (!store_item(S->my_id(), item, png))
+            return g_error;
+        import_one();
+    }
+    size_t local = 0, imported = 0, pending = 0, failed = 0;
+    std::string list;
+    for (auto &[hash, e] : g_entries) {
+        if (e.local)
+            ++local;
+        else if (e.failed)
+            ++failed;
+        else if (e.key.instance && creations::key_known(e.key))
+            ++imported;
+        else
+            ++pending;
+        if (!args.empty() && args[0] == "list") {
+            char key[40];
+            snprintf(key, sizeof key, "%08X/%08X/%08X", e.key.instance, e.key.type, e.key.group);
+            list += "\n" + hash + " " + key + " " + (e.local ? "local " : "received ") + e.item.name + " by " +
+                    e.item.author + " shared by " + e.item.sharer;
+        }
+    }
+    return "library local=" + std::to_string(local) + " imported=" + std::to_string(imported) +
+           " pending=" + std::to_string(pending) + " failed=" + std::to_string(failed) +
+           " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
+           " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) +
+           " export_failed=" + std::to_string(g_export_failed) + (g_error.empty() ? "" : " error=" + g_error) + list;
+}
+} // namespace library

@@ -26,9 +26,9 @@ all: loader sporekit coop res setup
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
 UI_PNG := $(wildcard data/ui/*.png)
 res: $(B)/SporeCoop.package
-$(B)/SporeCoop.package: tools/mkpackage.py $(UI_PNG)
+$(B)/SporeCoop.package: tools/mkpackage.py tools/build_lineages_resources.py tools/build_lineages_cache_category.py $(UI_PNG)
 	@mkdir -p $(B)
-	python3 tools/mkpackage.py $@ $(foreach f,$(UI_PNG),sporecoop!$(basename $(notdir $(f))).png=$(f))
+	python3 tools/build_lineages_resources.py $@
 
 loader: $(B)/steam_api.dll
 sporekit: $(B)/sporekit.dll
@@ -94,6 +94,9 @@ ifeq ($(SKIP_SANITIZERS),1)
 endif
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/library_sync_tests tests/library_sync_tests.cpp mods/coop/net/library_sync.cpp updater/sha256.cpp
+	$(B)/host/library_sync_tests
+	python3 tools/tests/test_cache_category.py
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 	python3 tools/tests/lab_selftest.py
 	python3 tools/tests/gates_selftest.py

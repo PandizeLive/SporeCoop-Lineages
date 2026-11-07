@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages26-dev"
+#define COOP_VERSION "0.7.3.6-lineages27-dev"
 #endif
 
 #include <winsock2.h>
@@ -63,6 +63,7 @@
 #include "net/session.h"
 #include "net/utf8.h"
 #include "creations.h"
+#include "library.h"
 #include "notify.h"
 #include "notify_text.h"
 #include "syncdbg.h"
@@ -2639,6 +2640,7 @@ void on_frame(void*, int, void*)
     tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
     civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
     creations::tick(now);
+    library::tick(now, !(game_busy() & (busy::kEditor | busy::kLoading | busy::kCinematic)));
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
@@ -3228,6 +3230,7 @@ void end_session(EndPath path, bool cell)
     adventure::reset();
     creature_rescue::reset();
     shared::on_session_end();
+    library::on_session_end();
     world::on_session_end(); // the guest's queued loads of the host's world (BUG-0074)
     g_dna_pending = -1;
     g_dna_pending_progress = {};
@@ -3599,6 +3602,10 @@ void setup_callbacks()
             world::on_launch_message(g_sess,from,r);
             return;
         }
+        if (type == net::MSG_LIBRARY) {
+            library::on_message(from, r);
+            return;
+        }
         if (type == net::MSG_CREATION) {
             creations::on_message(type, from, r);
             return;
@@ -3644,6 +3651,7 @@ void setup_callbacks()
             g_roles.erase(id); // ids are reused: the next newcomer starts with no role (BUG-0064)
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
+        library::on_player_leave(id);
         npc::on_player_leave(id);       // BUG-0125
         views::forget(id);              // BUG-0280
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
@@ -5455,6 +5463,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             despawn(it->second);
     };
     creations::init(H, M, std::move(crc));
+    library::init(H, M, &g_sess);
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
     modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {
         creations::Key k = creations::player_key(id, (creations::Kind)kind);
@@ -5496,6 +5505,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.library", "coop.library [status|list|scan|import <PNG>] - persistent shared library",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", library::debug(std::vector<std::string>(argv+1,argv+argc)).c_str());
+                       return 0;
+                   }, nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.creations", "coop.creations [list | next|prev <creature|cell|ufo> | choose <kind> <hex>]",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", creations::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());

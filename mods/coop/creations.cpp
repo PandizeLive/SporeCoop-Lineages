@@ -3190,8 +3190,132 @@ std::string status()
     return s;
 }
 
+bool inspect_library_png(const std::wstring& path, uint32_t& group, std::string& author, std::string& name)
+{
+    auto get=H->sym("App::Thumbnail_cImportExport::Get");
+    auto decode=H->sym("App::Thumbnail_cImportExport::DecodePNG");
+    auto ctor=H->sym("SporeCoop::FileStream_PathCtor");
+    auto dtor=H->sym("SporeCoop::FileStream_Dtor");
+    auto meta_dtor=H->sym("SporeCoop::ThumbnailMetadata_Dtor");
+    auto open=H->sym("IO::FileStream::Open");
+    auto addref=H->sym("IO::FileStream::AddRef");
+    void* service=get ? cdecl_call<void*>(get) : nullptr;
+    if (!service || !decode || !ctor || !dtor || !meta_dtor || !open || !addref) return false;
+    alignas(8) uint8_t stream[0x230]={}, metadata[0x90]={};
+    wchar_t empty[1]={};
+    // EASTL empty strings have begin=end and one wchar of capacity. Native
+    // assignment owns replacements; the native destructor releases those only.
+    for (unsigned offset:{0x28u,0x40u,0x50u,0x60u}) {
+        skg::field<wchar_t*>(metadata,offset)=empty;
+        skg::field<wchar_t*>(metadata,offset+4)=empty;
+        skg::field<wchar_t*>(metadata,offset+8)=empty+1;
+    }
+    thiscall<void*>(ctor,stream,path.c_str());
+    // Native ImportPNG pins its stack stream before the decoder takes a smart
+    // reference. Without this, the decoder's Release tries to delete our stack.
+    thiscall<int>(addref,stream);
+    void* decoded=nullptr;
+    bool ok=thiscall<bool>(open,stream,1,3,1,0) && thiscall<bool>(decode,service,stream,metadata,&decoded);
+    if (ok) {
+        group=skg::field<uint32_t>(metadata,8);
+        auto text=[&](unsigned offset) {
+            auto first=skg::field<wchar_t*>(metadata,offset), last=skg::field<wchar_t*>(metadata,offset+4);
+            if (!first || last<first || last-first>4000 || !skg::readable(first,size_t(last-first)*2)) return std::string();
+            return slotfs::narrow(std::wstring(first,last));
+        };
+        author=text(0x28); name=text(0x40);
+    }
+    if (decoded) vcall<int>(decoded,0x08/4);
+    thiscall<void>(meta_dtor,metadata);
+    thiscall<void>(dtor,stream);
+    return ok;
+}
+
+bool regenerate_library_png(const std::wstring& image, const Key& source, const std::wstring& output)
+{
+    auto encode=H->sym("SporeCoop::Thumbnail_EncodeCreation");
+    auto write=H->sym("SporeCoop::PngEncoder_WriteImage");
+    auto get=H->sym("App::Thumbnail_cImportExport::Get");
+    auto ctor=H->sym("SporeCoop::FileStream_PathCtor");
+    auto dtor=H->sym("SporeCoop::FileStream_Dtor");
+    auto open=H->sym("IO::FileStream::Open");
+    auto addref=H->sym("IO::FileStream::AddRef");
+    void* service=get ? cdecl_call<void*>(get) : nullptr;
+    void* rm=a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    void* db=a_GetDb ? cdecl_call<void*>(a_GetDb,kEditorSavesArea) : nullptr;
+    if (!encode || !write || !service || !rm || !db || !ctor || !dtor || !open || !addref) return false;
+    uint32_t image_group=0; std::string author,name;
+    // Decode loads the existing picture into the importer's image encoder.
+    if (!inspect_library_png(image,image_group,author,name)) return false;
+    Key meta_key{source.instance,kMeta,source.group};
+    void *model=nullptr,*metadata=nullptr;
+    bool ok=vcall<bool>(rm,0x0C/4,&source,&model,0,db,nullptr,nullptr) && model &&
+        vcall<bool>(rm,0x0C/4,&meta_key,&metadata,0,db,nullptr,nullptr) && metadata;
+    void* meta=metadata ? vcall<void*>(metadata,0x0C/4,kMeta) : nullptr;
+    if (ok && meta) ok=thiscall<bool>(encode,service,meta,model,false);
+    else ok=false;
+    if (ok) {
+        alignas(8) uint8_t stream[0x230]={};
+        thiscall<void*>(ctor,stream,output.c_str()); thiscall<int>(addref,stream);
+        ok=thiscall<bool>(open,stream,3,2,1,0) && thiscall<bool>(write,(uint8_t*)service+0x88,stream,0);
+        thiscall<void>(dtor,stream);
+    }
+    if (metadata) vcall<int>(metadata,0x04/4);
+    if (model) vcall<int>(model,0x04/4);
+    return ok;
+}
+
+bool import_library_png(const std::wstring& path, Key& key, std::string& error)
+{
+    auto get = H->sym("App::Thumbnail_cImportExport::Get");
+    auto import = H->sym("App::Thumbnail_cImportExport::ImportPNG");
+    void* service = get ? cdecl_call<void*>(get) : nullptr;
+    if (!service || !import) { error = "Native importer unavailable."; return false; }
+    bool ok = thiscall<bool>(import, service, path.c_str(), &key);
+    // ImportPNG returns false for a known native creation, with its existing key.
+    if (!ok && (!key.instance || key.instance==0xFFFFFFFFu || !key_exists(key))) {
+        error = "Spore rejected the creation PNG."; return false;
+    }
+    void* db = a_GetDb ? cdecl_call<void*>(a_GetDb, uint32_t(0x11AC19D)) : nullptr;
+    if (!db || !vcall<bool>(db, 0x24 / 4)) { error = "Native creation database did not flush."; return false; }
+    return true;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() == 4 && a[0] == "feedkeys") {
+        auto pm_get = H->sym("App::IPropManager::Get");
+        auto get_keys = H->sym("App::Property::GetArrayKey");
+        void* pm = pm_get ? cdecl_call<void*>(pm_get) : nullptr;
+        if (!pm || !get_keys) return "Property diagnostics unavailable.";
+        void* list = nullptr;
+        uint32_t inst = strtoul(a[1].c_str(), nullptr, 16), group = strtoul(a[2].c_str(), nullptr, 16);
+        uint32_t field = strtoul(a[3].c_str(), nullptr, 16);
+        if (!vcall<bool>(pm, 0x2C / 4, inst, group, &list) || !list) return "Property list missing.";
+        size_t count = 0;
+        Key* keys = nullptr;
+        bool ok = cdecl_call<bool>(get_keys, list, field, &count, &keys);
+        std::string result = ok ? "keys=" + std::to_string(count) : "Key array missing.";
+        if (ok && count <= 10000 && (!count || skg::readable(keys, count * sizeof(Key))))
+            for (size_t i = 0; i < std::min(count, size_t(32)); ++i)
+                result += " " + hex(keys[i].instance) + "/" + hex(keys[i].type) + "/" + hex(keys[i].group);
+        vcall<int>(list, 0x04 / 4);
+        return result;
+    }
+    // Read-only native resource provenance, useful when package overrides lose precedence.
+    if (a.size() == 4 && a[0] == "resource") {
+        uint32_t key[3] = {}, real[3] = {};
+        for (int i = 0; i < 3; ++i) {
+            char* end = nullptr;
+            key[i] = strtoul(a[i + 1].c_str(), &end, 16);
+            if (!end || *end) return "Expected hexadecimal instance, type and group.";
+        }
+        void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+        void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr;
+        if (!db) return "Resource not found.";
+        const wchar_t* path = vcall<const wchar_t*>(db, 0x28 / 4);
+        return std::string("Resource database: ") + (path ? slotfs::narrow(path) : "<memory>");
+    }
     if ((!a.empty() && a.size() <= 2 && a[0] == "ship_parts") ||
         (a.size() == 2 && (a[0] == "body_parts" || a[0] == "body_hash"))) {
         const bool ship = a[0] == "ship_parts";

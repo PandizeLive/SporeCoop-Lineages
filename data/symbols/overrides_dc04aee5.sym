@@ -608,3 +608,18 @@ SporeCoop::City_SetPreachingCapacity=0x00BD9FF0 ; verified BUG-9086 body ret 12,
 SporeCoop::City_PreachingRadius=0x01486054 ; verified BUG-9086 float 7, D57C9E uses for inner cCommunityLayout radius; AFDF60 truncates radius squared / spacing squared * 0.5 for slot count.
 SporeCoop::City_PreachingOuterRadius=0x013EB950 ; verified BUG-9086 float 3, D57BE5 uses for outer cCommunityLayout radius.
 SporeCoop::City_PreachingSpacing=0x013EED94 ; verified BUG-9086 float 1.5, D57C4B/D57CCA pass to AFDF60 to generate crowd slots.
+
+SporeCoop::FeedItem_GetAssetKeys=0x00668D60 ; verified BUG-9093 live body ret 4 at 669325; thiscall(feed, vector<AssetKey16>*); feed type +178, properties +180. KeyList path queries RM by group +148, ignoring explicit key array.
+SporeCoop::AssetKeyVector_Reserve=0x00642C30 ; verified BUG-9093 native caller 668DFA; thiscall(vector<AssetKey16>*,size_t), ret 4; begin/end/capacity +0/+4/+8, native allocator, stride 16.
+App::Property::GetArrayKey=0x006A0AE0 ; verified BUG-9093 live cdecl(PropertyList*,uint32,size_t*,ResourceKey**), plain ret, checks type 20 and flags 10; runtime feed diagnostics.
+App::Property::Set=0x0093DCF0 ; verified BUG-9093 live thiscall(Property*,int type,int flags,void* data,size_t size,size_t count), ret 14; native copy flags 14, tested updating cache keys.
+App::Thumbnail_cImportExport::Get=0x005F79C0 ; verified BUG-9093 live cdecl(), mov eax,[global], plain ret.
+App::Thumbnail_cImportExport::ImportPNG=0x005FC3C0 ; verified BUG-9093 live thiscall(importer,const wchar_t*,ResourceKey*), ret 8 at 5FCA70; imports isolated Gaal and Stabbella PNGs into Pollination.
+App::Thumbnail_cImportExport::DecodePNG=0x005FBB90 ; verified native ImportPNG caller 5FC4B9 passes stream, metadata (90 bytes), IStream**; ret C. Does not add assets to Pollination.
+IO::FileStream::Open=0x009318C0 ; verified ImportPNG caller 5FC418 passes 1,3,1,0 (read,existing,share-read,usage); ret 10 at 9319B4/931A1C.
+SporeCoop::FileStream_PathCtor=0x00931DE0 ; verified native ImportPNG caller; thiscall(stream,wchar_t*), ret 4; writes through +228, size 22C.
+SporeCoop::FileStream_Dtor=0x00931E40 ; verified native ImportPNG cleanup; thiscall(stream), plain ret; closes handle and resets vtable.
+SporeCoop::ThumbnailMetadata_Dtor=0x005F8ED0 ; verified native ImportPNG cleanup; thiscall(metadata[90]), plain ret; releases vector +70 and strings +28/+40/+50/+60.
+IO::FileStream::AddRef=0x00931780 ; verified BUG-9094 native ImportPNG explicitly pins its stack FileStream before DecodePNG, at 5FC405; plain ret.
+SporeCoop::Thumbnail_EncodeCreation=0x005F99B0 ; verified native SavePNG caller 5FAA97 passes metadata interface, model ResourceObject*, bool disableSteganography; thiscall importer, ret C at 5FA12B. Fills importer image encoder data from current model and metadata.
+SporeCoop::PngEncoder_WriteImage=0x0068E190 ; verified native SavePNG caller 5FAB99 passes FileStream*, int mode=0 to importer+88; thiscall, ret 8 at 68E39A. Writes the encoded PNG to supplied stream.

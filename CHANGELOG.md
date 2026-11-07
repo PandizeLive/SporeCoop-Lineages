@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add the native Lineages Cache category and persistent bidirectional authored
+  library sharing, including host relay, background transfers and reconnect
+  deduplication. Fix native feed captions, stream lifetime and provisional
+  Cell-to-Creature PNG exports (BUG-9093, BUG-9094, BUG-9095).
+
 - Adapt upstream 0.7.9 snapshot ordering and chief arrival-placement fixes
   (BUG-9090, BUG-9091). Separate shared Creature DNA spending from earned
   stage progress while retaining shared death penalties (BUG-9092).

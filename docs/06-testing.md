@@ -4035,3 +4035,54 @@ Native exit-menu automation was blocked by registration/menu handling; the
 QA console quit command deliberately ended both processes with exit code 0.
 This qualifies return-to-menu and pre-exit fault checks, not graceful native
 shutdown. No test game remains running.
+
+## Lineages Cache targeted native checks (2026-11-07, feat/lineages-cache)
+<a id="test-lineages-cache-native"></a>
+
+Two isolated Windows profiles, LineagesCacheReleaseA/B, use native Steam
+instances 4/5 at 800x600 and 20 FPS. Seed only EditorSaves and Preferences from
+disposable QA fixtures. Never copy credentials, personal worlds or a running
+profile's package. The test requires seven host creations (including Gaal,
+DuoHostVoyager, DuoCapital and DuoRover) and four guest creations (Stabbella
+and DuoGuestVoyager). These old fixture names are not product branding.
+
+Build the DLL and standalone SporeCoop.package; install them only in the QA
+runtime. The copied executable resolves DataEP1 through the registered Steam
+installation, so the temporary LineagesCachePrototype.package there must be
+removed once both QA processes exit. No vanilla root overrides are included.
+After boot, set frame.limit 50 and request coop.library scan on each instance.
+The startup cinematic delays safe scanning; GalaxyGameEntry alone does not
+mean Share is clickable. The test waits for scanning and retries menu opening.
+
+Run with the configured Windows Python:
+
+```
+python -X utf8 tools/tests/lineages_library.py --output out/cache-probe/release
+python -X utf8 tools/tests/lineages_library.py --feed-control --output out/cache-probe/release
+# Close both QA games, cold-launch the SAME profiles, retain their native data:
+python -X utf8 tools/tests/lineages_library.py --verify-only --output out/cache-probe/release
+```
+
+PASS release-native.log: host receives four, guest seven. The test checks native
+ResourceManager provenance in Pollination.package, real Sporepedia captions,
+reconnect without new keys and cards after leaving co-op. final-restart.log and
+release-restart.log cover cold restart; received.json preserves expected digests,
+native keys and attribution. Native fault counters are checked after the UI checks.
+No campaign or complete stage was replayed.
+
+The `library.feed` negative control removes Stabbella's native card while the
+category remains, and restoring the fix restores the card. Evidence:
+release-feed-control.log and release-feed-off.png. The earlier inspector lifetime
+crash is retained under inspect-crash; do not deliberately crash again. Subsequent
+automatic inspections, repairs and imports have zero native faults. See BUG-9093,
+BUG-9094 and BUG-9095 and [native findings](re/creations.md#creations-cache-native-feed).
+
+Portable checks: tests/library_sync_tests.cpp covers PNG CRC/digest validation,
+truncated metadata, multi-packet transfers, mid-transfer disconnect/reconnect,
+deduplication and a four-seat host relay without echo imports. Compile it with
+mods/coop/net/library_sync.cpp and updater/sha256.cpp; it is part of make test.
+tools/tests/test_cache_category.py has five checks, including standalone resources
+without vanilla root replacements. RE symbol lint and documentation lint are
+additional gates. The Linux/Wine lab and sanitizer suite were not run on this
+Windows host. Four native peers, natural pollination selection and arbitrary
+missing-part combinations remain unqualified; portable relay is not their proof.
