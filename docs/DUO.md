@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo22-dev. Use the same build on every
+The current local build is 0.7.3.6-duo23-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -161,7 +161,19 @@ The user clarified the remaining validation scope: target missions and
 interactions that can block co-op, rather than replaying entire stages.
 Reuse saved checkpoints, skip previously verified missions unless affected
 by a change, and keep setup shortcuts distinct from the behavior being tested.
-Next targeted gap: eligible guest economic trade and native purchase progress.
+The economic check found and fixed missing guest trade routes, purchase
+meters and pricing credits (BUG-9081), then native guest purchase attribution
+and payment without capture (BUG-9082). Focused tests now pass native trade
+delivery synchronization, negotiation, one shared payment, guest-founder city
+ownership, cancellation, refusal, team history and reconnect. These fixes
+are included in Duo 23. The test prepares purchase eligibility at a saved
+checkpoint; it does not replay a whole economic campaign.
+Next targeted gap: native religious vehicle input and final city conversion.
+
+Duo 23's actual ZIP passed install, uninstall and reinstall in a disposable
+workspace fixture, preserving the original loader, save sentinel and settings.
+ZIP SHA256: 5cf80fbcfc81a5da2aa7ac94fc3a3e7f762f952be1cb7b1d2fbd57b902a29499.
+The remaining live checks use that installed payload.
 
 ### Personal Space launch
 

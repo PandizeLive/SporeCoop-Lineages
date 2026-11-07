@@ -1,16 +1,16 @@
 ---
 id: BUG-9082
 title: Guest native Buy City interaction does not complete
-status: open
+status: fixed
 kind: bug
 stage: Civilization
 reported: 2026-11-07
 source: Targeted checkpoint purchase test
 role: guest
 versions: duo22-dev plus BUG-9081
-fixed_in:
+fixed_in: 0.7.3.6-duo23-dev
 branch: feat/lineages-civ-combat
-commits:
+commits: 68cf3ad0
 tests: tools/tests/duo_civ_city_purchase.py
 signature: Buy City enabled at full guest trade progress; click produces no negotiation or transfer
 docs: docs/re/civ.md
@@ -73,3 +73,9 @@ actual reply captions/positions. These are not gameplay failures.
 Windows tests: bug9082-unit-unrestricted.log ALL OK. The identical executable's
 sandboxed run could not reach its local HTTP fixture (zero requests); elevated
 rerun reached the fixture and passed.
+
+## History
+
+2026-11-07: Fixed in 68cf3ad0. Included in the private Duo 23 ZIP;
+duo23-installer.log passes install/uninstall/reinstall, original loader
+restoration and save/settings preservation.

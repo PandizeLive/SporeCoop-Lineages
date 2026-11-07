@@ -1740,9 +1740,8 @@ order targets the correct NPC chief but does not start a performance within
 <a id="issue-civ-economic-state"></a>
 
 The private Duo 22 package omits guest trade routes, purchase progress and
-pricing credits. BUG-9081 adds and verifies their synchronization in source;
-it is not yet included in a replacement package. BUG-9082 also fixes and
-qualifies native guest purchase, cancellation, refusal and reconnect. See
+pricing credits. Duo 23 includes BUG-9081's verified synchronization and
+BUG-9082's native guest purchase, cancellation, refusal and reconnect fixes. See
 [BUG-9081](tickets/BUG-9081-civ-economic-state-not-replicated.md).
 
 ## Packed Steam symbol reload (2026-11-07, development tools)

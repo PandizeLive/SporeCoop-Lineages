@@ -8,7 +8,7 @@ reported: 2026-11-07
 source: Targeted economic playability check
 role: guest
 versions: duo22-dev
-fixed_in: unreleased
+fixed_in: 0.7.3.6-duo23-dev
 branch: feat/lineages-civ-combat
 commits: aba17900
 tests: tools/tests/duo_civ_economic_state.py
@@ -67,4 +67,5 @@ This does not qualify the guest's final native Buy City interaction.
 
 ## History
 
-2026-11-07: Fixed and verified on isolated Windows peers; packaging pending.
+2026-11-07: Fixed and verified on isolated Windows peers; included in the
+private Duo 23 ZIP, whose install/uninstall/reinstall test passes.
