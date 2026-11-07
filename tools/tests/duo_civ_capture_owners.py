@@ -1,5 +1,6 @@
 """Compare native city part ownership after either Lineages founder captures a rival."""
 import argparse
+import re
 import struct
 
 from coop_ability_bar import mem, u32
@@ -23,6 +24,7 @@ def main():
     parser.add_argument('--host', type=int, required=True)
     parser.add_argument('--guest', type=int, required=True)
     parser.add_argument('--founder', type=int, choices=(0,1), required=True)
+    parser.add_argument('--method', choices=('military','religious','economic'), default='military')
     args = parser.parse_args()
     host, guest = Console(args.host), Console(args.guest)
     for peer in (host, guest):
@@ -38,7 +40,26 @@ def main():
         command(host, f'call SporeCoop::CivCity_PlaceTurretSlot thiscall {city:#x} 0')
         wait_until(lambda: ownership(host,index)[2] == ownership(guest,index)[2] == [rival],
                    'Rival turret fixture did not synchronize', 12)
-    command(host, f'call Simulator::cCity::Capture thiscall {city:#x} {founder:#x} 0 0 0 0')
+    if args.method == 'economic':
+        def money(peer):
+            return float(re.search(r'shared money=([-\d.]+)',command(peer,'coop.res'))[1])
+        cost = 2500
+        assert money(host) >= cost, 'Use the funded disposable fixture'
+        before = money(host)
+        command(host, f'call Simulator::cCity::BuyByCiv thiscall {city:#x} {founder:#x} f:{cost}')
+        wait_until(lambda: money(host) <= before-cost+80, 'Purchase did not charge the shared treasury', 5)
+        wait_until(lambda: abs(money(host)-money(guest)) < 1, 'Purchase cost differed on guest', 5)
+        print('PASS native purchase charged the shared treasury',before,money(host),flush=True)
+    elif args.method == 'religious':
+        # Native preaching repeats across ticks. The displayed conversion percentage
+        # is recomputed after each follower change, before the next conversion check.
+        def preach():
+            if ownership(host,index)[0] == founder:
+                return True
+            command(host, f'call Simulator::cCity::ConvertCitizens thiscall {city:#x} {founder:#x} 1000')
+        wait_until(preach, 'Native preaching did not transfer the city', 20)
+    else:
+        command(host, f'call Simulator::cCity::Capture thiscall {city:#x} {founder:#x} 0 0 0 0')
 
     def transferred():
         native, local = ownership(host,index), ownership(guest,index)
@@ -51,7 +72,7 @@ def main():
         print('Host and guest after capture',ownership(host,index),ownership(guest,index),flush=True)
         raise
     assert all('total faults: 0' in command(peer,'exc') for peer in (host,guest))
-    print(f'PASS founder {args.founder} captured rival, building and turret owners agree',result,flush=True)
+    print(f'PASS founder {args.founder} {args.method} capture, building and turret owners agree',result,flush=True)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Defer an incoming city capture and building changes while the guest's
+  native city planner holds its objects, then reconcile after closing it
+  (BUG-9075). Native economic and religious city transfers also pass local
+  two-game ownership checks (BUG-9074).
+
 ## [0.7.3.6-duo9] - 2026-11-03
 
 - Guards a late Tribal layout callback after the

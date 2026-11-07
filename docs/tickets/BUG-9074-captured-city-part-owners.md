@@ -32,5 +32,10 @@ Upstream implementation and test: [SporeCoop BUG-0593](https://github.com/WoodyW
 The guest-founder test transferred all three buildings and one wall turret
 to 2231 on both peers. In a fresh pair the ZIP-installed DLL transferred
 the same parts to 800021CA for the host founder. Both runs reported zero
-native faults. These fixtures exercise military capture. Purchase, religious
-conversion and capture with an already-open planner need independent checks.
+native faults. A second fixture completed native religious conversion with
+repeated preaching updates. Native BuyByCiv then transferred a city and
+deducted exactly 2,500 from the shared treasury, with both peers agreeing
+on the buildings and turret. These tests exercise native game routines.
+Issuing those religious and economic actions through the player's controls
+still needs qualification. The incoming capture during an open planner
+is tracked separately as BUG-9075.

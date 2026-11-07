@@ -3722,3 +3722,20 @@ duo_tribe_walk_connected.py restores its --idle-fps value (default10) in finally
 including on a recording failure. Do not leave two normal-rate games idle while
 analysing logs. Lower frame rate reduces frame work, but does not free their
 resident memory; closing the processes does.
+
+## Lineages city transfer regressions (2026-11-06)
+<a id="testing-lineages-city-transfers"></a>
+
+On disposable joined Clyth profiles, duo_civ_capture_owners.py checks
+--method military, religious or economic. Religious conversion repeats
+native preaching across game ticks. The economic fixture calls BuyByCiv
+with a 2,500 price and checks the shared debit as well as native ownership.
+These direct native calls qualify transfer and replication. UI commands
+and economic negotiation need separate gameplay checks.
+
+duo_civ_capture_planner.py opens the guest capital's planner with real
+mouse input, captures the city on the host and verifies native city and
+building ownership remain stable until the green check closes the editor.
+Then both copies must converge. It creates a native rival if the fixture
+has already captured all existing ones. Use a fresh disposable campaign,
+because the test deliberately loses the guest's capital.

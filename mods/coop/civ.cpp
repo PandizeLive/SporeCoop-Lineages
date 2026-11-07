@@ -2106,6 +2106,9 @@ static uintptr_t a_BuyQuote, a_SellQuote, a_CancelQuote;
 static uintptr_t a_SetCityPartsOwner;
 static void* g_planner_city;
 static uint64_t g_planner_frame;
+static bool g_planner_capture_hold = true;
+COOP_FIX("civ.planner_capture_hold", "BUG-9075", g_planner_capture_hold,
+         "civ: defer captured city and building mutations until its planner closes");
 using EditorUpdate = int(SK_THISCALL*)(void*,int);
 static EditorUpdate o_EditorUpdate;
 static std::unordered_map<uint32_t,uint8_t> g_wall_purchases;
@@ -2130,6 +2133,11 @@ static int SK_THISCALL h_EditorUpdate(void* editor, int dt)
 static bool planner_holds_city(void* city)
 {
     return g_planner_city == city && H->frame_index()-g_planner_frame <= 3;
+}
+
+static bool defer_planner_mutation(void* city)
+{
+    return g_planner_capture_hold && city && planner_holds_city(city);
 }
 
 static bool city_parts_match(void* city, uint32_t owner)
@@ -2834,6 +2842,7 @@ static uint32_t g_bfix_added, g_bfix_removed, g_ruins_differ, g_ruins_in;
 static void reconcile_buildings(void* city, size_t n,
                                 const std::function<void(size_t, uint32_t&, net::Vec3&, bool&)>& host_b)
 {
+    if (defer_planner_mutation(city)) return;
     auto local = vec_of((uint8_t*)city + kCityBuildings);
     std::vector<bool> used(local.size(), false);
     std::vector<size_t> missing;
@@ -3022,6 +3031,9 @@ static bool guest_cities(net::Reader& r) // false: the list does not fit the mes
             g_city_owner[c] = owner; // kShared included
         else
             g_city_owner.erase(c);
+        // The ownership map changes immediately to reject new actions in a lost city.
+        // Its native objects must remain valid until the editor releases its references.
+        if (defer_planner_mutation(c)) continue;
         if (pol_of(c) != pol) { // captured on the host
             g_applying = true;
             thiscall<void>(a_ChangeOwner, c, pol, 0, 0);
@@ -3307,7 +3319,7 @@ static void guest_build(net::Reader& r)
         return;
     }
     void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
-    if (!r.ok() || !city)
+    if (!r.ok() || !city || defer_planner_mutation(city))
         return;
     g_applying = true;
     if (build_in_city(city, noun, p, false))

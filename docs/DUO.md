@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo18-dev. Use the same build on every
+The current local build is 0.7.3.6-duo19-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -26,6 +26,9 @@ This build adapts SporeCoop 0.7.8's captured-city ownership repair. Once the
 host assigns a city's buildings and turrets to the conquering civilization,
 the guest applies the same ownership after its city planner releases the city.
 This also works when the conqueror is the guest founder.
+If a guest is editing a city when the host captures it, the guest keeps
+the city's native objects until closing the planner. The next snapshots
+then apply the capture and construction changes.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct

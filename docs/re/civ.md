@@ -1236,3 +1236,42 @@ during play, verified it on the guest and removed it from both.
 
 The [ModAPI city header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cCity.h)
 documents the city's turret list and wall layout.
+
+## Economic and religious capture qualification (2026-11-06, Lineages)
+<a id="civ-lineages-capture-paths"></a>
+
+On the active Steam/GOG 2024 executable, BuyByCiv is at 0x00BE99A0.
+The disassembly verifies its affordability check through GetMoney at
+0x00BE9A04, SpendMoney at 0x00BE9A1E, and Capture with type 2.
+BuyCity is at 0x00BF0520 and FinishBuyCity is at 0x00BF0600.
+The latter reads the pending city at nation+0x440 and converts the signed
+integer price at +0x444 to float before calling BuyByCiv at 0x00BF063B.
+These entry points are distinct from the old GOG 2016 addresses above.
+
+The religious fixture must allow city updates between ConvertCitizens calls.
+One call moved followers without completing a capture in the saved Clyth
+fixture. Repeated native preaching across frames completed the transfer.
+The host and guest then agreed on the guest founder's three buildings and
+one wall turret, with zero faults. This qualifies the ownership repair
+after native conversion. It does not qualify selecting a religious vehicle
+and issuing a preaching order through the game UI.
+
+In two local games, BuyByCiv with a 2,500 price reduced shared funds from
+4,020 to 1,520. The host and guest then agreed on three buildings and
+one turret owned by founder 2231. Zero faults were reported.
+
+## Incoming capture during native planning (2026-11-06, Lineages)
+<a id="civ-lineages-planner-capture"></a>
+
+The CommunityEditor_Update hook records the live city's pointer and frame.
+A city remains held while its editor has updated within three frames.
+The guest updates its network ownership map immediately, but defers native
+ChangeOwner, building reconciliation and incremental building additions.
+Periodic host snapshots supply the latest state after planning ends.
+
+Before this guard, an incoming capture changed the city from faction 2231
+to 2230 while the editor was still open and left buildings of both factions
+inside it. The native parts-owner repair's own planner check could not
+protect the earlier ChangeOwner call or the independent construction path.
+The first guarded run kept the original faction and building list while
+editing and reconciled the city after the native green check closed it.
