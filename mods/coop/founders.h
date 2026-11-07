@@ -20,6 +20,16 @@ struct CampaignRules {
     uint32_t enemy_damage_percent() const { return 100u + (seats - 1u) * extra_damage_percent; }
     bool operator==(const CampaignRules&) const = default;
     uint32_t workload_percent() const { return 100u + (seats - 1u) * difficulty_percent; }
+    unsigned civ_military_limit(unsigned base) const {
+        const unsigned extra = (base * (workload_percent() - 100u) + 999u) / 1000u;
+        return base + extra < 36u ? base + extra : 36u;
+    }
+    unsigned civ_military_interval_ms() const {
+        // The native AI compares elapsed milliseconds to 40,000. Keep a
+        // positive interval even with exceptionally high custom difficulty.
+        const unsigned reduction = workload_percent() - 100u;
+        return reduction < 1000u ? 40000u - 40u * reduction : 1u;
+    }
     uint32_t rival_target(uint16_t baseline) const {
         const uint32_t added = (uint32_t(baseline) * difficulty_percent + 99u) / 100u;
         return baseline + (seats - 1u) * added;

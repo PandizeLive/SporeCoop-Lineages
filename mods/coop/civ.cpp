@@ -975,6 +975,41 @@ static bool team_faction(uint32_t faction)
     return (home && faction == pol_of(home)) || g_founder_nations.contains_faction(faction);
 }
 
+static bool rival_production(void* country)
+{
+    if (!active() || !is_host() || !g_combat_roster_ready || !country ||
+        F<uint8_t>(country,0x8A)) return false;
+    const auto pol = pol_of(country);
+    void* home = player_civ();
+    if (!home || !pol || team_faction(pol) || (relationship_flags(pol,pol_of(home)) & 2)) return false;
+    for (const auto& founder : g_founder_nations.entries)
+        if (founder.faction && founder.faction != pol_of(home) && (relationship_flags(pol,founder.faction) & 2))
+            return false;
+    return true;
+}
+
+using VehicleLimit = int(SK_THISCALL*)(void*,int);
+static VehicleLimit o_VehicleLimit;
+static int SK_THISCALL h_VehicleLimit(void* country, int purpose)
+{
+    int base = o_VehicleLimit(country,purpose);
+    if (purpose != 0 || base <= 0 || base >= 36 || !rival_production(country)) return base;
+    return world::rules_for_current().civ_military_limit(base);
+}
+
+using TimerElapsed = uint64_t(SK_THISCALL*)(void*);
+static TimerElapsed o_TimerElapsed;
+static uintptr_t a_MilitaryElapsedRet;
+static uint64_t SK_THISCALL h_TimerElapsed(void* timer)
+{
+    auto elapsed = o_TimerElapsed(timer);
+    if ((uintptr_t)__builtin_return_address(0) != a_MilitaryElapsedRet || elapsed > 40000) return elapsed;
+    // Only this purchase decision sees the earlier deadline. The military
+    // timer itself stays on the game's clock through saves and restarts.
+    if (!rival_production(static_cast<uint8_t*>(timer)-0x148)) return elapsed;
+    return elapsed + 40000u - world::rules_for_current().civ_military_interval_ms();
+}
+
 // A military vehicle can enter combat before its nation declares war.
 struct VehicleHealth {
     VehicleHealthScale scale;
@@ -1556,6 +1591,13 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_Relationships = H->sym("Simulator::cRelationshipManager::Get");
     a_RelationshipMap = H->sym("RelationshipManager_GetRelationshipMap");
     a_RelationshipData = H->sym("RelationshipManager_GetRelationshipData");
+    auto limit = H->sym("SporeCoop::CivVehicleLimit");
+    auto elapsed = H->sym("SporeCoop::GonzagoElapsedMs");
+    a_MilitaryElapsedRet = H->sym("SporeCoop::CivMilitaryElapsedRet");
+    if (limit && elapsed && a_MilitaryElapsedRet && a_Relationships && a_RelationshipMap && a_RelationshipData) {
+        H->hook_create(M,(void*)limit,(void*)h_VehicleLimit,(void**)&o_VehicleLimit);
+        H->hook_create(M,(void*)elapsed,(void*)h_TimerElapsed,(void**)&o_TimerElapsed);
+    }
     if (uintptr_t damage = H->sym("SporeCoop::CivVehicle_TakeDamage"); damage &&
         a_Relationships && a_RelationshipMap && a_RelationshipData)
         H->hook_create(M,(void*)damage,(void*)h_VehicleDamage,(void**)&o_VehicleDamage);

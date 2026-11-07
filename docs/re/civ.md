@@ -673,6 +673,27 @@ and BUG-0106:
 ## The other nations' vehicle purchases (2026-10-28, fix/w2-civ)
 <a id="civ-ai-vehicle-spawns"></a>
 
+**Reserved-founder military production, Steam/GOG 2024.** The native
+`VehicleSlotsLeft` at `0x00BF2240` returns zero once the nation's vehicle
+vector holds 36 pointers. Otherwise it counts vehicles of the requested
+purpose and subtracts that count from the native purpose allowance at
+`0x00BF2110`. Duo 15 scales the allowance for military purpose 0 on the
+host. The native function still counts the vehicles and enforces its total.
+At 50% Difficulty Scaling the bonus is 5% per extra reserved seat. The host
+rounds the total extra slots up once. A disabled or one-seat campaign takes
+the native capacity and timing. Founder nations, neutral nations and formal
+allies are excluded from rival production scaling.
+
+The military branch in `0x00BFA7A0` calls `GetElapsed` on nation+0x148
+at `0x00BFA974`, then requires more than 40,000 milliseconds. The religious
+branch reads nation+0x168 at a different site and compares against 50,000.
+Only the military caller receives the timing adjustment. Spore can bypass
+the timer when it changes targets. The purchase loop checks the expansion
+budget against the vehicle's price at `0x00BFB058`, checks slots at
+`0x00BFB067`, spawns at `0x00BFB0B1` and subtracts the price at
+`0x00BFB0CB`. A four-seat fixture bought eight vehicles for 24,000 total
+after crossing 28,000 ms, filling a native allowance of seven to ten.
+
 GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`): 0xBD72B0,
 0xBDE5F0, 0xBE5890, 0xBE75C0, 0xBF9960, 0xBF9FB0, 0xBFA7A0, 0xBFB160, 0xBFBA70, 0xBFBD30,
 0xCF3350, 0xCF72B0, 0xCFB7C0, 0xD09200 (9 sites), UI::RolloverCivCity::HandleUIMessage.

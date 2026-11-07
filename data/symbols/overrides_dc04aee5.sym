@@ -571,3 +571,6 @@ SporeCoop::CivVehicle_TakeDamage=0x00CAB6F0 ; verified vehicle combatant vtable 
 SporeCoop::CivTurret_TakeDamage=0x00BD0660 ; verified active build: combatant vtable 01466C28 +18, this=turret+588; ret 14h (BUG-9072).
 SporeCoop::CivCity_PlaceTurretSlot=0x00BE3AE0 ; verified active build: this=city; checks wall slot by index, creates 0436F342, assigns the free slot; ret 4 (BUG-9072).
 SporeCoop::CivCity_RemoveTurret=0x00BE21C0 ; verified active build: this=city, args turret and flag; removes from wall layout and city+354; ret 8 (BUG-9072).
+SporeCoop::CivVehicleLimit=0x00BF2110 ; verified thiscall(nation,purpose): native purpose capacity, called at BF228A after total cap of 36 (BUG-9072)
+SporeCoop::GonzagoElapsedMs=0x00BC3300 ; verified thiscall(timer): elapsed EDX:EAX, no stack args, native timer fields +08/+10/+18 (BUG-9072)
+SporeCoop::CivMilitaryElapsedRet=0x00BFA979 ; verified BFA974 calls elapsed on nation+148 before unsigned compare to 40000; religious timer has separate caller (BUG-9072)

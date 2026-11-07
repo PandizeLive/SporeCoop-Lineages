@@ -1,8 +1,14 @@
 # SporeCoop Lineages private test build
 
-The current local combat build is 0.7.3.6-duo14-dev. Use the same build
-on every machine. Duo 14 synchronizes Civilization military vehicle health
-and armed city defenses, including the wall slot of a newly placed rival turret.
+The current local build is 0.7.3.6-duo15-dev. Use the same build on every
+machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
+Civilization nations 10% more military vehicle slots and shortens their
+ordinary military purchase interval by 10% of the native 40 seconds. The
+host rounds the combined slot bonus up once. At four seats, a rival with
+seven military slots gets ten and its ordinary purchase interval is 28 seconds.
+Each purchase still draws its native price from the rival's budget. Both the
+native 36-vehicle total and Spore's immediate response to a change of target
+apply. The host applies these rules to each rival's army.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct

@@ -109,6 +109,14 @@ static void test_founders()
     founders::CampaignRules one_seat{1,100};
     CHECK(one_seat.enemy_health_percent() == 100 && one_seat.enemy_damage_percent() == 100);
     CHECK(partial.rival_target(5) == 14 && partial.workload_percent() == 250);
+    CHECK(one_seat.civ_military_limit(3) == 3 && one_seat.civ_military_interval_ms() == 40000);
+    CHECK(pair.civ_military_limit(3) == 4 && pair.civ_military_interval_ms() == 36000);
+    CHECK(quartet.civ_military_limit(10) == 13 && quartet.civ_military_interval_ms() == 28000);
+    CHECK(partial.civ_military_limit(10) == 12 && partial.civ_military_interval_ms() == 34000);
+    CHECK(quartet.civ_military_limit(35) == 36 && quartet.civ_military_limit(0) == 0);
+    const founders::CampaignRules disabled{4,0}, high{4,UINT16_MAX};
+    CHECK(disabled.civ_military_limit(7) == 7 && disabled.civ_military_interval_ms() == 40000);
+    CHECK(high.civ_military_limit(7) == 36 && high.civ_military_interval_ms() == 1);
     CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{5,100},err));
     CHECK(founders::reserve(key,quartet,err) && founders::reserve(key,quartet,err));
     CHECK(!founders::reserve(key,partial,err));

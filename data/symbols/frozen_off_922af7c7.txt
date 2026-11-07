@@ -154,3 +154,6 @@ SporeCoop::CivVehicle_TakeDamage ; Civilization vehicle combat scaling is unavai
 SporeCoop::CivTurret_TakeDamage ; Armed city defense synchronization is unavailable on the frozen build (BUG-9072)
 SporeCoop::CivCity_PlaceTurretSlot ; Armed city defense synchronization is unavailable on the frozen build (BUG-9072)
 SporeCoop::CivCity_RemoveTurret ; Armed city defense synchronization is unavailable on the frozen build (BUG-9072)
+SporeCoop::CivVehicleLimit ; Rival military production unavailable on frozen build (BUG-9072)
+SporeCoop::GonzagoElapsedMs ; Rival military production unavailable on frozen build (BUG-9072)
+SporeCoop::CivMilitaryElapsedRet ; Rival military production unavailable on frozen build (BUG-9072)
