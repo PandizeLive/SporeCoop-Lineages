@@ -872,3 +872,116 @@ paint and part availability checks remain. m2-auto-found-b.log reproduces
 the former missing-paint refusal. PASS m2-auto-found-d.log and cold-a: both
 games build and walk the original archived guest species7CF26CCB after native
 founding, saved-world refresh and cold restart, with zero native faults.
+
+## Lineages Cache feasibility (2026-11-07, fix/lineages-upstream-079)
+<a id="creations-lineages-cache-feasibility"></a>
+
+Implementation follow-up (2026-11-07, feat/lineages-cache): user approved the
+entire locally authored library, profile-wide availability, and a dedicated
+native Sporepedia category. Earlier recommended selected-only defaults below
+are superseded by this approval.
+
+`tools/sporepedia_cache_probe.py` extracted 361 native feed/config resources
+from the installed game into ignored `out/cache-probe`. The native registry
+and resources identify AssetBrowserFeedLists (6EDC12D4), FeedCategories
+(06B38241) and FeedItems (4E5892EB). GlobalTemplate points to `default`
+(2EA8FB98); the GA editor roots are ScenarioDefault (1B327962) and
+ScenarioGameplaySkinning (FDECEF02). Fields include feedListCategories,
+feedListItems, feedListCategoryName, feedListItemName and feedListItemKeyList.
+Native text array payloads contain a locale reference and UTF-16 fallback.
+
+`tools/build_lineages_cache_category.py` builds an experimental five-resource
+package, appending a dedicated category and explicit-key feed. It refuses
+unrecognized root fields and retains existing category order. Three unit
+checks in `tools/tests/test_cache_category.py` pass (preservation, idempotence,
+unknown-field/wrong-stride rejection). This is a UI prototype, not a shipped
+cache implementation. Stock fixture creature: instance 8933CC09, type
+2B978C46, group 40626200; confirm against stock-key.json before reuse.
+
+Runtime result: FAIL for category visibility. One isolated Windows instance
+(LineagesCacheQA, 800x600, 10 FPS; final startup at 30 FPS) opened native
+Sporepedia offline, but `coop.ui find Lineages` found nothing with both empty
+and one-stock-creature feeds. Screenshots: out/cache-probe/sidebar.png and
+stock-sidebar.png. No imports or personal campaign changes were made.
+The test copy runs lineages25-dev, not the packaged lineages26 preview.
+The prototype was tried in the disposable D: DataEP1 folder and temporarily
+in registered Steam GA DataEP1; the latter was held open by the QA process.
+Opening the package does not prove its root property wins native resolution.
+Remaining investigation: inspect resolved feed properties/precedence and
+category construction, including template inheritance and explicit-key item
+semantics. Do not infer impossibility or native spawn eligibility from this
+failed visibility probe. No full-library synchronization has been implemented.
+
+Research only, no gameplay changes or runtime import tests performed. User wants
+bidirectional creation sharing, persistent local Sporepedia entries, and native
+world selection without EA login or a replacement server. Buddies placement is
+optional. Investigation of the current fork and public ModAPI SDK found:
+
+- Source-confirmed: `creations::on_message` relays active player bundles through
+  the host; `on_player_join` sends stored bundles to newcomers. This is active
+  design synchronization, not arbitrary library exchange. `Kind` covers
+  creatures, cells and UFOs; vehicle/building validation and campaign design
+  archives exist separately. Do not change existing wire enum meanings.
+- Source-confirmed: `on_player_leave` discards slot-owned state to prevent the
+  next occupant inheriting another player's species. Some registered packages
+  remain until shutdown and campaign archives restore selected models; neither
+  constitutes a general, persistent Sporepedia library. Keep this lifecycle
+  separate from a stable creator/content manifest.
+- Source-confirmed: `records_from_game` selects model/BEM and metadata records,
+  not PNG thumbnails or OTDB summaries. Reusing this payload unchanged would
+  not demonstrate native browsing or pollination support.
+- SDK-documented candidate: `App::Thumbnail_cImportExport::ImportPNG(path,key)`
+  adds a Model-in-Picture PNG to Sporepedia; `SaveFilePaths` persists import
+  tracking in Pollination.package. `SavePNG` exports embedded creation data
+  and metadata; it also writes to My Spore Creations, so exporting missing PNGs
+  requires checking its side effects. Imported PNGs are preferable to directly
+  editing a live Pollination.package. Generated symbol maps contain these
+  functions, but target-build call validation is still required.
+- CORRECTION to the older import note above: the import function is now named
+  and documented in the upstream SDK. It is not yet runtime-verified here.
+- SDK-documented: `cAssetMetadata::SetAll` accepts author name/ID, tags and
+  authors. Native author display is plausible, but local co-op IDs must not be
+  represented as real EA accounts. Preserve existing author ancestry and store
+  the sharing player's stable ID/display name separately. Native author-card
+  interactions remain untested.
+- SDK-documented: `ShopperRequest` uses AssetBrowserConfig, and
+  `ProcessAssetFilter` uses AssetBrowserFilter. Recommend a Lineages menu entry
+  opening a filtered native browser before attempting a permanent sidebar tab.
+  No ready-made custom Buddies-folder API was found in the inspected headers;
+  this is not proof that such an entry is impossible. Exact cache membership
+  filtering still needs a prototype.
+- SDK evidence: OTDB summaries contain type, diet, attack/social and other
+  selection parameters; several APIs remain placeholders. Import success or
+  visible cards alone do not prove natural world-selection eligibility, exact
+  similarity matching, or equal treatment to My Creations.
+
+Recommended architecture: host-relayed, bounded manifest/delta exchange; strong
+content digest plus collision-checked local asset mapping; original bytes and
+attribution preserved; separate optional library transfers from mandatory
+campaign dependencies. Validate PNG format, payload sizes and installed parts
+before import. Queue imports outside rendering and avoid stalling gameplay.
+Persist save-referenced revisions even when hiding an item from the library.
+Host alone selects shared-world assets; clients do not reroll the world's NPCs.
+
+Product decisions before implementation:
+
+1. Share campaign-used designs automatically, campaign plus explicitly selected
+   extras (recommended, medium effort), or all locally authored creations
+   (higher effort: inventory, pagination, bandwidth and provenance).
+2. Let imports participate across the profile's solo/co-op saves (recommended,
+   medium effort), or require campaign-only selection (higher effort: isolation
+   and selection filtering). Exact vanilla import scope must be measured first.
+
+Smallest useful qualification: native import of one valid creature on two
+isolated profiles; names/author/thumbnail checked; cold restart; duplicate
+reimport; missing-part rejection; native OTDB query and an actual native
+selection without forcing that creature's key. Then test one building, vehicle
+and UFO, reconnect catch-up, and save/reload. No full stage replay required.
+
+Sources inspected on 2026-11-07:
+
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/Thumbnail_cImportExport.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Pollinator/cAssetMetadata.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/ShopperRequest.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/AssetBrowserQuery.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/OTDBParameters.h
