@@ -1,0 +1,36 @@
+---
+id: BUG-9074
+title: A guest founder captures a rival city but its parts retain the rival on the guest
+status: open
+kind: desync
+stage: Civilization
+reported: 2026-11-06
+source: Lineages reproduction of upstream 0.7.8 BUG-0593
+role: host guest
+versions: duo17-dev
+fixed_in:
+branch: feat/lineages-civ-combat
+commits:
+tests: tools/tests/duo_civ_capture_owners.py
+signature: Guest city 2231 retains buildings of faction 2232
+docs: docs/DUO.md
+related: BUG-9056 BUG-9073
+---
+
+On two local Clyth games the guest founder captured a rival. Both cities
+reported faction 2231. All three buildings kept 2232 on the guest until the
+verified native SetPartsOwner routine assigned the conquering civilization.
+
+Lineages uses the existing per-city snapshot to report whether the host's
+buildings and wall turrets all belong to that city. The guest waits for its
+city ownership to match and for the local planner to release the city before
+applying the native repair. Each side uses its own native city and nation
+pointers. NPC economy and diplomacy are separate from this repair.
+
+Upstream implementation and test: [SporeCoop BUG-0593](https://github.com/WoodyWizard/SporeCoop/commit/51228919).
+
+The guest-founder test transferred all three buildings and one wall turret
+to 2231 on both peers. In a fresh pair the ZIP-installed DLL transferred
+the same parts to 800021CA for the host founder. Both runs reported zero
+native faults. These fixtures exercise military capture. Purchase, religious
+conversion and capture with an already-open planner need independent checks.

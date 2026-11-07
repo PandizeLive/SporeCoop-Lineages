@@ -2103,6 +2103,11 @@ static void* g_pending_city;
 static bool g_wall_editor_ready;
 static uintptr_t a_TurretPrice, a_SellFraction, a_ClearWallSlot, a_SetWallSlot;
 static uintptr_t a_BuyQuote, a_SellQuote, a_CancelQuote;
+static uintptr_t a_SetCityPartsOwner;
+static void* g_planner_city;
+static uint64_t g_planner_frame;
+using EditorUpdate = int(SK_THISCALL*)(void*,int);
+static EditorUpdate o_EditorUpdate;
 static std::unordered_map<uint32_t,uint8_t> g_wall_purchases;
 using BeginDrag = void(SK_THISCALL*)(void*,void*);
 using FinishDrag = int(SK_THISCALL*)(void*,int,int);
@@ -2110,6 +2115,30 @@ using ObjectCost = int(SK_THISCALL*)(void*,void*,int,int);
 static BeginDrag o_BeginDrag;
 static FinishDrag o_FinishDrag;
 static ObjectCost o_ObjectCost;
+
+// Upstream 0.7.8, BUG-0493/0593: native model replacement is unsafe while the planner holds a city.
+static int SK_THISCALL h_EditorUpdate(void* editor, int dt)
+{
+    if (active()) {
+        void* community = F<void*>(editor,0x40);
+        g_planner_city = community ? game::cast(community,0xEE9B2232) : nullptr;
+        g_planner_frame = H->frame_index();
+    }
+    return o_EditorUpdate(editor,dt);
+}
+
+static bool planner_holds_city(void* city)
+{
+    return g_planner_city == city && H->frame_index()-g_planner_frame <= 3;
+}
+
+static bool city_parts_match(void* city, uint32_t owner)
+{
+    for (auto offset : {kCityBuildings,kCityTurrets})
+        for (void* part : vec_of(static_cast<uint8_t*>(city)+offset))
+            if (pol_of(part) != owner) return false;
+    return true;
+}
 
 static void* planner_turret(void* spatial)
 {
@@ -2196,6 +2225,11 @@ static int SK_THISCALL h_FinishDrag(void* editor, int first, int second)
 
 static void init_wall_editor()
 {
+    const auto editor_update = H->sym("SporeCoop::CommunityEditor_Update");
+    const auto set_owner = H->sym("SporeCoop::City_SetPartsOwner");
+    if (editor_update && set_owner &&
+        H->hook_create(M,(void*)editor_update,(void*)h_EditorUpdate,(void**)&o_EditorUpdate) == 0)
+        a_SetCityPartsOwner = set_owner;
     a_TurretPrice = H->sym("SporeCoop::CivTurret_Price");
     a_SellFraction = H->sym("SporeCoop::CivPlanner_SellFraction");
     a_ClearWallSlot = H->sym("SporeCoop::CivWall_ClearSlot");
@@ -2219,6 +2253,7 @@ static void reset_wall_edits()
     g_wall_drag = {};
     g_pending_wall = g_wall_min_sequence = 0;
     g_pending_city = nullptr;
+    g_planner_city = nullptr;
     g_wall_purchases.clear();
 }
 
@@ -2228,7 +2263,7 @@ static void send_turret_health(size_t ci)
     void* city = g_host_cities[ci];
     if (city == g_wall_drag.city) return; // A host hover is not a committed purchase or sale.
     const auto slots = turret_slots(city);
-    if (!slots.count) return;
+    if (!slots.count && !a_SetCityPartsOwner) return;
     uint32_t live = 0;
     const auto listed = vec_of(static_cast<uint8_t*>(city)+kCityTurrets);
     for (size_t i = 0; i < slots.count; ++i) {
@@ -2239,6 +2274,8 @@ static void send_turret_health(size_t ci)
     net::Writer w;
     w.u32(modes::current_world()); w.u32(++g_turret_sequence); w.u8(uint8_t(ci));
     w.u32(pol_of(city)); w.u8(!team_faction(pol_of(city)));
+    // Only repair a guest when the host itself has completed the transfer for every part.
+    w.u8(a_SetCityPartsOwner && !planner_holds_city(city) && city_parts_match(city,pol_of(city)));
     const auto pos = city_pos(city);
     w.f32(pos.x); w.f32(pos.y); w.f32(pos.z); w.u8(uint8_t(slots.count)); w.u32(live);
     for (size_t i = 0; i < slots.count; ++i) if (live & (1u<<i)) {
@@ -2255,11 +2292,11 @@ static void receive_turret_health(net::Reader& r)
 {
     if (g_health_save_depth || local_play() || !a_PlaceTurretSlot || !a_RemoveTurret) return;
     auto world = r.u32(), sequence = r.u32();
-    auto ci = r.u8(); auto pol = r.u32(); auto rival = r.u8();
+    auto ci = r.u8(); auto pol = r.u32(); auto rival = r.u8(); auto parts_match = r.u8();
     net::Vec3 pos{r.f32(),r.f32(),r.f32()};
     auto count = r.u8(); auto live = r.u32();
     if (!world || world != modes::current_world() || ci >= g_host_cities.size() ||
-        rival > 1 || count > 32 || (count < 32 && (live >> count))) return;
+        rival > 1 || parts_match > 1 || count > 32 || (count < 32 && (live >> count))) return;
     std::array<float,32> hp{}, max{};
     std::array<uint32_t,32> host_ids{}, local_ids{};
     for (size_t i = 0; i < count; ++i) if (live & (1u<<i)) {
@@ -2272,14 +2309,19 @@ static void receive_turret_health(net::Reader& r)
     void* city = g_host_cities[ci];
     if (!city || std::find(cities.begin(),cities.end(),city) == cities.end() ||
         pol_of(city) != pol || !(net::dist(city_pos(city),pos) < 5.f)) return;
-    const auto slots = turret_slots(city);
-    if (!slots.count || slots.count != count) return;
     if (city == g_wall_drag.city || (city == g_pending_city &&
         (g_pending_wall || int32_t(sequence-g_wall_min_sequence) <= 0))) return;
     auto& last = g_wall_updates[city];
     auto serial = game::object_serial(city);
     if (last.serial == serial && int32_t(sequence-last.sequence) <= 0) return;
     if (last.serial != serial) last = {};
+    if (parts_match && a_SetCityPartsOwner && !planner_holds_city(city) && !city_parts_match(city,pol)) {
+        void* nation = F<void*>(city,kCityCiv);
+        if (nation && pol_of(nation) == pol)
+            thiscall<void>(a_SetCityPartsOwner,city,nation);
+    }
+    const auto slots = turret_slots(city); // Native model replacement may refresh the wall layout.
+    if (slots.count != count) return;
     uint32_t missing = 0;
     const auto listed = vec_of(static_cast<uint8_t*>(city)+kCityTurrets);
     for (size_t i = 0; i < count; ++i) {

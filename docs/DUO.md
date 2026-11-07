@@ -1,6 +1,6 @@
 # SporeCoop Lineages private test build
 
-The current local build is 0.7.3.6-duo17-dev. Use the same build on every
+The current local build is 0.7.3.6-duo18-dev. Use the same build on every
 machine. At 100% Difficulty Scaling, each extra reserved founder gives rival
 Civilization nations 10% more military vehicle slots and shortens their
 ordinary military purchase interval by 10% of the native 40 seconds. The
@@ -21,6 +21,11 @@ rival to attack. The host checks that both vehicles still exist before issuing
 the order. A guest can also buy, move and sell turrets on their city's wall.
 The host settles each completed edit from the shared treasury. Picking up a
 turret or dropping it outside a wall slot costs nothing.
+
+This build adapts SporeCoop 0.7.8's captured-city ownership repair. Once the
+host assigns a city's buildings and turrets to the conquering civilization,
+the guest applies the same ownership after its city planner releases the city.
+This also works when the conqueror is the guest founder.
 
 Windows, Spore with Galactic Adventures, current Steam or GOG 2024 executable.
 Start with a disposable campaign. This preview includes connection checks, distinct

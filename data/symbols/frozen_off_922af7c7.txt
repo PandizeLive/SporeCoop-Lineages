@@ -168,3 +168,5 @@ SporeCoop::CivTurret_Price ; Guest turret planner unavailable on frozen build (B
 SporeCoop::CivPlanner_SellFraction ; Guest turret planner unavailable on frozen build (BUG-9073)
 SporeCoop::CivWall_ClearSlot ; Guest turret planner unavailable on frozen build (BUG-9073)
 SporeCoop::CivWall_SetSlot ; Guest turret planner unavailable on frozen build (BUG-9073)
+SporeCoop::CommunityEditor_Update ; unverified planner guard on frozen build (upstream BUG-0493)
+SporeCoop::City_SetPartsOwner ; unverified city ownership repair on frozen build (upstream BUG-0593)
