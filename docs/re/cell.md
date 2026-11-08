@@ -1419,3 +1419,47 @@ credit file. Four ordinary encounter groups each added one actual predator at
 two reserved seats (cell-round-d-verify.log). At four seats the four groups
 added twelve, and the last group had three distinct native pool IDs
 (cell-group-e-verify.log). Neither test exhausted the placement budget.
+
+## Lineages slow-link player report (2026-11-07, fix/lineages-player-session)
+<a id="cell-lineages-player-report"></a>
+
+* Observed: Lineages 27 reported a 2,782,805-byte automatic world transfer taking
+  539.8 seconds to queue. A later Cell editor return started another full share.
+  This is a Cell report, not Creature. The host log alone cannot establish the
+  guest's complete simulation state or physical packet loss.
+* Upstream v0.7.9's BUG-0405 fix acknowledges receive bursts before they leave the
+  128-packet acknowledgement window, and retries only after a newer packet was
+  acknowledged or a longer silence. Selectively ported without changing packets.
+  See tests/world_transfer_tests.cpp and net/session.cpp. A clean slow receiver
+  changes from 641/3400 chunks after 120 seconds to all chunks in 12.7 seconds,
+  with zero retransmits. The native delayed-link join completed in 13.75 seconds
+  with 60 ms each way and deterministic 2% loss; not a WAN throughput promise.
+* Verified native camera fields: cCellUI +0x48, +0x54, +0x60 hold the drawn,
+  target and lag positions. Upstream's teleport reset fixes actual co-op respawn:
+  old offset 7.0 units, fixed 0.06 and 0.07. Only finite positions and a readable
+  native UI are written, when the own avatar moves more than two units.
+* Same-stage Cell editing can keep an already joined, fresh peer in the same
+  world. The existing creation stream updates the host's saved species and its
+  puppet on the guest. Negative control started another share; saved-species and
+  cancel returns with the fix did not. New joins, stage/world changes and stale
+  peers retain the full world-share path. Creature migration is not changed.
+* A first guest hit on a drawn enemy was accepted without a setup hit: host HP
+  7 -> 4 and guest HP matched in 0.406 seconds under the delayed link. This does
+  not prove every reported first-hit visual symptom is fixed. The native ring
+  uses hp/6 (cell-guest-bite-ring), so scaled HP above six is a separate display
+  concern. No guessed maximum-HP patch is applied here.
+* Shared food test: at two seats/100% scaling, a native 200-point guest meal
+  awards 100 shared food and ten earned DNA; repeated authoritative totals
+  while gameplay is paused grant no additional food. Four reserved seats at
+  100% scaling mean four times the base workload by the approved rules.
+* CORRECTION to any blanket explanation of BUG-0351 as proven vanilla sell-back:
+  that explanation was inferred, not tested solo. The present fixture's first
+  saved editor visit changed spent DNA from 0 to -88 while food stayed 125 and
+  earned DNA stayed 12. Earlier and later cancel returns kept spent unchanged.
+  A starter-model valuation/refund remains a candidate; do not clamp negative
+  spent DNA or subtract it from an existing player's save without qualification.
+* Large filled partner arrows use the existing D3D9 overlay event and restore
+  device state after drawing. Labels include name/distance, clamp to the screen
+  edge and exclude stale/other-world peers. Cell knockout labels keep their own
+  rescue indicator. Behind-camera direction in 3D uses the existing bottom-edge
+  fallback; a full 3D bearing compass has not been implemented.

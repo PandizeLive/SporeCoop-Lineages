@@ -1768,3 +1768,22 @@ limitation, not a campaign blocker. See
 * Next steps: finish native captain scale/lifetime, then shared actor ownership
   and combat before broadening objective types. Do not package as complete.
 * Ticket: BUG-9089
+
+## Session: remaining Lineages player-report uncertainty (2026-11-07, player report)
+<a id="issue-lineages-session-followup"></a>
+
+* What happens: reported first-hit display delay, disappearing nearby objects,
+  repeated meal notices and unexpectedly generous Cell editor budgets.
+* Reproduce: original slow Internet session. Host report only; no matching
+  guest trace. The targeted delayed-link hit test applied the first hit and
+  matched HP, and repeated food totals did not duplicate rewards.
+* Known: transfer retry flooding and redundant Cell editor shares are fixed in
+  Lineages 28. They can delay authoritative state. That does not prove all
+  disappearance or health-display cases share this cause. The native Cell ring
+  divides HP by six, whereas enemy scaling can raise HP above six.
+* Not checked: visual ring behavior for each scaled one-point hit, the original
+  guest's object removals, and a solo control for the first editor refund.
+* Next steps: compare native first-editor model valuation with solo; capture
+  guest object keys and host removals if disappearance persists on Lineages 28.
+* Tickets: BUG-9096, BUG-0351. See
+  [observations](re/cell.md#cell-lineages-player-report).

@@ -4095,3 +4095,62 @@ installer version, exact resource-package contents and native symbol inclusion
 2eae48a2196632a9bc4eff8b5bdea861a197cd6c8b91362f49396b0825d2151d.
 The installer itself was not rerun against the personal installation. The full
 Linux lab and broad campaign regression remain outside this targeted qualification.
+
+## Lineages 28 player-report checks (2026-11-07)
+<a id="testing-lineages-player-report"></a>
+
+Artifacts: out/player-report-20261107-223741 (private, untracked). No player save
+was loaded or modified. Disposable DuoQAReportSessionH/G profiles used native
+Steam 3010a413, instances 4/5, 800x600 at 20 FPS. No full-stage replay.
+
+- tests/world_transfer_tests.cpp is part of make test; compile with
+  -DLINEAGES_BULK_ACKS and mods/coop/net/connection.cpp. The original baseline
+  fails (transfer-before.log), fixed and repeated runs pass (transfer-after.log,
+  transfer-repeat.log). Five clean/lossy/slow-receiver cases include ordering.
+- Full Windows net_tests passes (net-regression.log), including existing founder
+  scaling tests. Native Cell logic and the fix registry also pass.
+- tools/tests/lineages_cell_report.py --output <scratch> tests actual knockout,
+  respawn, scaled food, paused repeated totals and the partner arrow. Camera
+  negative control and two fixed respawns: native-camera.log. Native meal:
+  native-cell.log. The first attempt hit the native three-second invulnerability
+  period; the test now clears it before the next intentional knockout.
+- tools/tests/lineages_cell_editor_report.py requires those joined disposable
+  profiles, with the native HUD ready. It tests real mating, readiness and
+  editor return. --fixed-only skips the already qualified negative control.
+  Native tutorial captions must be acknowledged before starting. Input must
+  wait frames between opening the name panel and typing. Spore's native widget
+  did not select all through synthetic Ctrl+A; the test inserts a unique marker.
+- tools/tests/lineages_cell_first_hit.py checks the first native DamageCell hit
+  and host/guest HP agreement, without a preliminary bite. first-hit.log records
+  7 -> 4 HP, synchronized in 0.406 seconds with latency/loss.
+- The disposable UDP relay binds loopback only: 60 ms each way, deterministic
+  2% loss, bounded queue. Windows ICMP after a disconnected guest raises
+  ConnectionResetError; ignore it in this test relay and continue serving.
+  Delayed transfer results are not measurements of the player's physical link.
+
+Linux/Wine lab, sanitizer builds, four native peers and a full campaign were
+not run for this patch. Remaining player-report uncertainty is recorded in
+BUG-9096 and BUG-0351, not hidden by a passing unit suite.
+
+Final Lineages 28 native editor regression: editor-regression-final.log passes
+both saved design and cancel without another share. The saved design is checked
+against the guest puppet's species key, not only receipt of metadata. Synthetic
+input clears the bounded name field with Home/Delete; immediate modifier release
+previously raced the posted Ctrl+A event. The earlier failed harness runs remain
+in the scratch archive; they are not gameplay regressions.
+
+Package: out/dist/SporeCoop-0.7.3.6-lineages28-dev-Windows.zip. ZIP CRCs, installer
+version and all eleven payload SHA-256 hashes passed (package-check.log).
+SHA-256: 2f7e19a1e8dafffa52c3943baf2a169c5f7cf1d904adc7f734eee83ce1b83f7f.
+The personal installation was not updated or restarted.
+Final marker test (final-markers.log): healthy arrow on/off, no green-label
+collision during knockout, arrow restored after respawn, camera centered and
+zero native faults. first-hit-final.log: 6 -> 3 HP synchronized in 0.953 seconds
+on the delayed/lossy link. Differences in timing are expected with dropped
+unreliable state packets; no instant-hit guarantee is claimed.
+
+The ticket gate reports three pre-existing verification-format failures in
+BUG-9093/9094/9095; this patch's tickets pass its field/evidence checks. RE,
+documentation and glyph linters report zero problems. The Linux sanitizer suite
+was not run. QA instances 4/5 and the loopback relay were closed after collecting
+native logs; the personal game was not controlled.

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Lineages 28: port upstream bulk acknowledgements and conservative retries
+  for world transfers to loading guests (BUG-0405); recenter the Cell camera
+  after teleport/respawn (BUG-0343). Keep joined Cell partners in their world
+  after an editor visit while designs update live (BUG-9096). Add large partner
+  direction arrows with names and distance (BUG-9097).
+
 - Add the native Lineages Cache category and persistent bidirectional authored
   library sharing, including host relay, background transfers and reconnect
   deduplication. Fix native feed captions, stream lifetime and provisional

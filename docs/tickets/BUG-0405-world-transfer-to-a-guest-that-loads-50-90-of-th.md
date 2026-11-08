@@ -1,17 +1,17 @@
 ---
 id: BUG-0405
 title: world transfer to a guest that loads: 50-90 % of the packets are resent on a clean link
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-01
 source: rejoin_race_long, lab 20261101-134020 (feat/w33-tests-session)
 role: host
 versions: main a05d1f6
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/lineages-player-session
+commits: 75b3901b
+tests: tests/world_transfer_tests.cpp; tests/net_tests.cpp
 signature:
 docs:
 related:
@@ -41,8 +41,31 @@ completed every time (the monitor's link check now leaves world transfers out, t
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
+2026-11-07: FAIL in out/player-report-20261107-223741/transfer-before.log;
+PASS in transfer-after.log and transfer-repeat.log in that same folder.
+Full net-regression.log is ALL OK. Native delayed-rejoin-final.log passes
+against the final Lineages 28 binary. See selective-port section below.
+
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
+- 2026-11-07: Lineages 27 player report has a 2.7 MiB transfer taking 539.8 seconds
+  to queue over a roughly 130 ms RTT link, with heavy retransmissions. The fork
+  lacks upstream bulk_acks. Selective port tracked with BUG-9096.
 - 2026-11-01: opened.
+
+## Verified selective port (2026-11-07)
+
+CORRECTION: the older unanalysed root-cause text above is historical. Upstream
+v0.7.9 connection.cpp/session.cpp provides the validated implementation: urgent
+acknowledgements while draining receive bursts, and retransmission only with
+newer acknowledged traffic or a longer timeout. Guard: net.bulk_acks. Wire format
+unchanged. See docs/re/cell.md#cell-lineages-player-report.
+
+Verification: out/player-report-20261107-223741/transfer-before.log is FAIL;
+transfer-after.log and transfer-repeat.log are PASS (five cases). Full Windows
+net-regression.log is ALL OK. Native delayed-rejoin.log completed in 13.75 s;
+the final versioned binary completed in 19.78 s (delayed-rejoin-final.log), both
+with loopback 60 ms each way and deterministic 2% loss. No claim of the same
+throughput on the player's physical connection.
