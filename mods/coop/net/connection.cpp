@@ -114,8 +114,15 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
 {
     uint32_t rto = (uint32_t)std::max(100.f, rtt_ms * 1.5f + 20.f);
     uint16_t oldest = rel_out_.empty() ? 0 : rel_out_.front().rel_id; // rel_out_ is in rel_id order
+    // Upstream BUG-0405: a loading guest may not read its socket for hundreds
+    // of milliseconds. Wait for evidence of a lost packet or a long silence.
+    uint32_t silent_rto = std::max<uint32_t>(rto * 4, 1000);
     auto due = [&](const OutMsg& m) {
-        return (m.sends == 0 || now - m.last_sent >= rto) && (uint16_t)(m.rel_id - oldest) < kRelWindow;
+        if ((uint16_t)(m.rel_id - oldest) >= kRelWindow) return false;
+        if (m.sends == 0) return true;
+        if (now - m.last_sent < rto) return false;
+        return !g_fix.bulk_acks || (any_acked_ && seq_greater(newest_acked_seq_, m.last_seq)) ||
+            now - m.last_sent >= silent_rto;
     };
     bool any_rel_due = false;
     for (auto& m : rel_out_) {
@@ -127,7 +134,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
         }
     }
     uint32_t since = now - last_send_ms_;
-    bool keepalive = since >= 250 || (ack_pending_ && since >= 30);
+    bool keepalive = since >= 250 || (ack_pending_ && since >= 30) || ack_urgent();
     if (unrel_out_.empty() && !any_rel_due && !keepalive)
         return false;
 
@@ -188,6 +195,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
             stats.resends++;
         m.sends++;
         m.last_sent = now;
+        m.last_seq = seq;
         sp.rel_ids.push_back(m.rel_id);
         count++;
     }
@@ -199,6 +207,7 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     out = std::move(w.data);
     last_send_ms_ = now;
     ack_pending_ = false;
+    recv_since_send_ = 0;
     stats.packets_sent++;
     return true;
 }
@@ -209,6 +218,10 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
         return;
     p.acked = true;
     stats.acked++;
+    if (!any_acked_ || seq_greater(p.seq, newest_acked_seq_)) {
+        newest_acked_seq_ = p.seq;
+        any_acked_ = true;
+    }
     float sample = (float)(now - p.time);
     rtt_ms = rtt_ms * 0.9f + sample * 0.1f;
     if (!stats.rtt_n || sample < stats.rtt_min)
@@ -250,6 +263,7 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
     stats.bytes_recv += n;
     last_recv_ms = now;
     ack_pending_ = true;
+    ++recv_since_send_;
 
     // receive window
     if (!have_remote_) {

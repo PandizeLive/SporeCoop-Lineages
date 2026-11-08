@@ -94,6 +94,8 @@ ifeq ($(SKIP_SANITIZERS),1)
 endif
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	$(B)/host/net_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -DLINEAGES_BULK_ACKS -Imods/coop -o $(B)/host/world_transfer_tests tests/world_transfer_tests.cpp mods/coop/net/connection.cpp
+	$(B)/host/world_transfer_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/library_sync_tests tests/library_sync_tests.cpp mods/coop/net/library_sync.cpp updater/sha256.cpp
 	$(B)/host/library_sync_tests
 	python3 tools/tests/test_cache_category.py

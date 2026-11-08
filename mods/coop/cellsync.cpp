@@ -238,8 +238,26 @@ static float revive_dist(uint8_t* a)
 // A cell with a soft body (the avatar) takes its position and velocity from its particles
 // (modes::cell_move moves their positions and, for a stop, clears their velocities);
 // +0x1C4 is the steering acceleration the cell step adds to the particle velocities.
+// Selective upstream BUG-0343 port. The native camera chases a stationary
+// teleported avatar too slowly unless all three native camera points move too.
+static bool g_fix_camera_snap = true;
+COOP_FIX("cell.camera_snap", "BUG-0343", g_fix_camera_snap, "cell: recenter the native camera after respawn or join teleport");
+static uint32_t g_camera_snaps;
+static void camera_snap(const net::Vec3& p)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!ui || !skg::readable(ui + 0x48, 0x24) ||
+        !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) return;
+    for (int offset : {0x48, 0x54, 0x60}) {
+        auto* point = (float*)(ui + offset);
+        point[0] = p.x; point[1] = p.y; point[2] = p.z;
+    }
+    ++g_camera_snaps;
+}
 static void stop_at(uint8_t* c, const net::Vec3& p)
 {
+    if (g_fix_camera_snap && c && c == avatar() && net::dist(pos_of(c), p) > 2.f)
+        camera_snap(p);
     modes::cell_move(c, p, true);
     auto* bv = (float*)(c + 0x1C4);
     bv[0] = bv[1] = bv[2] = 0;
@@ -2465,7 +2483,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_AddFood = H->sym("Simulator::Cell::AddFoodPoints");
     a_Populate = H->sym("Simulator::Cell::PopulateMarker");
     a_Rollover = H->sym("Simulator::Cell::ShowHealthRollover");
-    a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // tests only (rollover_of)
+    a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // rollover and native camera recentering
     a_DnaFor = H->sym("Simulator::Cell::DNAForFood"); // BUG-0351 diagnostics (dna_note)
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
     // Calls that consume HP. The same getter also forecasts lethal bites;
@@ -3689,6 +3707,12 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
     H->overlay_text(x - text_w(s) / 2, y - 10, red, s.c_str());
 }
 
+bool partner_down(int id)
+{
+    const auto it = g_ko.find(id);
+    return it != g_ko.end() && it->second.state == KO_OUT;
+}
+
 void draw_overlay()
 {
     if (!in_cell() || !C.sess || !C.sess->connected())
@@ -4478,6 +4502,26 @@ std::string debug(const std::vector<std::string>& a)
         t[2] = p.z;
         F<uint8_t>(av, 0x04) = 0;
         return "swimming";
+    }
+    if (!a.empty() && a[0] == "camera") {
+        uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+        if (!ui || !skg::readable(ui + 0x48, 0x24)) return "no camera";
+        const auto* d = (const float*)(ui + 0x48);
+        const auto* t = (const float*)(ui + 0x54);
+        const auto* l = (const float*)(ui + 0x60);
+        net::Vec3 me = pos_of(av);
+        char out[256];
+        snprintf(out,sizeof out,"cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f snaps=%u",
+            d[0],d[1],t[0],t[1],l[0],l[1],me.x,me.y,std::hypot(d[0]-me.x,d[1]-me.y),g_camera_snaps);
+        return out;
+    }
+    if (!a.empty() && a[0] == "dna") {
+        uint8_t* state = S();
+        if (!state || !a_DnaFor) return "no Cell DNA state";
+        int food = F<int32_t>(state,0x1C), spent = F<int32_t>(state,0x2C);
+        int earned = ((int(__fastcall*)(int))a_DnaFor)(food);
+        return "food="+std::to_string(food)+" earned="+std::to_string(earned)+" spent="+std::to_string(spent)+
+            " budget="+std::to_string(earned-spent);
     }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
         net::Vec3 at;

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "buffer.h"
+#include "fixes.h"
 #include "udp.h"
 
 namespace net {
@@ -93,6 +94,8 @@ public:
     bool build_packet(uint32_t now, std::vector<uint8_t>& out);
     // Parses a datagram, updates acks, delivers messages in order. false = invalid packet.
     bool on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver);
+    // Acknowledge before a frame's receive burst outruns the 128-packet window.
+    bool ack_urgent() const { return g_fix.bulk_acks && recv_since_send_ >= 48; }
 
     static bool looks_valid(const uint8_t* data, size_t n);
     static uint32_t peek_conn(const uint8_t* data, size_t n); // conn id of a valid packet
@@ -104,6 +107,7 @@ private:
         std::vector<uint8_t> payload;
         bool more = false; // a piece of a split message, more pieces follow (wire flag 2)
         uint32_t last_sent = 0;
+        uint16_t last_seq = 0;
         int sends = 0;
     };
     struct SentPkt {
@@ -125,6 +129,9 @@ private:
     AckBits recv_bits_;
     bool have_remote_ = false;
     bool ack_pending_ = false;
+    uint32_t recv_since_send_ = 0;
+    uint16_t newest_acked_seq_ = 0;
+    bool any_acked_ = false;
     uint32_t last_send_ms_ = 0;
 
     std::deque<SentPkt> sent_;

@@ -810,6 +810,13 @@ void Session::update()
         handle_packet(*p, buf, n, now);
         if (role_ == Role::None)
             return; // left during handling
+        // BUG-0405: acknowledge during the receive burst, before older packets
+        // fall outside the acknowledgement window. The callback can remove p.
+        if (Peer* q = find_peer(from); q && q->conn.ack_urgent()) {
+            std::vector<uint8_t> ack;
+            if (q->conn.build_packet(now, ack))
+                tr_->send_to(q->conn.remote, ack.data(), ack.size());
+        }
     }
 
     // timeouts

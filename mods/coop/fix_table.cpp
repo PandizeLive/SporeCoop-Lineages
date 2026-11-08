@@ -13,6 +13,7 @@ namespace {
 
 // net::Fixes (mods/coop/net/fixes.h)
 COOP_FIX("net.big_reliable", "BUG-0034", net::g_fix.big_reliable, "net: reliable messages above one packet are split, not stuck");
+COOP_FIX("net.bulk_acks", "BUG-0405", net::g_fix.bulk_acks, "net: acknowledge bulk packets within the window and avoid premature resends");
 COOP_FIX("net.state_roster", "BUG-0109", net::g_fix.state_roster, "net: a guest ignores the state of a player not in its roster");
 COOP_FIX("net.offset_window", "BUG-0133", net::g_fix.offset_window, "net: the clock offset forgets an old minimum within seconds");
 COOP_FIX("net.sender_time", "BUG-0122", net::g_fix.sender_time, "net: ship / vehicle velocity over the host's time, not arrival");

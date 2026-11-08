@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages27-dev"
+#define COOP_VERSION "0.7.3.6-lineages28-dev"
 #endif
 
 #include <winsock2.h>
@@ -64,6 +64,7 @@
 #include "net/utf8.h"
 #include "creations.h"
 #include "library.h"
+#include "partner_marker.h"
 #include "notify.h"
 #include "notify_text.h"
 #include "syncdbg.h"
@@ -1760,6 +1761,9 @@ double g_share_cine_since = 0, g_share_due_at = 0;
 bool g_share_cine_each_fix = true;
 COOP_FIX("npc.sharecine_each", "BUG-0232", g_share_cine_each_fix, "world: the wait for the evolution cinematic counts per guest");
 
+static bool g_cell_editor_share_fix = true;
+COOP_FIX("world.cell_editor_in_place", "BUG-9096", g_cell_editor_share_fix,
+         "Cell editor returns update live creations without reloading an already joined partner");
 void on_mode_change(uint32_t from, uint32_t to)
 {
     if (from == modes::kTribe || from == modes::kCreature) creature_hp::clear_enemy_health();
@@ -1787,6 +1791,19 @@ void on_mode_change(uint32_t from, uint32_t to)
         return;
     for (auto& [id, r] : g_remotes)
         if (!r.echo) {
+            // Cell has no nest migration or terrain editor. The creation stream
+            // already updates the partner's body; keep a fresh, joined peer in
+            // this pool instead of replacing its world for every editor visit.
+            const bool cell_editor = g_cell_editor_share_fix && evolved && to == modes::kCell;
+            if (cell_editor && r.joined_phase && !r.needs_world && !r.buf.empty() &&
+                r.buf.age(H->time_seconds()) < 5.0) {
+                const auto& peer = r.buf.latest();
+                const uint32_t current = modes::current_world();
+                if (current && peer.world == current && (peer.mode == to || peer.mode == modes::kEdit || peer.mode == modes::kEditor)) {
+                    LOG("world: Cell editor return keeps player %u in the current pool; creation sync updates designs",id);
+                    continue;
+                }
+            }
             r.needs_world = true; // sent by follow_phase as soon as the host controls something
             r.cine_wait_since = 0; // a new wait (BUG-0232)
         }
@@ -2823,6 +2840,9 @@ struct Mark {
     uint32_t argb;
 };
 std::vector<Mark> g_marks;
+static bool g_partner_arrows = true;
+COOP_FIX("ui.partner_arrows", "BUG-9097", g_partner_arrows, "visible direction arrows and distance for partners in the same world");
+static unsigned g_partner_indicators;
 
 void add_mark(uint8_t from, const net::Vec3& p, uint32_t mode)
 {
@@ -3018,8 +3038,14 @@ void on_overlay(void*, int, void*)
         if (ok)
             H->overlay_text((int)sc[0] - 4, (int)sc[1] - 10, 0xFFFF4040, "+");
     }
+    g_partner_indicators = 0;
     for (auto& [id, r] : g_remotes) {
         if (!av)
+            continue;
+        if (g_mode == modes::kCell && cellsync::partner_down(id))
+            continue; // the red rescue indicator already identifies this partner
+        const double label_now = H->time_seconds();
+        if (!r.echo && (r.buf.empty() || r.buf.age(label_now) >= 5.0 || !same_place(r.buf.latest())))
             continue;
         net::Vec3 p;
         float h = 3.f;
@@ -3045,7 +3071,27 @@ void on_overlay(void*, int, void*)
             w[1] = p.y + h; // cell world: screen up is +y on the plane
             w[2] = p.z;
         }
-        if (H->world_to_screen(w, sc)) {
+        const bool front = H->world_to_screen(w, sc) != 0;
+        if (g_partner_arrows && sw > 0 && sh > 0) {
+            const float size = std::clamp(sh / 24.f,30.f,60.f);
+            const bool visible = front && sc[0] >= 40 && sc[0] < sw-40 && sc[1] >= 70 && sc[1] < sh-70;
+            float x = 0, y = 0, dx = 0, dy = 1;
+            if (visible) { x = sc[0]; y = sc[1]-size; }
+            else {
+                dx = front ? sc[0]-sw*.5f : 0.f;
+                dy = front ? sc[1]-sh*.5f : 1.f;
+                if (!cell_logic::edge_point(sw*.5f,sh*.5f,dx,dy,110,85,1,.5f,x,y)) continue;
+            }
+            partner_marker::draw(H,x,y,dx,dy,size,0xFF70FFB0);
+            const float distance = net::dist(modes::entity_pos(g_adapter,av),p);
+            if (!std::isfinite(distance)) continue;
+            std::string tag = r.name.substr(0,utf8::cut_bytes(r.name,32)) + "  " + std::to_string(int(std::min(distance,999999.f))) + " m";
+            int tx = std::clamp(int(x)-text_width(tag)/2,8,std::max(8,sw-text_width(tag)-8));
+            int ty = std::clamp(visible ? int(y-size*.7f)-18 : int(y+size*.7f),8,sh-26);
+            H->overlay_text(tx+1,ty+1,0xFF000000,tag.c_str());
+            H->overlay_text(tx,ty,0xFFB0FFD0,tag.c_str());
+            ++g_partner_indicators;
+        } else if (front) {
             std::string tag = r.name;
             H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, 0xFF80FF80, tag.c_str());
         }
@@ -5510,6 +5556,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        SAY("%s", library::debug(std::vector<std::string>(argv+1,argv+argc)).c_str());
                        return 0;
                    }, nullptr, SK_CMD_OUTSIDE_FRAME);
+    H->command_add(M, "coop.partner_markers", "coop.partner_markers - current drawn partner indicators",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("markers=%u enabled=%d",g_partner_indicators,int(g_partner_arrows)); return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.creations", "coop.creations [list | next|prev <creature|cell|ufo> | choose <kind> <hex>]",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", creations::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
