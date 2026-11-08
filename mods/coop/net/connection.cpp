@@ -110,14 +110,16 @@ void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
         unrel_out_.emplace_back(type, w.data);
 }
 
-bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
+bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out, bool pace_world)
 {
     uint32_t rto = (uint32_t)std::max(100.f, rtt_ms * 1.5f + 20.f);
     uint16_t oldest = rel_out_.empty() ? 0 : rel_out_.front().rel_id; // rel_out_ is in rel_id order
     // Upstream BUG-0405: a loading guest may not read its socket for hundreds
     // of milliseconds. Wait for evidence of a lost packet or a long silence.
     uint32_t silent_rto = std::max<uint32_t>(rto * 4, 1000);
+    const bool world_due = !sent_world_chunk_ || now - last_world_chunk_ms_ >= kPacedWorldIntervalMs;
     auto due = [&](const OutMsg& m) {
+        if (pace_world && m.type == MSG_WORLD_CHUNK && !world_due) return false;
         if ((uint16_t)(m.rel_id - oldest) >= kRelWindow) return false;
         if (m.sends == 0) return true;
         if (now - m.last_sent < rto) return false;
@@ -198,6 +200,12 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
         m.last_seq = seq;
         sp.rel_ids.push_back(m.rel_id);
         count++;
+        if (m.type == MSG_WORLD_CHUNK) {
+            sent_world_chunk_ = true;
+            last_world_chunk_ms_ = now;
+            // One bulk chunk per paced datagram, including retransmissions.
+            if (pace_world) break;
+        }
     }
     w.data[count_pos] = count;
     sent_.push_back(std::move(sp));

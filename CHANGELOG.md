@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages30-dev] - 2026-11-08
+
+- Open personal Cell edits without a Ready vote. Partners get a passive notice
+  and keep playing. Shared stage transitions still use the vote.
+- Keep the Cell model when sharing a rename that saved only metadata. Reject
+  incomplete bundles before rebuilding a partner's cell (BUG-0455).
+- Restore the Cell DNA allowance when a co-op vote delays opening the editor
+  (BUG-0560). This prevents new inflated balances after a save.
+- Reuse a verified, unchanged Cell world on a warm reconnect. Save changes,
+  stage changes and cold reconnects still follow the normal world-share path.
+- Confirm the native save dialog with Enter if its OK button is off-screen
+  after a video reset (BUG-9057).
+- Hold Shift and scroll in the Creature and Adventure follow cameras to
+  widen the local field of view by up to 18 degrees on Steam and GOG 2024.
+
+- Add an opt-in Paced world transfer setting for constrained UDP links.
+  Keep Normal transfer as the default. Send live Cell snapshots only after
+  the guest has entered the host's Cell world. Use title case on Co-op action
+  buttons and widen the report button to fit its localized label.
+
+## Earlier Lineages previews
+
 - Lineages 28: port upstream bulk acknowledgements and conservative retries
   for world transfers to loading guests (BUG-0405); recenter the Cell camera
   after teleport/respawn (BUG-0343). Keep joined Cell partners in their world

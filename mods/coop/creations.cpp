@@ -254,6 +254,9 @@ static bool load_editor_saves(dbpf::Package& pk)
     return find_paths() && read_file(g_es_path, f) && pk.load(f);
 }
 
+static bool key_exists(const Key& k);
+static bool cached_cell_model(const Key& key);
+
 static void refresh_options(double now)
 {
     if (now - g_opts_read < 10)
@@ -266,8 +269,12 @@ static void refresh_options(double now)
     for (int k = 0; k < kKinds; k++) {
         g_opts[k].clear();
         for (auto& e : pk.entries()) {
-            if (e.key.type != kBem || e.key.group != kInfo[k].group)
+            if (e.key.group != kInfo[k].group)
                 continue;
+            const Key model{e.key.instance, kBem, e.key.group};
+            // A renamed imported cell can have local metadata and a mounted model.
+            if (e.key.type != kBem && !(k == kCell && e.key.type == kMeta &&
+                                       !pk.find(model) && (key_exists(model) || cached_cell_model(model)))) continue;
             Option o;
             o.key = {e.key.instance, kInfo[k].type, kInfo[k].group};
             std::vector<uint8_t> m;
@@ -1319,6 +1326,12 @@ static bool g_old_species_fix = true;
 COOP_FIX("creations.old_species", "BUG-0370", g_old_species_fix, "creations: the host answers a guest's request for a player's replaced creature (an NPC of it is still in the world)");
 constexpr size_t kKeepOld = 24;
 static std::map<uint32_t, std::vector<dbpf::Record>> g_old_recs; // instance -> its records (renamed)
+static bool cached_cell_model(const Key& key)
+{
+    auto cached = g_old_recs.find(key.instance);
+    return cached != g_old_recs.end() && std::any_of(cached->second.begin(), cached->second.end(),
+        [&](const dbpf::Record& r) { return r.key == key && !r.data.empty(); });
+}
 static std::deque<uint32_t> g_old_order;
 static unsigned g_old_served;
 static void keep_records(uint32_t inst, const std::vector<dbpf::Record>& recs)
@@ -1555,6 +1568,14 @@ std::string content_status()
 }
 
 // a bundle arrived (or is our own): store it here under a collision-free instance and register it
+static bool has_cell_model(const Bundle& b)
+{
+    return std::any_of(b.recs.begin(), b.recs.end(), [&](const dbpf::Record& r) {
+        return r.key.type == kBem && r.key.group == b.key.group &&
+               r.key.instance == b.key.instance && !r.data.empty();
+    });
+}
+
 static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data)
 {
     Bundle b;
@@ -1562,9 +1583,17 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
         g_last_error = "bad bundle";
         return;
     }
+    // BUG-0455: a metadata-only package cannot resolve its remapped Cell key.
+    // Keep the previous appearance until the sender has the actual model.
+    if (k == kCell && !b.recs.empty() && !has_cell_model(b)) {
+        g_last_error = "received Cell creation without its model";
+        return;
+    }
     auto& ap = g_applied[{owner, (uint8_t)k}];
     if (ap.id == id && (ap.key.instance || ap.unusable))
         return;
+    // An alias for the current Cell key must not unmount the package supplying it.
+    if (k == kCell && b.recs.empty() && ap.db && b.key == ap.key) return;
     std::string name;
     for (auto& r : b.recs)
         if (r.key.type == kMeta) {
@@ -2062,11 +2091,25 @@ static void share_own(double now)
         // copy of the file has it (read every 10 s). Sent without its records it was a key nobody
         // else knows: the guest's game faulted building the host's new cell from it
         // (CreateCellObject, 0xE83EC8) and showed the old creature until the next bundle.
-        if (!world_own && b.recs.empty() && in_my_creations(o.key)) {
+        if (!world_own && ((b.recs.empty() && in_my_creations(o.key)) ||
+                           (k == kCell && !b.recs.empty() && !has_cell_model(b)))) {
             g_opts_read = -100;
             refresh_options(now);
             b = Bundle{};
-            if (!make_bundle((Kind)k, o.key, b) || b.recs.empty()) {
+            const bool made = make_bundle((Kind)k, o.key, b);
+            // A rename of an imported cell can save only its metadata locally.
+            // Resolve the unchanged model from the mounted source package.
+            if (made && k == kCell && !b.recs.empty() && !has_cell_model(b)) {
+                std::vector<dbpf::Record> source;
+                if (!records_from_game({o.key.instance, kBem, o.key.group}, source)) {
+                    auto cached = g_old_recs.find(o.key.instance);
+                    if (cached != g_old_recs.end()) source = cached->second;
+                }
+                for (auto& r : source)
+                    if (r.key.type == kBem) b.recs.push_back(std::move(r));
+            }
+            if (!made || b.recs.empty() ||
+                (k == kCell && !has_cell_model(b))) {
                 g_waits_on_disk++;
                 continue; // not on disk yet: next round
             }
@@ -2115,6 +2158,12 @@ static Key own_key_here(Kind kind)
     else if (g_pre_editor_fix && me != 0 && host_world_key(kind, k.instance) && own_option(kind, k))
         if (Key r = player_key(me, kind); r.instance)
             k = r;
+    if (kind == kCell && me != 0 && k.instance) {
+        auto own = g_applied.find({me, kCell});
+        if (own != g_applied.end() && own->second.orig == k && own->second.key.instance &&
+            cached_cell_model({k.instance, kBem, k.group}) && !key_exists({k.instance, kBem, k.group}))
+            k = own->second.key;
+    }
     return k;
 }
 

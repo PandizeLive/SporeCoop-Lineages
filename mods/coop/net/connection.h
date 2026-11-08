@@ -38,6 +38,9 @@ struct AckBits {
     bool test(unsigned k) const { return k < 128 && (((k < 64 ? lo : hi) >> (k & 63)) & 1); }
 };
 constexpr unsigned kAckWindow = 128;
+constexpr uint32_t kPacedWorldIntervalMs = 40;
+constexpr size_t kPacedWorldChunkBytes = 384;
+constexpr size_t kPacedWorldWindow = 12;
 // reliable messages the receiver buffers ahead of a missing one; the sender never sends a message
 // this far past the oldest unacknowledged one, so the buffer can never overflow (it used to drop the
 // message of a packet it still acknowledged: lost for good, the world transfer stalled forever)
@@ -91,7 +94,7 @@ public:
     size_t pending_reliable() const { return rel_out_.size(); }
 
     // Builds the next datagram if anything is due (messages, acks, keepalive).
-    bool build_packet(uint32_t now, std::vector<uint8_t>& out);
+    bool build_packet(uint32_t now, std::vector<uint8_t>& out, bool pace_world = false);
     // Parses a datagram, updates acks, delivers messages in order. false = invalid packet.
     bool on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver);
     // Acknowledge before a frame's receive burst outruns the 128-packet window.
@@ -133,6 +136,8 @@ private:
     uint16_t newest_acked_seq_ = 0;
     bool any_acked_ = false;
     uint32_t last_send_ms_ = 0;
+    uint32_t last_world_chunk_ms_ = 0;
+    bool sent_world_chunk_ = false;
 
     std::deque<SentPkt> sent_;
     uint16_t next_rel_id_ = 0;

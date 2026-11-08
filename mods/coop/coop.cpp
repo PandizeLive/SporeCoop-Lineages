@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages28-dev"
+#define COOP_VERSION "0.7.3.6-lineages30-dev"
 #endif
 
 #include <winsock2.h>
@@ -34,6 +34,7 @@
 #include "modes.h"
 #include "stage_epoch.h"
 #include "mouse.h"
+#include "fov.h"
 #include "shared.h"
 #include "sui.h"
 #include "teamplay.h"
@@ -1299,8 +1300,19 @@ static bool native_first_spacecraft(void* req)
         skg::field<uint32_t>(req, 0x90) == 0x0116D51D;
 }
 
+static bool personal_cell_edit(void* req, uint32_t mode)
+{
+    if (!req || mode != modes::kCell) return false;
+    const uint32_t editor = skg::field<uint32_t>(req, 0xC);
+    // Native mating selects one of five editors from the Cell growth table.
+    // The Creature landfall editor (0xFD4902BD) remains a shared transition.
+    return editor == 0x1D2EC0A0 || (editor >= 0x1D2EC0A4 && editor <= 0x1D2EC0A7);
+}
+
 static bool submit_native_editor(void* req)
 {
+    const bool tell_cell_edit = g_sess.connected() && g_sess.players().size() > 1 &&
+                                personal_cell_edit(req, game::mode_id());
     const bool personal_launch = g_sess.connected() && g_sess.role() == net::Role::Client &&
                                  native_first_spacecraft(req);
     const bool captain_outfit = req && game::mode_id() == modes::kSpace &&
@@ -1311,16 +1323,45 @@ static bool submit_native_editor(void* req)
     bool r = o_Submit(req);
     if (r && personal_launch && !restoring) creations::begin_personal_launch();
     if (r && captain_outfit) creations::begin_captain_outfit();
+    if (r && tell_cell_edit) notice(g_name + " is editing their cell");
     return r;
+}
+
+// Upstream BUG-0560: native Cell posts its allowance after Submit. When a vote
+// defers Submit the original message has no editor listener and is lost. Queue
+// the native allowance again after accepting the held request. Otherwise the
+// editor starts with 100 DNA and saving records a bogus negative spent balance.
+static bool g_editor_budget_fix = true;
+COOP_FIX("cell.editor_budget", "BUG-0560", g_editor_budget_fix,
+         "Cell editors opened after a vote receive the native campaign allowance");
+static void post_editor_budget(int budget)
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get"), alloc = H->sym("GeneralAllocator::new_");
+    uintptr_t table = H->sym("SporeCoop::EditorBudgetMsg_vtable");
+    void* manager = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!manager || !alloc || !table) return;
+    static const char name[] = "SporeCoop";
+    auto* message = skg::cdecl_call<uint32_t*>(alloc,0x40u,name,0,0,0,0);
+    if (!message) return;
+    memset(message,0,0x40);
+    message[0] = uint32_t(table);
+    message[0xC] = 0x90A03FDFu;
+    message[2] = uint32_t(budget);
+    message[6] = 1;
+    skg::vcall<void>(manager,0x18/4,0x90A03FDFu,(void*)message,(void*)nullptr,0);
+    LOG("cell: DNA budget %d posted again to the held editor (BUG-0560)",budget);
 }
 
 bool submit_now(void* req)
 {
+    const int budget = g_editor_budget_fix && game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
     g_vote_bypass = true;
     bool r = submit_native_editor(req);
     g_vote_bypass = false;
     if (r)
         g_editor_submitted_at = H->time_seconds();
+    if (r && budget >= 0)
+        post_editor_budget(budget);
     return r;
 }
 
@@ -1570,8 +1611,8 @@ bool SK_CDECL h_Submit(void* req)
     // The cell stage asks for its editor again while the mate is still next to the avatar
     // (0xE78D10 -> mating -> event 0x1E -> 0xE59800 -> Submit): one more request came 13 ms after
     // the vote had ended, before the held one reached the game, and started a second vote that
-    // ran on while the host was in the editor (its result was dropped). One editor per vote. A
-    // guest's own request reaches the game at once; its repeat only told everybody twice.
+    // ran on while the host was in the editor (its result was dropped). A repeated personal edit
+    // request can also send the same notice twice, so the same guard applies to both paths.
     if (!g_vote_bypass && req &&
         (g_submit_later || g_submit_queued || H->time_seconds() - g_editor_submitted_at < 5.0)) {
         g_submits_repeated++;
@@ -1579,7 +1620,8 @@ bool SK_CDECL h_Submit(void* req)
     }
     if (req && mode == modes::kCell && g_sess.connected())
         cellsync::dna_note(g_vote_bypass ? "at the editor request (after the vote)" : "at the editor request");
-    if (!g_vote_bypass && req && stage_mode(mode) && g_sess.connected() && g_sess.players().size() > 1) {
+    if (!g_vote_bypass && req && stage_mode(mode) && !personal_cell_edit(req, mode) &&
+        g_sess.connected() && g_sess.players().size() > 1) {
         if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active)
                 start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
@@ -3417,6 +3459,12 @@ void setup_callbacks()
             feed(p.name + " waits for your world: load or start a game");
         } else if (g_sess.role() == net::Role::Host && g_share_world && !own_worlds) {
             std::string err;
+            if (world::can_resume_world(g_sess.peer_resume_world(p.id))) {
+                r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
+                r.joined_phase = true;
+                trace::line("world", "reusing the verified Cell world for player %u", p.id);
+                return;
+            }
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
             r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
             r.joined_phase = false;
@@ -3790,6 +3838,7 @@ bool do_join(const std::string& addr, std::string& err)
         return false;
     end_open_session();
     reset_lobby();
+    g_sess.resume_world = world::resume_world();
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
     if (!g_sess.join(addr, g_name, err))
         return false;
@@ -4132,6 +4181,17 @@ int c_ping(void*, int, const char* const*, SkOut* out)
         g_sess.send_reliable_to(0, net::MSG_PING_MARK, w);
     add_mark(g_sess.my_id(), st.pos, g_mode);
     SAY("pinged (%.1f %.1f %.1f)", st.pos.x, st.pos.y, st.pos.z);
+    return 0;
+}
+
+int c_transfer(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc > 1) {
+        if (!strcmp(argv[1], "paced")) g_sess.paced_world_transfer = true;
+        else if (!strcmp(argv[1], "normal")) g_sess.paced_world_transfer = false;
+        else return 1;
+    }
+    SAY("world transfer: %s", g_sess.paced_world_transfer ? "paced" : "normal");
     return 0;
 }
 
@@ -4854,6 +4914,9 @@ void init_ui()
             share_all();
     };
     a.vote_active = [] { return g_vote.active; };
+    a.paced_transfer = [] { return g_sess.paced_world_transfer; };
+    a.set_paced_transfer = [](bool on) { g_sess.paced_world_transfer = on; };
+    a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
             return;
@@ -4886,6 +4949,11 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ui message log %s", coop_ui::g_log_msgs ? "on" : "off");
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "lang")) { // tests: the layout of the texts that change in Russian
+        coop_ui::set_russian(!strcmp(argv[2], "ru"));
+        SAY("ui lang %s (the texts set from now on)", coop_ui::russian() ? "ru" : "en");
+        return 0;
+    }
     if (argc > 1)
         coop_ui::open(atoi(argv[1]) != 0);
     SAY("%s", coop_ui::debug_state().c_str());
@@ -4896,6 +4964,7 @@ void on_unload()
 {
     support::on_unload();
     gamefixes::shutdown();
+    fov::shutdown();
     mouse::shutdown(); // its message hook lives in this DLL
     keepalive_stop();
     if (int n = adapters::shutdown())
@@ -5137,9 +5206,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         g_name = "Player";
     g_share_world = H->config_int(M, "coop", "share_world", 1) != 0;
     g_save_on_share = H->config_int(M, "coop", "save_before_share", 1) != 0;
+    g_sess.paced_world_transfer = H->config_int(M, "coop", "paced_world_transfer", 0) != 0;
     trace::init(H, M);
     trace::g_detail = std::max(0, std::min(2, H->config_int(M, "coop", "log_detail", 1)));
     world::init(H, M, feed);
+    if (build_id() == 0xDC04AEE5u)
+        fov::init(H, M, [] { return game_busy() == 0 && !coop_ui::is_open(); });
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
     world::set_host_stage_probe([] {
@@ -5319,6 +5391,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.res", "coop.res [[joinsim] add <food|money> <n> | fix reset|floor [0|1]] - shared resources", c_res, nullptr, MT);
     H->command_add(M, "coop.ping", "coop.ping - show everybody the place under your mouse / where you are", c_ping,
                    nullptr, MT);
+    H->command_add(M, "coop.transfer", "coop.transfer [normal|paced] - world transfer pacing for this run", c_transfer, nullptr, MT);
     H->command_add(M, "coop.share", "coop.share [player id|due] - (re)send the host world (save) to guests (due: tests, as after an evolution)", c_share,
                    nullptr, MT);
     H->command_add(M, "coop.leaving", "coop.leaving - tests (BUG-0264): the avatar while the game leaves a stage for the galaxy menu",
@@ -5608,6 +5681,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                 v.push_back({id, r.name, r.puppet});
         return v;
     };
+    cc.peer_in_pool = [](uint8_t id) {
+        auto it = g_remotes.find(id);
+        if (it == g_remotes.end() || it->second.buf.empty() ||
+            it->second.buf.age(H->time_seconds()) >= 5.0) return false;
+        const auto& state = it->second.buf.latest();
+        return g_mode == modes::kCell && same_place(state) && (state.flags & net::PF_IN_WORLD);
+    };
     cc.host_away = [] { return g_host_away; }; // BUG-0205
     cellsync::init(H, M, std::move(cc));
     H->command_add(M, "coop.pool", "coop.pool [bite | food <n> | hp <n> | hurt <player> <dmg>] - cell co-op",
@@ -5731,7 +5811,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1] - co-op window state (open/close it)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru] - co-op window state (open/close it; lang: tests)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
     H->cheat_register("coop", "coop.",
                       "coop host [port] | join <ip[:port]> | leave | status | name <nick> | say <text>");

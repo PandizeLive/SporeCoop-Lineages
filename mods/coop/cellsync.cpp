@@ -2624,6 +2624,14 @@ static void host_tick(double now)
     if (!av)
         return;
     net::Vec3 me = pos_of(av);
+    // A guest still downloading at the Galaxy menu cannot use these snapshots.
+    // Sending them anyway competes with the reliable transfer on a constrained link.
+    std::vector<uint8_t> recipients;
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0 && (!C.peer_in_pool || C.peer_in_pool(pl.id)))
+            recipients.push_back(pl.id);
+    if (recipients.empty())
+        return;
     using E = SendCell;
     // BUG-0174: each guest gets the cells within 120 m of its own cell (the host populates around it
     // too, h_PopTiles); a guest without a centre yet, or `fix cell.partner_tiles off`: around the host.
@@ -2643,10 +2651,8 @@ static void host_tick(double now)
         all.push_back({c, idx});
     });
     g_cycle++;
-    for (auto& pl : C.sess->players()) {
-        if (pl.id == 0)
-            continue;
-        const views::Centre* vc = per_guest ? g_views.find((uint8_t)pl.id) : nullptr;
+    for (uint8_t id : recipients) {
+        const views::Centre* vc = per_guest ? g_views.find(id) : nullptr;
         std::vector<E> mine;
         const std::vector<E>* list = &all;
         if (vc) {
@@ -2673,10 +2679,10 @@ static void host_tick(double now)
             for (size_t i = 0; i < kSendCap; i++)
                 closest.push_back((*list)[d[i].second]);
             g_send_capped++;
-            send_state(pl.id, closest);
+            send_state(id, closest);
             continue;
         }
-        send_state(pl.id, *list);
+        send_state(id, *list);
     }
 }
 
@@ -5104,6 +5110,15 @@ bool food_total(int& food)
 
 // BUG-0351 diagnostics: what the cell editor's DNA budget is made of. The game's request (0xE59800)
 // passes DNAForFood(S+0x1C) - S+0x2C (spent) to the editor (docs/re/cell.md#cell-editor-dna).
+int editor_budget()
+{
+    uint8_t* state = in_cell() ? S() : nullptr;
+    if (!state || !a_DnaFor) return -1;
+    const int food = F<int32_t>(state,0x1C), spent = F<int32_t>(state,0x2C);
+    using DnaFor = int(__fastcall*)(int);
+    return food >= 0 && food <= 1000 ? ((DnaFor)a_DnaFor)(food) - spent : -1;
+}
+
 void dna_note(const char* when)
 {
     uint8_t* s = S();

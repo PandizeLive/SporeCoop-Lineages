@@ -510,6 +510,9 @@ addresses of the **GOG 2024 build dc04aee5**, not the GOG 2016 ones above):
    player's cell model), `+0x90 = 0x1100000`, `+0x60` a float from 0xE51700, then
    `Editors::EditorRequest::Submit` 0x5A92C0 and message 0x90A03FDF. With `G+0x410C` set and
    debug = 0 nothing is submitted.
+   The live Steam growth table uses personal editor IDs `0x1D2EC0A0` and
+   `0x1D2EC0A4` through `0x1D2EC0A7`. Lineages opens these without a vote.
+   The Creature landfall request uses `0xFD4902BD` and still votes.
 5. **Asked twice**: while the mate is still within reach the game asks again: with the co-op vote
    holding the first request, a second Submit came 13 ms after the vote ended (before the held
    request reached the game) and started a second vote that ran on in the editor. The mod drops

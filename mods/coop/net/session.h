@@ -28,6 +28,7 @@ struct Peer {
     std::string version;    // CAP_VERSION text ("" = unknown: an older SporeCoop)
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
+    uint64_t resume_world = 0;
     Connection conn;
 };
 
@@ -59,10 +60,12 @@ public:
     // a new player with the name of an entry silent for 2 s replaces it (a rejoin after a crash)
     // instead of getting "name 2". false = rename (tests: coop.fix core.rejoin_name off, BUG-0209)
     bool rejoin_by_name = true;
+    bool paced_world_transfer = false; // host: opt-in for constrained UDP links
     // BUG-0235: the rejoin token this game sends in its HELLO (0 = none). The same game after a crash
     // sends the same token (coop.dll keeps it in a file until a clean leave); the host replaces a
     // silent entry only on an equal token (net::g_fix.rejoin_token), never by the name alone
     uint64_t rejoin_token = 0;
+    uint64_t resume_world = 0;
     bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
     // host: its world id (save CRC in Cell / Creature / Tribe / Civ, else 0), sent in WELCOME; coop.cpp
     // sets it every frame (host_world.h). Guest: welcome_world() is what the host sent (0 = unknown
@@ -99,6 +102,7 @@ public:
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
     uint32_t peer_caps(uint8_t id) const;
+    uint64_t peer_resume_world(uint8_t id) const;
     // the link to a player (host: any guest, guest: the host) for the support trace: no address
     struct Link {
         int rtt_ms = -1;

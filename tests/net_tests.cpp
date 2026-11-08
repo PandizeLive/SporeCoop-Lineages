@@ -1419,12 +1419,15 @@ static void test_peer_versions()
         Hello h2;
         h2.has_token = true;
         h2.token = 77;
+        h2.resume_world = 0xB53B23456789ABCFull;
+        h2.campaign_profile = "lineages test";
         h2.version = "coop 1.2.3, SporeKit 0.3.4, GOG 2024 dc04aee5";
         Writer w2;
         h2.write(w2);
         Reader r2(w2.data.data(), w2.size());
         Hello g2;
-        CHECK(g2.read(r2) && g2.token == 77 && g2.version == h2.version);
+        CHECK(g2.read(r2) && g2.token == 77 && g2.version == h2.version &&
+              g2.resume_world == h2.resume_world && g2.campaign_profile == h2.campaign_profile);
         Writer wj;
         wj.u8(3);
         wj.str8("Old");

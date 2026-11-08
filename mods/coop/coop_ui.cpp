@@ -41,6 +41,17 @@ static uint32_t g_status_color = 0xFFFFD866;
 static double g_status_until; // the status goes away then (0 = stays until the next session event)
 bool g_status_fix = true;     // BUG-0104 (`coop.corefix ui_status 0`: the status of the last button stays)
 COOP_FIX("core.ui_status", "BUG-0104", g_status_fix, "ui: the co-op window shows the session's status, not the last button's");
+// BUG-0597: "Send my world" pressed in the main menu (no world loaded) or with nobody joined did nothing while
+// the window said "Sending the world to everyone...": players read it as "solo does not start". The button is
+// greyed out then and the lobby says why (a host can start or load a game alone, friends join any time and get
+// the world by themselves). Off: the button always sends and says so (0.7.7).
+static bool g_share_explain_fix = true;
+COOP_FIX("core.ui_share_explain", "BUG-0597", g_share_explain_fix, "ui: Send my world is greyed out with no world or nobody joined, and the lobby says why");
+// BUG-0598: a guest without own creations of the stage's kind saw "My cell: the world's own" with no arrows and
+// no hint, and could not tell that a choice exists (a player asked where to pick the own creation). The row says
+// whose it is ("the host's species") and how to get a choice (make one in an editor). Off: "the world's own" (0.7.7).
+static bool g_creation_hint_fix = true;
+COOP_FIX("core.ui_creation_hint", "BUG-0598", g_creation_hint_fix, "ui: the creation row says whose creation it is and how to get a choice");
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
@@ -71,6 +82,7 @@ struct Cache {
     int vis = -1;
     bool left = false; // left aligned label: the box is sized to the text (labels center their text)
     Rect box;
+    int enabled = -1;
 };
 static std::map<Win, Cache> g_cache;
 static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
@@ -112,6 +124,16 @@ static void color(Win w, uint32_t argb)
     if (c.color != argb) {
         c.color = argb;
         sui::set_label_color(w, argb);
+    }
+}
+static void enable(Win w, bool on)
+{
+    if (!w)
+        return;
+    auto& c = g_cache[w];
+    if (c.enabled != (int)on) {
+        c.enabled = on;
+        sui::set_enabled(w, on);
     }
 }
 static void show(Win w, bool on)
@@ -232,6 +254,7 @@ struct Dialog {
     Win version = nullptr, report_btn = nullptr; // every page: the version line, "Report a problem"
     // connect page
     std::vector<Win> page_connect;
+    Win transfer_btn = nullptr;
     Win name_edit = nullptr, addr_edit = nullptr, port_edit = nullptr, join_btn = nullptr, host_btn = nullptr;
     Win seats_edit = nullptr, scaling_edit = nullptr;
     Win next_seats_edit = nullptr, queue_seats = nullptr;
@@ -528,6 +551,14 @@ static void report_tick(double now)
     H->run_outside_frame(finish_report, nullptr);
 }
 
+// BUG-0597: why "Send my world" sends nothing now (0: it sends; 1 no world loaded; 2 nobody joined)
+static int share_blocked()
+{
+    if (!g_share_explain_fix || A.role() != 1 || (A.vote_active && A.vote_active()) || !A.share_state)
+        return 0; // (during a vote the button is "Start now")
+    return A.share_state();
+}
+
 static void do_send_chat()
 {
     std::string t = sui::edit_text(D.chat_edit);
@@ -584,8 +615,8 @@ static void build_dialog()
     std::vector<Win> common;
     D.subtitle = add_label(common, {0, 70, kW, 96}, T("CO-OP", "КООПЕРАТИВ"), kGold, sui::kAlignCenter);
     // every page: which SporeCoop and game build run, and a report for bug reports
-    D.version = add_label(common, {40, 548, 500, 570}, A.version_line ? A.version_line() : "", kDim);
-    D.report_btn = add_button(common, "report", {510, 542, 720, 574}, T("Report a problem", "Сообщить об ошибке"),
+    D.version = add_label(common, {40, 548, 437, 570}, A.version_line ? A.version_line() : "", kDim);
+    D.report_btn = add_button(common, "report", {446, 538, 720, 578}, T("Report a Problem", "Сообщить об ошибке"),
                               do_report);
 
     // ---- connect page ----
@@ -617,9 +648,17 @@ static void build_dialog()
     D.seats_edit = add_edit(P,"founderseats",{400,386,452,418},load_str("ui","new_founders","2"),1);
     add_label(P, {478, 390, 631, 418}, T("Scaling (%)", "Сложность (%)"), kWhite);
     D.scaling_edit = add_edit(P,"founderscaling",{632,386,720,418},load_str("ui","new_scaling","100"),5);
-    add_label(P, {40, 430, 225, 458}, T("Port (UDP)", "Порт (UDP)"), kWhite);
-    D.port_edit = add_edit(P, "port", {230, 426, 330, 458},
+    add_label(P, {40, 430, 178, 458}, T("Port (UDP)", "Порт (UDP)"), kWhite);
+    D.port_edit = add_edit(P, "port", {184, 426, 264, 458},
                            load_str("ui", "host_port", std::to_string(A.default_port).c_str()), 5);
+    add_label(P, {277, 430, 393, 458}, T("Transfer", "Передача"), kWhite);
+    D.transfer_btn = add_button(P, "transfer", {398, 422, 530, 462}, "", [] {
+        if (!A.paced_transfer || !A.set_paced_transfer) return;
+        const bool on = !A.paced_transfer();
+        A.set_paced_transfer(on);
+        save_str("coop", "paced_world_transfer", on ? "1" : "0");
+        g_dirty = true;
+    });
     D.host_btn = add_button(P, "host", {540, 422, 720, 462}, T("Host", "Создать"), do_host);
     D.host_hint = add_label(P, {40, 466, 720, 492}, "", kDim);
     D.status = add_label(P, {40, 498, 560, 526}, "", kYellow);
@@ -632,7 +671,7 @@ static void build_dialog()
     // ---- lobby page ----
     auto& L = D.page_lobby;
     D.next_seats_edit = add_edit(L,"nextseats",{40,66,82,98},"",1);
-    D.queue_seats = add_button(L,"queueseats",{88,66,262,98},T("Next stage seats","Места на этап"),[] {
+    D.queue_seats = add_button(L,"queueseats",{88,66,262,98},T("Next Stage Seats","Места на этап"),[] {
         auto value = sui::edit_text(D.next_seats_edit);
         if (value.size() != 1 || value[0] < '1' || value[0] > '4') {
             set_status(T("Enter 1 to 4 seats.","Укажите от 1 до 4 мест."),kRed,8);
@@ -703,7 +742,16 @@ static void build_dialog()
         A.set_ready(!A.ready());
         g_dirty = true;
     });
-    D.share_btn = add_button(L, "share", {260, 488, 480, 528}, T("Send my world", "Отправить мир"), [] {
+    D.share_btn = add_button(L, "share", {260, 488, 480, 528}, T("Send World", "Отправить мир"), [] {
+        int why = share_blocked();
+        if (why) { // BUG-0597: say why nothing is sent (the button is greyed out, a locked click still comes here)
+            set_status(why == 1 ? T("Start or load a game first: friends who join get it by themselves",
+                                    "Сначала начните игру: вошедшие друзья получат её сами")
+                                : T("Nobody has joined yet: friends who join get your world by themselves",
+                                    "Пока никто не вошёл: друзья получат ваш мир сами"),
+                       kYellow, 8);
+            return;
+        }
         A.share_world();
         set_status(T("Sending the world to everyone...", "Мир отправляется всем..."), kYellow, g_status_fix ? 5 : 0);
     });
@@ -773,6 +821,8 @@ static void build_dialog()
 
 static void refresh_connect()
 {
+    const bool paced = A.paced_transfer && A.paced_transfer();
+    text(D.transfer_btn, paced ? T("Paced", "Медленно") : T("Normal", "Обычно"));
     bool scanning = A.role() == 0;
     auto games = A.lan_games ? A.lan_games() : std::vector<LanGame>{};
     // BUG-0183: only the first three answers were listed; with more hosts on the network (lab lanes,
@@ -848,6 +898,14 @@ static void refresh_lobby()
         color(D.row_ready[i], p.ready ? kGreen : kDim);
     }
     std::string wl = A.world_line ? A.world_line() : "";
+    int share_why = share_blocked();
+    if (wl.empty() && g_status.empty() && share_why) // BUG-0597: a host alone can play now
+        wl = share_why == 1 && rows.size() <= 1
+                 ? T("Start or load a game now: friends can join any time",
+                     "Начните или загрузите игру: друзья войдут когда угодно")
+             : share_why == 2 ? T("Nobody has joined yet: friends who join get your world by themselves",
+                                  "Пока никто не вошёл: друзья получат ваш мир сами")
+                              : "";
     text(D.world, wl.empty() ? g_status : wl);
     // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
     std::vector<std::string> chat;
@@ -861,12 +919,24 @@ static void refresh_lobby()
     show(D.chat_up, first > 0);
     show(D.chat_down, g_chat_scroll > 0);
     int ck = 0, cown = 0;
+    bool hint = false; // the creation row says how to get a choice: it may take the arrows' room
     std::string cname, cl;
     if (A.creation && A.creation(ck, cname, cown)) {
         cl = ck == 1 ? T("My cell: ", "Моя клетка: ") : ck == 2 ? T("My ship: ", "Мой корабль: ") : T("My creature: ", "Моё существо: ");
-        cl += cname.empty() ? T("the world's own", "из мира хоста") : cname;
+        bool me_host = A.role() == 1;
+        if (!cname.empty())
+            cl += cname;
+        else if (!g_creation_hint_fix)
+            cl += T("the world's own", "из мира хоста");
+        else // BUG-0598: say whose it is
+            cl += ck == 2 ? T("your empire's ship", "корабль вашей империи")
+                  : me_host ? T("your world's species", "вид вашего мира") : T("the host's species", "вид хоста");
         if (ck != 2 && cown > 0)
             cl += std::string(T("  (in My Creations: ", "  (своих: ")) + std::to_string(cown) + ")";
+        else if (g_creation_hint_fix && ck != 2 && !me_host) { // no arrows: how to get a choice
+            cl += T(" (make one in an editor to pick it)", " (создайте своё в редакторе)");
+            hint = true;
+        }
     }
     std::string gwhat, gto;
     int gn = A.give ? A.give(gwhat, gto) : 0;
@@ -890,22 +960,31 @@ static void refresh_lobby()
                              T("religious (faster conversion)", "религиозная (быстрее обращение)")};
         cl = std::string(T("My role: ", "Моя роль: ")) + rn[r & 3];
     }
+    if (g_creation_hint_fix && D.creation) { // the row is wider while it has no arrows and no buttons
+        auto& c = g_cache[D.creation];
+        float x2 = hint && !giving && !roles ? 720.f : 560.f;
+        if (c.box.x2 != x2 && c.left) {
+            c.box.x2 = x2;
+            fit(D.creation, c);
+        }
+    }
     text(D.creation, cl);
     show(D.give_btn, giving && gn > 0);
     show(D.give_next, giving && gn > 0 && !space && A.give_choices && A.give_choices() > 1);
-    text(D.give_btn, space ? std::string(T("Give 10 to ", "Дать 10: ")) + gto : std::string(T("Give to ", "Отдать ")) + gto);
+    text(D.give_btn, space ? std::string(T("Give 10 To ", "Дать 10: ")) + gto : std::string(T("Give To ", "Отдать ")) + gto);
     std::string jto;
     bool jump = A.jump && A.jump(jto);
     show(D.jump_btn, jump);
-    text(D.jump_btn, std::string(T("Jump to ", "К звезде: ")) + jto);
+    text(D.jump_btn, std::string(T("Jump To ", "К звезде: ")) + jto);
     bool can = (!cl.empty() && !giving && ck != 2 && cown > 0) || roles;
     show(D.creation_prev, can);
     show(D.creation_next, can);
     bool host = A.role() == 1;
-    text(D.ready_btn, A.ready() ? T("Not ready", "Не готов") : T("I'm ready", "Я готов"));
+    text(D.ready_btn, A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
     show(D.share_btn, host);
-    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start now", "Начать сейчас") : T("Send my world", "Отправить мир"));
-    text(D.leave_btn, host ? T("Stop hosting", "Закрыть игру") : T("Leave", "Выйти"));
+    enable(D.share_btn, !share_why || !g_share_explain_fix);
+    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start Now", "Начать сейчас") : T("Send World", "Отправить мир"));
+    text(D.leave_btn, host ? T("Stop Hosting", "Закрыть игру") : T("Leave", "Выйти"));
 }
 
 static void refresh_space()
@@ -992,6 +1071,7 @@ static void refresh_space()
 
 static void refresh()
 {
+    text(D.report_btn, T("Report a Problem", "Сообщить об ошибке"));
     g_pending = false;
     if (!g_ok)
         return;
@@ -1038,7 +1118,7 @@ static void refresh()
          A.mode() == modes::kTribe || A.mode() == modes::kCiv);
     show(D.next_seats_edit,seat_controls);
     show(D.queue_seats,seat_controls);
-    text(D.queue_seats,space ? T("Next load seats","Места на загрузку") : T("Next stage seats","Места на этап"));
+    text(D.queue_seats,space ? T("Next Load Seats","Места на загрузку") : T("Next Stage Seats","Места на этап"));
     show(D.space_btn, (space || villages || nations) && !g_space_page);
     text(D.space_btn, nations ? "Nations >" : villages ? "Village >" : T("Space >", "Космос >"));
     if (!lobby || g_space_page) {
@@ -1181,7 +1261,8 @@ std::string debug_state()
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") +
                     " input_lock=" + std::to_string(input_lock()) + " locked_clicks=" + std::to_string(g_locked_clicks) +
-                    " locked_native=" + std::to_string(g_locked_native) + "\n";
+                    " locked_native=" + std::to_string(g_locked_native) +
+                    " share_enabled=" + (D.share_btn && (sui::flags(D.share_btn) & sui::kFlagEnabled) ? "1" : "0") + "\n";
     char b[256];
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
@@ -1225,5 +1306,11 @@ std::string debug_state()
 uint32_t text_font() { return g_text_font; }
 
 bool russian() { return g_ru; }
+
+void set_russian(bool ru)
+{
+    g_ru = ru;
+    g_dirty = true;
+}
 
 } // namespace coop_ui

@@ -20,6 +20,8 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_
 // planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
+uint64_t resume_world(); // guest: receipt only while the verified Cell snapshot stays loaded
+bool can_resume_world(uint64_t receipt); // host: same Cell world, save and progress
 // On the galaxy menu the requested size applies to a new planet. An existing
 // named save keeps its own rules. Legacy saves keep the original defaults.
 founders::CampaignRules rules_for_current();

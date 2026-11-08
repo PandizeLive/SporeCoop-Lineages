@@ -1,7 +1,7 @@
 """Targeted Cell editor regression on already joined disposable 800x600 QA games.
 
 Requires DuoQAReportSession profiles (instances 4 and 5). Uses real mating,
-vote readiness and editor buttons. No campaign replay. An optional loopback
+passive editor notices and editor buttons. No campaign replay. An optional loopback
 latency/loss relay can stay between the games throughout this check.
 """
 import re
@@ -37,10 +37,10 @@ def main():
             click(h, 400, 538)
             wait_until(lambda: 'alive=1' in command(h, 'coop.pool mate'), 10)
             command(h, 'coop.pool mate tp')
-            wait_until(lambda: 'vote active' in command(g, 'coop.vote'), 30)
-            assert "I'm ready" in command(g, 'coop.uistate')
-            click(g, 160, 508)
             wait_until(lambda: 'Editor' in command(h, 'game.mode'), 20)
+            wait_until(lambda: 'is editing their cell' in command(g, 'coop.uistate'), 10)
+            assert 'vote none:' in command(g, 'coop.vote')
+            assert 'Cell:' in command(g, 'coop.avatar')
             command(h, 'wait.frames 40 5000')
             if save:
                 name = 'QA' + str(int(time.time()))

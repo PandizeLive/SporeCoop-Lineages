@@ -4154,3 +4154,49 @@ BUG-9093/9094/9095; this patch's tickets pass its field/evidence checks. RE,
 documentation and glyph linters report zero problems. The Linux sanitizer suite
 was not run. QA instances 4/5 and the loopback relay were closed after collecting
 native logs; the personal game was not controlled.
+
+## Lineages 29 targeted checks
+
+- TITAN and MSI joined over a direct Tailscale link. The initial 3.50 MB
+  Cell archive took 4.6 seconds and was playable 7.69 seconds after Join.
+  Two warm reconnects reused the active slot without a world offer. Changing
+  shared food from 1 to 7 while the guest was away required a fresh transfer
+  and converged on 7. A separate prepared Creature save loaded automatically
+  after reconnect from Cell in 12.72 seconds, with both avatars and 20 NPC
+  mirrors. This exercises stage fallback without replaying the transition.
+- The two-PC Cell test confirmed a centered camera after an actual respawn,
+  the off-screen partner arrow and a single shared food gain. MSI received
+  the Ready prompt on both votes and stayed in its world after the host edit.
+- The host registered one MSI bite as 9 to 6 HP. MSI displayed 6 HP about
+  0.56 seconds after the bite and rendered the same target for the rest of the
+  4.4-second observation. A later Cell digest matched 411 objects. This short
+  sample does not cover intermittent disappearances across a full session.
+- At the first growth checkpoint with four reserved seats, the host HUD showed
+  5 DNA. The disabled allowance fix opened the editor with 100 and left 100
+  after a free save. The enabled fix opened with 5 and left 5 after the save.
+  The two editor checks restored the native 1176×664 QA layout briefly because
+  forcing the renderer to 800×600 cropped that existing layout. Audio stayed
+  muted and the QA cap remained 20 FPS.
+- Native Creature and Adventure Town third-person cameras both widened from
+  44.56 to 62.56 degrees and returned to vanilla. Unmodified scroll did not
+  change the FOV offset. Sampled clipping planes and material LOD fields were
+  unchanged. This does not measure the cost of drawing the wider view.
+- Windows net and world-transfer suites passed. Private QA logs and images
+  are under `out/`; no continuous campaign run was required.
+- Lineages 29 ZIP CRCs, setup version and all eleven payload SHA-256 hashes
+  passed. Silent install and uninstall on a disposable file tree restored
+  the original loader, removed the DLL and resource package, and kept settings.
+
+### Personal Cell editor follow-up
+
+The host's native mating opened its editor without MSI sending Ready. MSI
+received a passive notice, stayed on the same slot and rendered the host's
+new model after the save. The host editor used the native 1176×664 layout
+briefly at the same muted 20 FPS cap to access its save button.
+
+A guest rename exposed BUG-0455 when only metadata reached the host. On the
+final matching Tailscale build, MSI saved two fresh renames with 5 DNA before
+and after each. TITAN swam during both editor visits and received both bundles
+with a model and metadata. No Ready vote, world reload, or native fault was
+recorded on either editor return. A separate native History advance from a
+prepared full Cell bar still opened the Creature landfall vote.

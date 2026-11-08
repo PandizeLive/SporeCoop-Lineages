@@ -189,3 +189,4 @@ SporeCoop::FileStream_PathCtor ; Native library PNG inspection unavailable on fr
 SporeCoop::ThumbnailMetadata_Dtor ; Native library PNG inspection unavailable on frozen build (BUG-9094)
 SporeCoop::Thumbnail_EncodeCreation ; Native library export repair unavailable on frozen build (BUG-9093)
 SporeCoop::PngEncoder_WriteImage ; Native library export repair unavailable on frozen build (BUG-9093)
+SporeCoop::EditorBudgetMsg_vtable ; Deferred Cell allowance replay unavailable on frozen build (BUG-0560)

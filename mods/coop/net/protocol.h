@@ -167,6 +167,7 @@ enum Caps : uint32_t {
     CAP_VERSION = 4,
     CAP_PERSONAL_LAUNCH = 16, // HELLO: this guest understands the optional Civilization launch offer
     CAP_CAMPAIGN_PROFILE = 8, // str8: fork rules and required content
+    CAP_RESUME_WORLD = 64, // HELLO only: u64 receipt for a still-loaded world
     CAP_LIBRARY = 32, // persistent, paced creation-library exchange (MSG_LIBRARY)
 };
 constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY; // token bit is per HELLO
@@ -179,6 +180,7 @@ struct Hello {
     uint32_t caps = kMyCaps;   // read: 0 = an older peer
     bool has_token = false;
     uint64_t token = 0;
+    uint64_t resume_world = 0;
     std::string version; // CAP_VERSION ("" read: an older peer)
     std::string campaign_profile;
     void write(Writer& w) const
@@ -189,6 +191,8 @@ struct Hello {
         uint32_t c = (caps & ~(uint32_t)CAP_TOKEN) | (has_token ? CAP_TOKEN : 0);
         if (!campaign_profile.empty())
             c |= CAP_CAMPAIGN_PROFILE;
+        c &= ~(uint32_t)CAP_RESUME_WORLD;
+        if (resume_world) c |= CAP_RESUME_WORLD;
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
@@ -196,6 +200,7 @@ struct Hello {
             w.str8(version);
         if (c & CAP_CAMPAIGN_PROFILE)
             w.str8(campaign_profile);
+        if (resume_world) w.raw(&resume_world, sizeof resume_world);
     }
     bool read(Reader& r)
     {
@@ -205,6 +210,7 @@ struct Hello {
         caps = 0;
         has_token = false;
         token = 0;
+        resume_world = 0;
         ext = r.left() >= 4;
         if (ext)
             caps = r.u32();
@@ -224,8 +230,10 @@ struct Hello {
         }
         if (caps & CAP_CAMPAIGN_PROFILE) {
             campaign_profile = r.str8();
-            return r.ok() && !campaign_profile.empty();
+            if (!r.ok() || campaign_profile.empty()) return false;
         }
+        if ((caps & CAP_RESUME_WORLD) && r.left() >= sizeof resume_world)
+            r.raw(&resume_world, sizeof resume_world);
         return true;
     }
 };

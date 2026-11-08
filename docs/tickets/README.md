@@ -480,6 +480,9 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-0468](BUG-0468-lab-the-free-lane-for-uses-free-lane-tests-can-b.md) | fixed | tooling | lab | 2026-11-02 | 0.7.3.6 | lab: the free lane for uses_free_lane tests can be a lane busy with other work or the owner's lane 8, and two such tests share it at once |
 | [BUG-0469](BUG-0469-content-check-for-every-model-kind-civ-vehicles.md) | fixed | crash | All | 2026-11-02 | 0.7.3.6 | content check for every model kind: Civ vehicles, buildings and city designs, Space NPC ship parts, cell and UFO paints (rest of BUG-0424 after BUG-0452) |
 | [BUG-0470](BUG-0470-civ-mirror-vehicles-and-other-civ-tribe-and-spac.md) | open | bug | Civ | 2026-11-02 |  | civ mirror vehicles (and other civ, tribe and space objects the mod creates on a guest) go into the guest's saves |
+| [BUG-0560](BUG-0560-creature-the-host-gets-a-lot-of-dna-again-after.md) | fixed | bug | Cell | 2026-11-04 | 0.7.7 | Cell: the host gets a lot of DNA again after going into the cell editor |
+| [BUG-0597](BUG-0597-co-op-window-send-my-world-with-no-players-or-no.md) | fixed | bug | Menu | 2026-11-05 | 0.7.8 | Co-op window: 'Send my world' with no players or no world loaded does nothing but says 'Sending the world to everyone' |
+| [BUG-0598](BUG-0598-co-op-window-the-creation-row-my-cell-the-world.md) | fixed | bug | Creature | 2026-11-05 | 0.7.8 | Co-op window: the creation row 'My cell: the world's own' has no arrows and no hint how to get a choice |
 | [BUG-9001](BUG-9001-duo-guest-village.md) | fixed | feature | Tribe | 2026-11-03 | 0.7.3.6-duo10-dev | Preserve each founder's species and give the guest independent tribal control |
 | [BUG-9002](BUG-9002-guest-only-npc-villages.md) | fixed | bug | Tribe | 2026-11-03 | 0.7.3.6-duo4 | Extra NPC villages appear on the guest during a longer Tribe session |
 | [BUG-9003](BUG-9003-adventure-captain.md) | fixed | bug | Space | 2026-11-03 | 0.7.3.6-duo6 | The tutorial adventure crashes when two captains enter together |
@@ -577,3 +580,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9095](BUG-9095-provisional-creature-png-exports-cell.md) | fixed | bug | Creature | 2026-11-07 | unreleased | Provisional Creature library PNG still contains Cell model |
 | [BUG-9096](BUG-9096-lineages-session-transfer-backlog.md) | open | bug | Cell | 2026-11-07 |  | Lineages internet session stalls and repeatedly transfers the world |
 | [BUG-9097](BUG-9097-healthy-partner-direction-indicator.md) | fixed | bug | All | 2026-11-07 | unreleased | Healthy partners have no visible off-screen direction indicator |
+| [BUG-9098](BUG-9098-world-transfers-stall-on-constrained-udp-links.md) | open | bug | Cell | 2026-11-08 |  | World transfers stall on constrained UDP links while Cell snapshots fill the path |

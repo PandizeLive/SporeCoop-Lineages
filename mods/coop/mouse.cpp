@@ -10,6 +10,7 @@ bool g_fix = true;
 COOP_FIX("map.click", "BUG-0090 BUG-0145", g_fix, "space: map name tags react only to clicks in the game window");
 static HHOOK g_hook;
 static HWND g_wnd;
+static bool (*g_shift_wheel)(int);
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
 
@@ -21,7 +22,11 @@ static bool ours(HWND w)
 static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
 {
     if (code == HC_ACTION && wp == PM_REMOVE && lp) {
-        const MSG* m = (const MSG*)lp;
+        MSG* m = (MSG*)lp;
+        if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_shift_wheel &&
+            ((LOWORD(m->wParam) & MK_SHIFT) || (GetKeyState(VK_SHIFT) & 0x8000)) &&
+            g_shift_wheel((short)HIWORD(m->wParam)))
+            m->message = WM_NULL;
         if ((m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONDBLCLK) && ours(m->hwnd)) {
             POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
             if (m->hwnd != g_wnd)
@@ -41,6 +46,8 @@ void install(const void* game_window)
         return;
     g_hook = SetWindowsHookExW(WH_GETMESSAGE, proc, nullptr, GetCurrentThreadId());
 }
+
+void set_shift_wheel(bool (*handler)(int delta)) { g_shift_wheel = handler; }
 
 void shutdown()
 {

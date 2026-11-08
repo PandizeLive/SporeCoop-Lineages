@@ -40,6 +40,7 @@ struct Ctx {
         void* cell;
     };
     std::function<std::vector<Puppet>()> puppets; // remote players' cells in our pool
+    std::function<bool(uint8_t)> peer_in_pool; // guests that can apply live Cell snapshots
     std::function<bool()> host_away; // guest: the host is away (coop.cpp g_host_away): we play our own pool (BUG-0205)
 };
 
@@ -54,6 +55,7 @@ void on_player_leave(int id); // a remote player left: its knockout and food boo
 void draw_overlay();
 bool partner_down(int id); // the knockout indicator owns this partner's label
 void dna_note(const char* when); // BUG-0351: food, spent DNA and the editor budget in the log
+int editor_budget(); // native earned DNA minus this player's spent DNA; -1 outside Cell
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)
 std::string status();
 const views::Set& view_centres(); // host: itself + every partner in the Cell stage (BUG-0174)

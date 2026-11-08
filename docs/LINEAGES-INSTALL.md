@@ -21,6 +21,16 @@ For your existing Tailscale or Hamachi setup, use the host's VPN address and
 ensure the PCs can reach each other. The VPN is configured separately.
 Allow the game through Windows Firewall when prompted; do not disable it.
 
+If a guest connects but the world download stalls, switch **Transfer** from
+**Normal** to **Paced** on the host's Co-op connection screen before hosting.
+Paced uses smaller packets and spaces out retries. It can take several minutes
+for a full world, so keep **Normal** for links that already transfer reliably.
+The setting is saved on the host and guests can use the same join steps.
+
+In Creature and Adventure third person, hold **Shift** and scroll to widen
+the camera by up to 18 degrees. Scroll back while holding Shift to restore
+the vanilla field of view. This is local to your game on Steam and GOG 2024.
+
 ## Uninstall
 
 Close Spore, open the same setup and click Uninstall. The installer restores
@@ -51,7 +61,9 @@ normal Sporepedia; do not delete Pollination.package or campaign saves.
 
 This package includes selected upstream 0.7.9 stability fixes and the current
 Lineages campaign code. Targeted two-instance Tribal and Creature checks passed.
-An uninterrupted Cell-to-Space run, separate-PC VPN testing, broad third-party
-mod compatibility and three/four-player campaigns are not fully qualified.
+Separate-PC Tailscale checks covered Cell world transfer, unchanged Cell
+reconnect, and automatic loading of a prepared Creature world after reconnect.
+An uninterrupted Cell-to-Space run, broad third-party mod compatibility and
+three/four-player campaigns are not fully qualified.
 Adventures are incomplete: shared combat, partner bodies and final rewards need
 further work. Use this as a development preview, not a finished release.

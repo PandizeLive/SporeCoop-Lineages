@@ -343,6 +343,11 @@ SporeCoop::cGameBehaviorManager_Read=0x00B0E570 ; verified thiscall(mgr, ISerial
 # argument types come from the callers.
 App::ICheatManager::Get=0x0067DDE0 ; verified cdecl() plain ret: mov eax,[0x15FD8A4]; ret (BUG-0143)
 App::IGameModeManager::Get=0x0067DCD0 ; verified cdecl() plain ret: mov eax,[0x15FD8B0]; ret (BUG-0143)
+App::cCameraManager::GetActiveCameraID=0x007C61F0 ; verified thiscall(), ret, active index lookup through vtable slots 0x58 and 0x50
+App::cCameraManager::Update=0x007C6440 ; verified thiscall(int), ret 4; passes viewer at +0xB0 and elapsed to active camera vtable slot 0x20
+App::cGameModeManager::GetCameraManager=0x00967D90 ; verified thiscall(), mov eax,[ecx+0x2C], ret
+App::cViewer::SetPerspectiveProjection=0x007C5480 ; verified thiscall(float), computes tan of half FOV, preserves aspect, updates the view window
+App::cViewer::SetViewWindow=0x007C4BD0 ; verified thiscall(float,float), ret 8, writes view extents and reciprocals on camera at viewer+0x170
 App::Property::SetValueVector3=0x006A3570 ; verified thiscall(Property*, const Vector3*) ret 4: mov esi,ecx; test [esi+0x10],4 (BUG-0143)
 App::cViewer::GetCameraToPoint=0x007C4800 ; verified thiscall bool(cViewer*, float x, float y, Vector3* origin, Vector3* dir) ret 0x10: reads [ecx+0x170], [esp+0x10]/[esp+0x14] after sub esp,0xC (BUG-0143)
 EditorRequest_ctor=0x005A9140 ; verified thiscall(EditorRequest*) plain ret: mov esi,ecx; [esi+4]=vtable 0x13EB8B8 (BUG-0143)
@@ -623,3 +628,5 @@ SporeCoop::ThumbnailMetadata_Dtor=0x005F8ED0 ; verified native ImportPNG cleanup
 IO::FileStream::AddRef=0x00931780 ; verified BUG-9094 native ImportPNG explicitly pins its stack FileStream before DecodePNG, at 5FC405; plain ret.
 SporeCoop::Thumbnail_EncodeCreation=0x005F99B0 ; verified native SavePNG caller 5FAA97 passes metadata interface, model ResourceObject*, bool disableSteganography; thiscall importer, ret C at 5FA12B. Fills importer image encoder data from current model and metadata.
 SporeCoop::PngEncoder_WriteImage=0x0068E190 ; verified native SavePNG caller 5FAB99 passes FileStream*, int mode=0 to importer+88; thiscall, ret 8 at 68E39A. Writes the encoded PNG to supplied stream.
+
+SporeCoop::EditorBudgetMsg_vtable=0x013EB844 ; verified (Ghidra 2026-11-04, GOG 2024, BUG-0560) vtable of the 0x40-byte refcounted message the Cell editor request 0xE84600 posts after EditorRequest::Submit (IMessageManager vt 0x18, id 0x90A03FDF): +4 refcount, +8 the DNA budget (DNAForFood(food) - spent; 1000 from the debug key), +0x10 0, +0x18 1, +0x30 id; cEditor::HandleMessage 0x592FC6 sets the editor's DNA ([cEditor+0x434] vt 0x24(0, +8)) once its listener is in (cEditor::OnEnter 0x58E6D0)

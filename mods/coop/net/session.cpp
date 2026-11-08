@@ -134,6 +134,7 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.campaign_profile = campaign_profile;
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
+    h.resume_world = resume_world;
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
@@ -189,7 +190,7 @@ void Session::leave(const char* why)
         std::vector<uint8_t> pkt;
         for (int i = 0; i < 3; i++) {
             p->conn.send_unreliable(MSG_BYE, w, true);
-            if (p->conn.build_packet(now + 1000, pkt))
+            if (p->conn.build_packet(now + 1000, pkt, paced_world_transfer))
                 tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         }
     }
@@ -269,6 +270,13 @@ uint32_t Session::peer_caps(uint8_t id) const
 {
     for (const auto& peer : peers_)
         if (peer->id == id && peer->accepted) return peer->caps;
+    return 0;
+}
+
+uint64_t Session::peer_resume_world(uint8_t id) const
+{
+    for (const auto& peer : peers_)
+        if (peer->id == id && peer->accepted) return peer->resume_world;
     return 0;
 }
 
@@ -523,6 +531,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.caps = h.caps;
             p.has_token = h.has_token;
             p.token = h.token;
+            p.resume_world = h.resume_world;
             p.conn.peer_split = (h.caps & CAP_SPLIT) != 0;
             p.version = h.version;
             Welcome wl;
@@ -744,7 +753,7 @@ void Session::flush(uint32_t now)
         // so they all go out (up to 64 more packets): a cell pool snapshot is one ~900-byte chunk per
         // 14 cells and used to push the player state queued after it past the limit
         int burst = p->conn.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
-        for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt); i++)
+        for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt, paced_world_transfer); i++)
             tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
     }
@@ -814,7 +823,7 @@ void Session::update()
         // fall outside the acknowledgement window. The callback can remove p.
         if (Peer* q = find_peer(from); q && q->conn.ack_urgent()) {
             std::vector<uint8_t> ack;
-            if (q->conn.build_packet(now, ack))
+            if (q->conn.build_packet(now, ack, paced_world_transfer))
                 tr_->send_to(q->conn.remote, ack.data(), ack.size());
         }
     }

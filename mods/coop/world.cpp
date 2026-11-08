@@ -17,6 +17,7 @@
 #include "founders.h"
 #include "creations.h"
 #include "civ.h"
+#include "cellsync.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
 #include "stage_epoch.h"
@@ -40,10 +41,23 @@ static CheckpointReload g_checkpoint_reload;
 
 using File = slotfs::File;
 
+struct ResumeWorld {
+    uint64_t receipt = 0;
+    std::wstring slot;
+    uint32_t world = 0, epoch = 0;
+    uint64_t write = 0;
+    int food = 0;
+};
+static std::deque<ResumeWorld> g_sent_resume;
+static ResumeWorld g_guest_resume, g_wait_resume;
+static uint64_t g_wait_resume_until;
+static bool g_resume_world = true;
+
 struct Out {
     uint8_t peer;
     std::vector<File> files;
     uint32_t world_id = 0;
+    uint64_t receipt = 0;
     std::string planet;
     size_t fi = 0, off = 0;
     bool header_sent = false;
@@ -347,16 +361,25 @@ static void box_task(void*)
     // 2026-10-23: both 3-4 s after such an Enter).
     if (sui::Win ok = first_visible(box, kSavedBoxOk)) {
         sui::Rect r = sui::screen_rect(ok);
-        char cmd[64];
-        if (g_saved_box_fix) {
-            // Native hover must follow the target before its click; captions
-            // can otherwise keep the focus on their own acknowledgement.
-            snprintf(cmd, sizeof cmd, "move %d %d", (int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2));
-            H->command_exec(cmd, nullptr);
+        RECT bounds{};
+        HWND window = (HWND)H->game_window();
+        const float x = (r.x1 + r.x2) / 2, y = (r.y1 + r.y2) / 2;
+        const bool on_screen = window && GetClientRect(window, &bounds) &&
+            x >= 0 && y >= 0 && x < bounds.right && y < bounds.bottom;
+        if (!g_saved_box_fix || on_screen) {
+            char cmd[64];
+            if (g_saved_box_fix) {
+                // Hover first so captions release their acknowledgement focus.
+                snprintf(cmd, sizeof cmd, "move %d %d", (int)x, (int)y);
+                H->command_exec(cmd, nullptr);
+            }
+            snprintf(cmd, sizeof cmd, "click %d %d", (int)x, (int)y);
+            if (H->command_exec(cmd, nullptr) == 0) return;
+        } else {
+            H->log(M, SK_INFO, "world: saved box OK is outside the client bounds; confirming with Enter");
         }
-        snprintf(cmd, sizeof cmd, "click %d %d", (int)((r.x1 + r.x2) / 2), (int)((r.y1 + r.y2) / 2));
-        if (H->command_exec(cmd, nullptr) == 0)
-            return;
+        // A recognized confirmation can be partly off-screen after a video reset.
+        // The keyboard fallback still reaches this modal when its button cannot be clicked.
     }
     if (HWND w = (HWND)H->game_window()) {
         PostMessageW(w, WM_KEYDOWN, VK_RETURN, 0x001C0001);
@@ -587,6 +610,7 @@ void begin_local_space_intro()
 void reset_shares()
 {
     g_checkpoint_reload = {};
+    g_sent_resume.clear();
     if (!g_share_reset_fix)
         return;
     if (!g_pending.empty() || !g_out.empty())
@@ -608,6 +632,7 @@ static void reset_campaign_setup();
 void on_session_end()
 {
     reset_launch_offers();
+    g_wait_resume = {};
     reset_campaign_setup();
     g_intro_planet.clear();
     if (g_world_reset_fix)
@@ -695,6 +720,19 @@ static bool queue_slot(uint8_t peer, const std::wstring& slot, const std::string
         }
     }
     o.world_id = crc;
+    int food = 0;
+    if (g_resume_world && !historical && game::mode_id() == modes::kCell &&
+        modes::current_world() && cellsync::food_total(food)) {
+        LARGE_INTEGER counter{};
+        QueryPerformanceCounter(&counter);
+        static uint64_t serial;
+        o.receipt = (uint64_t(counter.QuadPart) << 16) ^ ++serial ^ (uint64_t(GetCurrentProcessId()) << 32);
+        if (o.receipt) {
+            g_sent_resume.push_back({o.receipt, slot, modes::current_world(), game::stage_epoch(modes::kCell),
+                                    newest_write(slot), food});
+            if (g_sent_resume.size() > 32) g_sent_resume.pop_front();
+        }
+    }
     if (g_share_hook) { // reliable and ordered: ahead of the offer (sent by tick)
         std::vector<const std::vector<uint8_t>*> fs;
         for (auto& f : o.files)
@@ -1054,6 +1092,21 @@ static void guest_launch_tick(net::Session& s);
 void guest_tick(net::Session& s)
 {
     guest_launch_tick(s);
+    if (g_wait_resume.receipt) {
+        int food = 0;
+        if (!s.connected() || GetTickCount64() >= g_wait_resume_until) {
+            g_wait_resume = {};
+        } else if (game::mode_id() == modes::kCell && g_playing && g_playing() &&
+                   game::stage_epoch(modes::kCell) != g_wait_resume.epoch &&
+                   _wcsicmp(current_db_dir(false).c_str(), g_wait_resume.slot.c_str()) == 0 &&
+                   cellsync::food_total(food)) {
+            g_guest_resume = std::move(g_wait_resume);
+            g_wait_resume = {};
+            g_guest_resume.world = modes::current_world();
+            g_guest_resume.epoch = game::stage_epoch(modes::kCell);
+            g_guest_resume.food = food;
+        }
+    }
     via_menu_tick();
     menu_intro_tick();
     deferred_tick();
@@ -1790,12 +1843,13 @@ void tick(net::Session& s)
         // flow control: keep a bounded number of reliable messages in flight
         // a LAN / local peer (short round trip) gets a much bigger window
         int rtt = s.rtt_of(o.peer);
-        size_t window = rtt >= 0 && rtt < 40 ? 600 : 160;
+        size_t window = s.paced_world_transfer ? net::kPacedWorldWindow : (rtt >= 0 && rtt < 40 ? 600 : 160);
         int budget = 300;
         while (budget-- > 0 && s.pending_to(o.peer) < window && !o.done) {
             if (o.fi >= o.files.size()) {
                 net::Writer w;
                 w.u32(o.world_id);
+                if (o.receipt) w.raw(&o.receipt, sizeof o.receipt);
                 s.send_reliable_to(o.peer, net::MSG_WORLD_DONE, w);
                 o.done = true;
                 uint64_t ms = GetTickCount64() - o.t0;
@@ -1819,7 +1873,8 @@ void tick(net::Session& s)
             net::WorldChunk ch;
             ch.index = (uint16_t)o.fi;
             ch.offset = (uint32_t)o.off;
-            size_t n = std::min<size_t>(1000, f.data.size() - o.off);
+            // Smaller datagrams also reduce loss on the constrained Hamachi path.
+            size_t n = std::min<size_t>(s.paced_world_transfer ? net::kPacedWorldChunkBytes : 1000, f.data.size() - o.off);
             ch.data.assign(f.data.begin() + o.off, f.data.begin() + o.off + n);
             net::Writer w;
             ch.write(w);
@@ -1989,7 +2044,7 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     return true;
 }
 
-static bool finish(const std::string& host_name)
+static bool finish(const std::string& host_name, uint64_t receipt)
 {
     uint32_t crc = 0;
     for (auto& [i, f] : g_in.files) {
@@ -2086,6 +2141,10 @@ static bool finish(const std::string& host_name)
         return true;
     }
     if (g_auto_load && !planet.empty() && load_slot(slot, planet, err, host_name)) {
+        if (receipt && !launch) {
+            g_wait_resume = {receipt, slot, 0, game::stage_epoch(modes::kCell), 0, 0};
+            g_wait_resume_until = GetTickCount64() + 30000;
+        }
         g_feed("loading the world of " + host_name + "...");
         return true;
     }
@@ -2098,6 +2157,8 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
 {
     switch (type) {
     case net::MSG_WORLD_OFFER:
+        g_guest_resume = {};
+        g_wait_resume = {};
         g_in = In{};
         if (g_in.offer.read(r) && g_in.offer.total_size <= kMaxWorldBytes && g_in.offer.file_count <= kMaxWorldFiles) {
             g_in.active = true;
@@ -2137,11 +2198,42 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
         }
         break;
     }
-    case net::MSG_WORLD_DONE:
-        if (g_in.active && !finish(host_name) && g_guest_launch.join)
+    case net::MSG_WORLD_DONE: {
+        uint64_t receipt = 0;
+        if (r.left() >= 4 + sizeof receipt && r.u32() == g_in.offer.world_id)
+            r.raw(&receipt, sizeof receipt);
+        if (g_in.active && !finish(host_name, receipt) && g_guest_launch.join)
             g_guest_launch.phase = LaunchMessage::Cancel;
         break;
     }
+    }
+}
+
+uint64_t resume_world()
+{
+    int food = 0;
+    if (!g_resume_world || !g_guest_resume.receipt || game::mode_id() != modes::kCell ||
+        !g_playing || !g_playing() || !g_guest_resume.world ||
+        g_guest_resume.world != modes::current_world() || g_guest_resume.epoch != game::stage_epoch(modes::kCell) ||
+        !cellsync::food_total(food) || food != g_guest_resume.food ||
+        _wcsicmp(current_db_dir(false).c_str(), g_guest_resume.slot.c_str()) != 0)
+        return 0;
+    return g_guest_resume.receipt;
+}
+
+bool can_resume_world(uint64_t receipt)
+{
+    if (!g_resume_world || !receipt || game::mode_id() != modes::kCell ||
+        save_pending() || save_busy() || (g_save_blocker && g_save_blocker()))
+        return false;
+    const auto it = std::find_if(g_sent_resume.begin(), g_sent_resume.end(),
+                                 [receipt](const ResumeWorld& r) { return r.receipt == receipt; });
+    int food = 0;
+    return it != g_sent_resume.end() && it->world == modes::current_world() &&
+           it->epoch == game::stage_epoch(modes::kCell) && it->write &&
+           cellsync::food_total(food) && food == it->food &&
+           _wcsicmp(current_db_dir(false).c_str(), it->slot.c_str()) == 0 &&
+           it->write == newest_write(it->slot);
 }
 
 bool progress(uint32_t& got, uint32_t& total)

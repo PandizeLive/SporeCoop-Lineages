@@ -12,7 +12,7 @@ fixed_in:
 branch:
 commits:
 tests:
-signature:
+signature: 3010a413:0xE83EC8 read 0x9C (Cell puppet creation after editor return)
 docs:
 related:
 ---
@@ -25,12 +25,32 @@ Target: 0.7.4.
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->
 
+Lineages reproduced the same fault on the host when a guest saved a free
+rename of an imported cell. The received DBPF contained only a metadata record.
+Registering it under a remapped key left that key without a model when native
+Cell puppet creation tried to resolve it. The guest's local EditorSaves had
+the new metadata and the original model was already in a mounted package.
+
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+
+For a metadata-only Cell save, combine the new metadata with the unchanged
+model from the mounted source package. If the model cannot be read, wait to
+send the bundle. A receiver leaves its existing appearance in place when
+an older sender sends a partial Cell bundle.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
+Two-PC Steam/Tailscale regression in disposable profiles. Before the fix, a
+real guest editor rename produced one metadata record and the host faulted
+at rebased `0xE83EC8`. After the fix, the host received two consecutive fresh
+guest renames with two records each and recorded zero native faults. Each edit
+preserved the guest's 5 DNA and current world. The intermediate build changed
+back and forth between older names after joining. Reusing the cached model
+for catalog lookup removed the repeated switching in the final sample.
+
 ## History
 - 2026-11-02: opened.
+- 2026-11-08: reproduced the metadata-only variant on a Steam Lineages 29 development candidate.

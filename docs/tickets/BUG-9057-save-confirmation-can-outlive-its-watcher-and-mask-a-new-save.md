@@ -46,3 +46,14 @@ the driver answers caption and specialty choices only, both automatic campaign
 checkpoints converge, no dialogs remain, both processes report zero faults.
 The isolated switch-off reproduction for the watcher-specific correction is
 still pending, so keep this ticket open rather than claiming full qualification.
+
+## Cell recurrence at 800×600
+
+On 2026-11-08, a two-PC Cell host finished its first world transfer while the
+native saved-game confirmation remained open. The next guest joined, but no
+transfer offer appeared for 78 seconds. The host explicitly logged that it
+was waiting for the previous save confirmation. The confirmed dialog extended
+past the right edge of the 800×600 QA window. Pressing Enter with that dialog
+visibly present closed it. This is a separate obstruction from slow UDP
+delivery. The observed offscreen dialog does not establish why the game
+positioned it there or how often it affects normal player setups.
