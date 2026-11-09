@@ -184,6 +184,7 @@ static int frames_mode_read()
 // the work of one frame that does not draw: counters, frame limit, tasks, SK_EV_FRAME
 static void frame_common()
 {
+    pace_frame_target();
     g_frame++;
     double t = now_seconds();
     float dt = g_last_t > 0 ? (float)(t - g_last_t) : 0.f;
@@ -322,6 +323,7 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     if (SUCCEEDED(hr) && pp) {
         g_bb_w = pp->BackBufferWidth;
         g_bb_h = pp->BackBufferHeight;
+        borderless_video_mode(pp->Windowed != FALSE);
     }
     if (g_font && SUCCEEDED(hr))
         ((HRESULT(WINAPI*)(void*))vt(g_font)[17])(g_font); // OnResetDevice
@@ -362,6 +364,8 @@ static HRESULT WINAPI h_CreateDevice(IDirect3D9* d3d, UINT ad, D3DDEVTYPE t, HWN
         }
         g_hwnd = w ? w : (pp ? pp->hDeviceWindow : nullptr);
         focus_attach_window(g_hwnd);
+        if (pp)
+            borderless_video_mode(pp->Windowed != FALSE);
         font_release();
         g_font_failed = false;
         hook_device(g_dev);

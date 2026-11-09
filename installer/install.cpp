@@ -5,6 +5,7 @@
 #include "../updater/pending.h"
 
 #include <vector>
+#include <filesystem>
 
 namespace inst {
 
@@ -13,6 +14,11 @@ bool g_fix = true;
 static bool exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
 bool is_game(const std::wstring& root) { return !root.empty() && exists(root + L"\\SporebinEP1\\SporeApp.exe"); }
+
+std::wstring graphics_file(const std::wstring& root)
+{
+    return root + L"\\SporebinEP1\\mods\\" + lineages_graphics::file_name;
+}
 
 bool g_ga_fix = true; // not a lab switch: setup only
 bool g_ga_dir_fix = true; // not a lab switch: setup only
@@ -203,6 +209,8 @@ std::wstring local_pack(const Options& opt)
 {
     if (!opt.pack.empty())
         return opt.pack;
+    if (opt.bundled_pack)
+        return {};
     std::vector<std::string> names;
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((opt.pack_dir + L"\\SporeCoop-*.pack").c_str(), &fd);
@@ -229,6 +237,10 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     std::string err;
     std::wstring lp = local_pack(opt);
     bool have_local = !lp.empty() && upd::read_pack_file(lp, pack, err);
+    if (!have_local && opt.pack.empty() && opt.bundled_pack && opt.bundled_size) {
+        const std::vector<uint8_t> bytes(opt.bundled_pack, opt.bundled_pack + opt.bundled_size);
+        have_local = upd::parse_pack(bytes, pack, err);
+    }
     if (opt.api.empty() && !have_local) {
         msg = "Extract the full Lineages release and keep its .pack next to SporeCoopSetup.exe.";
         return Result::Failed;
@@ -266,6 +278,8 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     }
     upd::cleanup_old(root);
     msg = "SporeCoop " + pack.version + " is installed. Start Spore: the galaxy menu has a Co-op item.";
+    if (opt.graphics && !lineages_graphics::write(graphics_file(root), *opt.graphics))
+        msg += " Setup could not save the graphics settings.";
     return Result::Ok;
 }
 
@@ -314,14 +328,75 @@ bool do_uninstall(const std::wstring& root, std::string& msg)
         msg = "Cannot remove " + upd::narrow(path) + ". Close Spore and retry uninstall.";
         return false;
     };
+    auto remove_matching = [&](const std::wstring& directory, const wchar_t* pattern) {
+        const DWORD attrs = GetFileAttributesW(directory.c_str());
+        if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_REPARSE_POINT)) return true;
+        WIN32_FIND_DATAW data{};
+        HANDLE files = FindFirstFileW((directory + L"\\" + pattern).c_str(), &data);
+        if (files == INVALID_HANDLE_VALUE) return true;
+        bool removed = true;
+        do {
+            if (!(data.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)))
+                removed = remove_file(directory + L"\\" + data.cFileName);
+        } while (removed && FindNextFileW(files, &data));
+        FindClose(files);
+        return removed;
+    };
+    const auto mods = bin + L"\\mods";
+    const auto logs = mods + L"\\logs";
+    const DWORD mods_attrs = GetFileAttributesW(mods.c_str());
+    const DWORD logs_attrs = GetFileAttributesW(logs.c_str());
+    if (mods_attrs != INVALID_FILE_ATTRIBUTES && !(mods_attrs & FILE_ATTRIBUTE_REPARSE_POINT) &&
+        logs_attrs != INVALID_FILE_ATTRIBUTES && !(logs_attrs & FILE_ATTRIBUTE_REPARSE_POINT) &&
+        (!remove_matching(logs, L"SporeCoop-report-*.zip") || !remove_matching(logs, L"sporekit*.log") ||
+         !remove_matching(logs + L"\\previous", L"sporekit*.log") || !remove_file(logs + L"\\last-problem.txt")))
+        return false;
+    // A normal Spore profile stores Lineages' cache beside EditorSaves.package.
+    // Leave native creations and saves alone, and refuse paths redirected through junctions.
+    wchar_t roaming[32768]{};
+    const DWORD roaming_size = GetEnvironmentVariableW(L"APPDATA", roaming, 32768);
+    if (roaming_size && roaming_size < 32768) {
+        namespace fs = std::filesystem;
+        const fs::path appdata(roaming);
+        const fs::path spore = appdata / L"Spore";
+        const fs::path owner = spore / L"SporeCoop";
+        const fs::path cache = owner / L"LineagesCache";
+        bool local_cache = appdata.is_absolute();
+        for (const auto& folder : {appdata, spore, owner, cache}) {
+            const DWORD attrs = GetFileAttributesW(folder.c_str());
+            if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY) ||
+                (attrs & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                local_cache = false;
+                break;
+            }
+        }
+        if (local_cache) {
+            std::error_code error;
+            const fs::recursive_directory_iterator end;
+            for (fs::recursive_directory_iterator it(cache, error); !error && it != end; it.increment(error)) {
+                const DWORD attrs = GetFileAttributesW(it->path().c_str());
+                if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                    error = std::make_error_code(std::errc::operation_not_permitted);
+                    break;
+                }
+            }
+            if (!error) fs::remove_all(cache, error);
+            if (error) {
+                msg = "Could not remove the Lineages cache. Close Spore and retry uninstall.";
+                return false;
+            }
+        }
+    }
     for (auto* symbol : upd::kSymbolFiles)
         if (!remove_file(bin + L"\\mods\\sporekit\\symbols\\" + symbol))
             return false;
     if (!remove_file(bin + L"\\sporekit.dll") || !remove_file(bin + L"\\mods\\coop.dll") ||
-        !remove_file(root + L"\\Data\\SporeCoop.package") || !remove_file(bin + L"\\mods\\sporecoop.version"))
+        !remove_file(root + L"\\Data\\SporeCoop.package") || !remove_file(bin + L"\\mods\\coop.ini") ||
+        !remove_file(bin + L"\\mods\\sporekit.ini") || !remove_file(graphics_file(root)) ||
+        !remove_file(bin + L"\\mods\\sporecoop.version"))
         return false;
     upd::cleanup_old(root);
-    msg = "SporeCoop is removed (your settings and logs in SporebinEP1\\mods are kept).";
+    msg = "SporeCoop, its settings, report archives and local cache are removed. Saves and creations are kept.";
     return true;
 }
 

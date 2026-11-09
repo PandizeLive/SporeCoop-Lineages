@@ -850,7 +850,10 @@ static void host_campaign_tick(double now)
         }
     }
     g_campaign_observed = true;
-    if (changed) g_campaign_refresh_at = now + 2;
+    if (changed) {
+        g_campaign_refresh_at = now + 2;
+        world::request_autosave();
+    }
     if (!g_campaign_refresh_at || now < g_campaign_refresh_at || world::cinematic_playing() ||
         world::load_queued() || world::save_busy()) return;
     // The native goal system owns rewards and totem history. A health packet

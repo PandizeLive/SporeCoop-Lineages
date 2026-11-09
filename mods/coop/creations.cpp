@@ -2515,8 +2515,41 @@ void confirm_tribal_outfit()
 }
 static bool adopt_after_editor(double now)
 {
+    static uint64_t editor_write;
+    static uint32_t editor_world;
+    static double check_save_until, check_save_at;
     uint32_t m = game::mode_id();
     bool editor = m == modes::kEdit || m == modes::kEditor;
+    const bool was_editor = g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor;
+    if (is_host()) {
+        auto write = [] {
+            WIN32_FILE_ATTRIBUTE_DATA attributes{};
+            if (!find_paths() || !GetFileAttributesExW(g_es_path.c_str(), GetFileExInfoStandard, &attributes))
+                return uint64_t{0};
+            return (uint64_t(attributes.ftLastWriteTime.dwHighDateTime) << 32) |
+                   attributes.ftLastWriteTime.dwLowDateTime;
+        };
+        if (editor && !was_editor) {
+            editor_write = write();
+            editor_world = modes::current_world();
+            check_save_until = 0;
+        } else if (!editor && (m == modes::kCell || m == modes::kCreature || m == modes::kTribe ||
+                               m == modes::kCiv || m == modes::kSpace)) {
+            if (was_editor) {
+                check_save_until = now + 10;
+                check_save_at = now;
+            }
+            if (check_save_until >= now && now >= check_save_at) {
+                check_save_at = now + 0.5;
+                if (editor_world == modes::current_world() && write() > editor_write) {
+                    check_save_until = 0;
+                    world::request_autosave();
+                }
+            }
+        } else if (!editor) {
+            check_save_until = 0;
+        }
+    }
     if (editor && !(g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && g_pre_editor_fix) {
         g_opts_read = -100; // what was there before: a new creation after it is the editor's
         refresh_options(now);

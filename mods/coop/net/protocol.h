@@ -116,10 +116,13 @@ struct DiscoverReply {
     // (read() does not ask for the end); an older host sends none (has_id false).
     bool has_id = false;
     uint32_t host_id = 0;
+    int scaling = -1; // older replies do not advertise rules
+    uint8_t settings = 0; // bit 0: paced transfer, bit 1: password required
     void write(Writer& w) const
     {
         w.u32(kDiscoverReply); w.u16(proto); w.u16(port); w.str8(name); w.u8(players); w.u8(max_players); w.str8(info);
         if (has_id) w.u32(host_id);
+        if (has_id && scaling >= 0) { w.u16((uint16_t)scaling); w.u8(settings); }
     }
     bool read(Reader& r)
     {
@@ -127,6 +130,9 @@ struct DiscoverReply {
         proto = r.u16(); port = r.u16(); name = r.str8(); players = r.u8(); max_players = r.u8(); info = r.str8();
         has_id = r.ok() && r.left() >= 4;
         host_id = has_id ? r.u32() : 0;
+        scaling = -1;
+        settings = 0;
+        if (has_id && r.left() >= 3) { scaling = r.u16(); settings = r.u8(); }
         return r.ok();
     }
 };
@@ -168,6 +174,7 @@ enum Caps : uint32_t {
     CAP_PERSONAL_LAUNCH = 16, // HELLO: this guest understands the optional Civilization launch offer
     CAP_CAMPAIGN_PROFILE = 8, // str8: fork rules and required content
     CAP_RESUME_WORLD = 64, // HELLO only: u64 receipt for a still-loaded world
+    CAP_JOIN_PROOF = 128, // HELLO only: connection-bound password proof
     CAP_LIBRARY = 32, // persistent, paced creation-library exchange (MSG_LIBRARY)
 };
 constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY; // token bit is per HELLO
@@ -183,6 +190,7 @@ struct Hello {
     uint64_t resume_world = 0;
     std::string version; // CAP_VERSION ("" read: an older peer)
     std::string campaign_profile;
+    std::string join_proof;
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
@@ -193,6 +201,7 @@ struct Hello {
             c |= CAP_CAMPAIGN_PROFILE;
         c &= ~(uint32_t)CAP_RESUME_WORLD;
         if (resume_world) c |= CAP_RESUME_WORLD;
+        if (!join_proof.empty()) c |= CAP_JOIN_PROOF;
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
@@ -201,6 +210,7 @@ struct Hello {
         if (c & CAP_CAMPAIGN_PROFILE)
             w.str8(campaign_profile);
         if (resume_world) w.raw(&resume_world, sizeof resume_world);
+        if (!join_proof.empty()) w.str8(join_proof);
     }
     bool read(Reader& r)
     {
@@ -234,6 +244,11 @@ struct Hello {
         }
         if ((caps & CAP_RESUME_WORLD) && r.left() >= sizeof resume_world)
             r.raw(&resume_world, sizeof resume_world);
+        join_proof.clear();
+        if (caps & CAP_JOIN_PROOF) {
+            join_proof = r.str8();
+            if (!r.ok() || join_proof.size() != 64) return false;
+        }
         return true;
     }
 };

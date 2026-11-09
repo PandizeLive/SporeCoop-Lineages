@@ -4200,3 +4200,12 @@ and after each. TITAN swam during both editor visits and received both bundles
 with a model and metadata. No Ready vote, world reload, or native fault was
 recorded on either editor return. A separate native History advance from a
 prepared full Cell bar still opened the Creature landfall vote.
+
+### Lineages lobby layout
+
+Native Steam QA loaded the new header and split panels from packaged PNG
+resources. At 800×600 the host lobby showed its reserved seats and kept
+Ready hidden outside a vote. A two-client check at the native 1176×664 QA
+window size opened the Ready button for a test vote, clicked it as the guest,
+and verified that the host completed the vote and the button hid again.
+Both consoles recorded zero native faults. Audio stayed muted at 20 FPS.

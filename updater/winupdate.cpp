@@ -67,8 +67,9 @@ std::string narrow(const std::wstring& w)
 // one GET. follow = false: a redirect is not followed, its target goes to *location (the release
 // page's redirect, BUG-0392); a 200 then also tells the address it ended at
 static bool request(const std::string& url, bool follow, std::vector<uint8_t>* out, std::string* location,
-                    std::string& err, const Progress& progress, uint32_t max_bytes)
+                    std::string& err, const Progress& progress, uint32_t max_bytes, bool* retryable = nullptr)
 {
+    if (retryable) *retryable = false;
     if (out)
         out->clear();
     std::wstring wurl = widen(url);
@@ -134,12 +135,14 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
                 } else
                     err = "the server answered " + std::to_string(status) + " for " + url;
             } else if (status != 200) {
+                if (retryable) *retryable = status == 429 || (status >= 500 && status < 600);
                 err = "the server answered " + std::to_string(status) + " for " + url;
             } else {
                 ok = true;
                 for (;;) {
                     DWORD avail = 0;
                     if (!WinHttpQueryDataAvailable(r, &avail)) {
+                        if (retryable) *retryable = true;
                         ok = false;
                         err = "the download broke off";
                         break;
@@ -155,6 +158,7 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
                     out->resize(at + avail);
                     DWORD got = 0;
                     if (!WinHttpReadData(r, out->data() + at, avail, &got)) {
+                        if (retryable) *retryable = true;
                         ok = false;
                         err = "the download broke off";
                         break;
@@ -163,9 +167,16 @@ static bool request(const std::string& url, bool follow, std::vector<uint8_t>* o
                     if (progress)
                         progress(out->size(), total);
                 }
+                if (ok && total && out->size() != total) {
+                    if (retryable) *retryable = true;
+                    err = "the download broke off";
+                    ok = false;
+                }
             }
-        } else
+        } else {
+            if (retryable) *retryable = true;
             err = "cannot reach " + narrow(host) + " (error " + std::to_string(GetLastError()) + ")";
+        }
         WinHttpCloseHandle(r);
     } else
         err = "cannot reach " + narrow(host);
@@ -196,7 +207,8 @@ bool latest_release(const std::string& api_url, Release& out, std::string& err)
     std::vector<uint8_t> body;
     std::string api_err;
     if (http_get(api_url, body, api_err, {}, 4u << 20)) {
-        if (parse_release(std::string(body.begin(), body.end()), out))
+        const std::string json(body.begin(), body.end());
+        if (api_url == kLineagesPreviewUrl ? parse_preview_releases(json, out) : parse_release(json, out))
             return true;
         api_err = "no release found";
     }
@@ -225,7 +237,22 @@ bool download_pack(const Release& r, Pack& out, std::string& err, const Progress
         return false;
     }
     std::vector<uint8_t> sums, pack;
-    if (!http_get(r.sums_url, sums, err, {}, 1u << 20) || !http_get(r.pack_url, pack, err, progress))
+    auto fetch = [&](const std::string& url, std::vector<uint8_t>& bytes,
+                     const Progress& on_progress, uint32_t max_bytes) {
+        constexpr DWORD delays[] = {0, 1000, 3000};
+        for (DWORD delay : delays) {
+            if (delay) Sleep(delay);
+            bool retryable;
+            if (request(url, true, &bytes, nullptr, err, on_progress, max_bytes, &retryable)) {
+                err.clear();
+                return true;
+            }
+            if (!retryable) return false;
+        }
+        err += " (3 attempts)";
+        return false;
+    };
+    if (!fetch(r.sums_url, sums, {}, 1u << 20) || !fetch(r.pack_url, pack, progress, kMaxDownload))
         return false;
     std::string name = r.pack_url.substr(r.pack_url.find_last_of('/') + 1);
     std::string want = sums_lookup(std::string(sums.begin(), sums.end()), name);
@@ -237,7 +264,8 @@ bool download_pack(const Release& r, Pack& out, std::string& err, const Progress
         return false;
     // BUG-0392: a release found through the page has no asset list from the API; its pack must also
     // be the version of its tag
-    if (r.from_web && compare_versions(out.version, r.version) != 0) {
+    if (compare_versions(out.version, r.version) != 0 ||
+        (r.version.find("-lineages") != std::string::npos && out.version != r.version)) {
         err = "the release " + r.tag + " holds the pack of version " + out.version;
         return false;
     }

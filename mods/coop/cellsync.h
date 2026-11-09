@@ -54,6 +54,7 @@ bool away_enabled(); // BUG-0205 switch (pool.away): a host editor or load count
 void on_player_leave(int id); // a remote player left: its knockout and food bookkeeping go
 void draw_overlay();
 bool partner_down(int id); // the knockout indicator owns this partner's label
+bool rescue_pending();
 void dna_note(const char* when); // BUG-0351: food, spent DNA and the editor budget in the log
 int editor_budget(); // native earned DNA minus this player's spent DNA; -1 outside Cell
 void join_partner(); // our cell next to the nearest partner (after a level rebuild) // knockout countdown / revive progress / off-screen arrows (SK_EV_OVERLAY)

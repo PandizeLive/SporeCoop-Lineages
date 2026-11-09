@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages30-dev"
+#define COOP_VERSION "0.7.3.6-lineages36-dev"
 #endif
 
 #include <winsock2.h>
@@ -1808,6 +1808,7 @@ COOP_FIX("world.cell_editor_in_place", "BUG-9096", g_cell_editor_share_fix,
          "Cell editor returns update live creations without reloading an already joined partner");
 void on_mode_change(uint32_t from, uint32_t to)
 {
+    static uint32_t last_stage_world;
     if (from == modes::kTribe || from == modes::kCreature) creature_hp::clear_enemy_health();
     if (from == modes::kSpace) squadron::clear_enemy_stats();
     if (to == modes::kMenu && stage_mode(from) && g_sess.role() == net::Role::Host && !g_remotes.empty())
@@ -1826,6 +1827,10 @@ void on_mode_change(uint32_t from, uint32_t to)
     g_was_in_editor = false;
     uint32_t last = g_last_stage;
     g_last_stage = to;
+    const auto stage_world = modes::current_world();
+    if (new_stage && stage_world && stage_world == last_stage_world && g_sess.role() == net::Role::Host)
+        world::request_autosave();
+    last_stage_world = stage_world;
     if (to == modes::kTribe && tribal_graduation_pending()) return;
     if (g_sess.role() != net::Role::Host || !g_share_world || g_remotes.empty() || !last)
         return;
@@ -2042,6 +2047,7 @@ void lobby_tick(double now)
             if (world.size() > 4 && world.substr(world.size() - 4) == ".spo")
                 world.resize(world.size() - 4);
             g_sess.lobby_info = std::string(mode) + (world.empty() || !g_adapter ? "" : " - " + world);
+            g_sess.lobby_scaling = world::rules_for_current().difficulty_percent;
         }
     }
     if (g_disc_on) {
@@ -3400,6 +3406,7 @@ void setup_callbacks()
         support::on_connected();
         feed("connected to host");
         coop_ui::session_event(true, ""); // BUG-0104: "Connecting to ..." ends here
+        coop_ui::remember_server(g_sess.host_address(), g_sess.name_of(0));
     };
     g_sess.cb.disconnected = [](const std::string& why) {
         support::on_disconnected(why);
@@ -3795,7 +3802,7 @@ void end_open_session()
     }
 }
 
-bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err)
+bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, const std::string& password = {})
 {
     if (!creations::campaign_content(COOP_VERSION, g_sess.campaign_profile, err))
         return false;
@@ -3823,7 +3830,7 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err)
     requested.extra_health_percent = uint16_t(health);
     requested.extra_damage_percent = uint16_t(damage);
     if (!world::setup_campaign(g_sess,requested,err)) return false;
-    if (!g_sess.host(port, g_name, err))
+    if (!g_sess.host(port, g_name, err, password))
         return false;
     support::on_session_start();
     feed("hosting on port " + std::to_string(g_sess.port()));
@@ -3832,7 +3839,7 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err)
     return true;
 }
 
-bool do_join(const std::string& addr, std::string& err)
+bool do_join(const std::string& addr, std::string& err, const std::string& password = {})
 {
     if (!creations::campaign_content(COOP_VERSION, g_sess.campaign_profile, err))
         return false;
@@ -3840,7 +3847,7 @@ bool do_join(const std::string& addr, std::string& err)
     reset_lobby();
     g_sess.resume_world = world::resume_world();
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id()); // BUG-0235
-    if (!g_sess.join(addr, g_name, err))
+    if (!g_sess.join(addr, g_name, err, password))
         return false;
     { // the chat log goes into problem reports: no public address there
         net::Endpoint ep;
@@ -4836,6 +4843,15 @@ void init_ui()
     a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
     a.connected = [] { return g_sess.connected(); };
     a.session_line = ui_session_line;
+    a.seat_limit = [] { return g_sess.seat_limit; };
+    a.invite = [] {
+        std::string addresses;
+        for (const auto& adapter : local_addresses()) {
+            if (!addresses.empty()) addresses += ", ";
+            addresses += adapter.ip + ':' + std::to_string(g_sess.port());
+        }
+        return addresses;
+    };
     a.give = [](std::string& what, std::string& to) {
         uint8_t t = give_target();
         if (!g_sess.connected() || t == 0xFF)
@@ -4927,7 +4943,8 @@ void init_ui()
     a.lan_games = [] {
         std::vector<coop_ui::LanGame> v;
         for (auto& g : g_disc.games(net::now_ms()))
-            v.push_back({g.info.name, g.host.str(), g.info.info, g.info.players, g.info.max_players});
+            v.push_back({g.info.name, g.host.str(), g.info.info, g.info.players, g.info.max_players,
+                         g.info.scaling, g.info.settings});
         return v;
     };
     a.lan_scan = lan_scan;
@@ -5443,6 +5460,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
+    if (H->instance_id() > 1)
+        H->command_add(M, "coop.autosave-test", "Queue the normal milestone autosave in a QA session",
+                       [](void*, int, const char* const*, SkOut*) {
+                           if (g_sess.role() != net::Role::Host) return 1;
+                           world::request_autosave();
+                           return 0;
+                       }, nullptr, MT);
     H->command_add(M, "coop.editor", "coop.editor - tests (BUG-0368): the open editor's request and the parts its palette shows locked",
                    [](void*, int, const char* const*, SkOut* out) {
                        // the editor game mode: the mode manager's list (+0x14..+0x18, entries of 0x18 bytes

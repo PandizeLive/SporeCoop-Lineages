@@ -74,9 +74,10 @@ public:
     uint32_t welcome_world() const { return welcome_world_; }
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network
+    int lobby_scaling = -1;
 
-    bool host(uint16_t port, const std::string& name, std::string& err);
-    bool join(const std::string& addr, const std::string& name, std::string& err);
+    bool host(uint16_t port, const std::string& name, std::string& err, std::string password = {});
+    bool join(const std::string& addr, const std::string& name, std::string& err, std::string password = {});
     void leave(const char* why = "left");
     void update(); // call every frame: receive, timeouts, send
 
@@ -120,6 +121,7 @@ public:
     uint32_t (*clock)() = nullptr;
 
 private:
+    std::string password_;
     void handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now);
     void handle_msg(Peer& p, uint8_t type, Reader& r);
     void flush(uint32_t now);

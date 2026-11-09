@@ -24,10 +24,12 @@ inline constexpr const wchar_t* kSymbolFiles[] = {
 
 // the GitHub API answer for the newest release (override for tests: [update] url in coop.ini)
 constexpr const char* kLatestUrl = ""; // private Duo builds use the adjacent release pack
+constexpr const char* kLineagesPreviewUrl = "https://api.github.com/repos/PandizeLive/SporeCoop-Lineages/releases?per_page=20";
 
 using Progress = std::function<void(uint64_t got, uint64_t total)>;
+inline constexpr uint32_t kMaxDownload = 96u << 20;
 bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress = {},
-              uint32_t max_bytes = 96u << 20);
+              uint32_t max_bytes = kMaxDownload);
 
 // the target of url's redirect (not followed); false when it answers neither a redirect nor a 200
 bool http_location(const std::string& url, std::string& location, std::string& err);

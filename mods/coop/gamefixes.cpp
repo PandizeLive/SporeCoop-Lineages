@@ -439,10 +439,30 @@ static bool patch_slot(uintptr_t* slot, uintptr_t value)
     return true;
 }
 
+// Upstream b063830c (BUG-0453): the native attack tick can skip its null
+// target check while an attack animation plays. End that node normally.
+using AttackTickFn = int(__cdecl*)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
+static AttackTickFn g_attack_tick;
+static bool g_attack_target_fix = true;
+COOP_FIX("npc.attack_lost_target", "BUG-0453", g_attack_target_fix,
+         "Creature: end an attack when its target has been removed");
+
+static int __cdecl attack_tick_guard(void* npc, void* a2, void* a3, void* a4, void* a5,
+                                      void* a6, void* a7, void* a8, void* a9, void* a10)
+{
+    if (g_attack_target_fix && npc && readable(npc, 0xE80) && !at<void*>(npc, 0xE7C))
+        return 0;
+    return g_attack_tick(npc, a2, a3, a4, a5, a6, a7, a8, a9, a10);
+}
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
+    const auto attack = H->sym("SporeCoop::BT_AttackTick");
+    const bool attack_guard = attack && H->hook_create(M, (void*)attack, (void*)&attack_tick_guard,
+                                                      (void**)&g_attack_tick) == 0;
+    H->log(M, SK_INFO, "game fixes: attack without a target guard %s", attack_guard ? "on" : "off");
     uintptr_t vt = H->sym("Terrain::cTerrainSphereTextureJob::vftable");
     uintptr_t fn = H->sym("Terrain::cTerrainSphereTextureJob::DrawLayer");
     uintptr_t* slot = vt ? (uintptr_t*)(vt + 3 * 4) : nullptr;

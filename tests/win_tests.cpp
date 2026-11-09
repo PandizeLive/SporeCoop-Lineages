@@ -303,6 +303,18 @@ static void test_uninstall()
     put(symbols + L"\\another-mod.sym", "other symbols");
     put(symbols + L"\\another-mod.sym.old", "other backup");
     put(bin + L"\\mods\\coop.ini", "player settings");
+    put(bin + L"\\mods\\sporekit.ini", "kit settings");
+    CHECK(lineages_graphics::write(inst::graphics_file(root), {144, true}));
+    const auto graphics = lineages_graphics::read(inst::graphics_file(root));
+    CHECK(graphics.fps == 144 && graphics.borderless);
+    CHECK(!lineages_graphics::write(inst::graphics_file(root), {361, false}));
+    put(bin + L"\\mods\\logs\\SporeCoop-report-test.zip", "mod report");
+    put(bin + L"\\mods\\logs\\unrelated.zip", "other report");
+    put(bin + L"\\mods\\logs\\sporekit.log", "kit log");
+    put(bin + L"\\mods\\logs\\previous\\sporekit.4-test.log", "previous kit log");
+    const auto profile = g_tmp + L"\\test-roaming\\Spore";
+    put(profile + L"\\SporeCoop\\LineagesCache\\objects\\example.png", "cached creation");
+    put(profile + L"\\EditorSaves.package", "native creation library");
     put(root + L"\\Data\\unrelated.package", "player data");
     CHECK(!inst::do_uninstall(root, msg)); // no original DLL to restore
     CHECK(get(bin + L"\\mods\\coop.dll") == "co-op");
@@ -322,7 +334,15 @@ static void test_uninstall()
     CHECK(!exists(symbols + L"\\march2017_dc04aee5.sym"));
     CHECK(get(symbols + L"\\another-mod.sym") == "other symbols");
     CHECK(get(symbols + L"\\another-mod.sym.old") == "other backup");
-    CHECK(get(bin + L"\\mods\\coop.ini") == "player settings");
+    CHECK(!exists(bin + L"\\mods\\coop.ini"));
+    CHECK(!exists(bin + L"\\mods\\sporekit.ini"));
+    CHECK(!exists(inst::graphics_file(root)));
+    CHECK(!exists(bin + L"\\mods\\logs\\SporeCoop-report-test.zip"));
+    CHECK(get(bin + L"\\mods\\logs\\unrelated.zip") == "other report");
+    CHECK(!exists(bin + L"\\mods\\logs\\sporekit.log"));
+    CHECK(!exists(bin + L"\\mods\\logs\\previous\\sporekit.4-test.log"));
+    CHECK(!exists(profile + L"\\SporeCoop\\LineagesCache"));
+    CHECK(get(profile + L"\\EditorSaves.package") == "native creation library");
     CHECK(get(root + L"\\Data\\unrelated.package") == "player data");
 }
 
@@ -1488,6 +1508,7 @@ struct FakeGithub {
     std::string tag = "v0.12.0";
     std::vector<uint8_t> pack;     // served as SporeCoop-<tag without v>.pack
     std::string sums;              // SHA256SUMS.txt
+    int pack_failures = 0;
     int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0; // tag_hits: the redirect was followed
 };
 static FakeGithub g_gh;
@@ -1541,8 +1562,13 @@ static void gh_answer(SOCKET c)
         body = g_gh.sums;
     } else if (path == repo + "/download/" + g_gh.tag + "/SporeCoop-" + ver + ".pack") {
         g_gh.asset_hits++;
-        status = "200 OK";
-        bin = g_gh.pack;
+        if (g_gh.pack_failures > 0) {
+            --g_gh.pack_failures;
+            status = "504 Gateway Timeout";
+        } else {
+            status = "200 OK";
+            bin = g_gh.pack;
+        }
     }
     if (bin.empty())
         bin.assign(body.begin(), body.end());
@@ -1628,6 +1654,10 @@ static void test_web_fallback()
     CHECK(ok && r.pack_url == "http://127.0.0.1:" + std::to_string(g_gh_port) +
                                   "/WoodyWizard/SporeCoop/releases/download/v0.12.0/SporeCoop-0.12.0.pack");
     upd::Pack p;
+    {
+        std::lock_guard<std::mutex> lock(g_gh_mu);
+        g_gh.pack_failures = 1;
+    }
     CHECK(ok && upd::download_pack(r, p, err) && p.version == "0.12.0");
     // 2. 429, a relative Location
     gh_release("0.12.1", "0.12.1");
@@ -1765,6 +1795,11 @@ int main(int argc, char** argv)
     g_tmp = std::wstring(t) + L"sporecoop-win-tests";
     rmtree(g_tmp);
     CreateDirectoryW(g_tmp.c_str(), nullptr);
+    const auto appdata = g_tmp + L"\\test-roaming";
+    if (!SetEnvironmentVariableW(L"APPDATA", appdata.c_str())) {
+        fputs("Cannot isolate test APPDATA\n", stderr);
+        return 1;
+    }
     if (argc == 2 && !strcmp(argv[1], "--founders-only")) {
         test_founders();
         rmtree(g_tmp);

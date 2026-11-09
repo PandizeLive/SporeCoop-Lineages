@@ -217,6 +217,7 @@ void set_ids(Win w, uint32_t cid, uint32_t cmd)
     vcall<void>(w, 0x54 / 4, cmd);
 }
 void set_font(Win w, uint32_t f) { vcall<void>(w, 0x84 / 4, f); }
+void set_shade_color(Win w, uint32_t argb) { vcall<void>(w, 0x5C / 4, argb); }
 void add_child(Win p, Win c) { vcall<void>(p, 0xD8 / 4, c); }
 void remove_child(Win p, Win c) { vcall<void>(p, 0xDC / 4, c); }
 void bring_to_front(Win p, Win c) { vcall<void>(p, 0xE8 / 4, c); }
@@ -290,7 +291,7 @@ Win button_like(Win parent, Win like, const Rect& r, const std::string& text)
     if (void* d = drawable(like))
         set_drawable(w, d); // the same drawable object (images per state), ref counted
     set_font(w, font(like));
-    vcall<void>(w, 0x5C / 4, vcall<uint32_t>(like, 0x30 / 4)); // shade color
+    set_shade_color(w, vcall<uint32_t>(like, 0x30 / 4));
     vcall<void>(w, 0xAC / 4, vcall<uint32_t>(like, 0xA4 / 4)); // fill color
     vcall<void>(w, 0x78 / 4, vcall<uint32_t>(like, 0x24 / 4)); // cursor
     set_area(w, r);
@@ -333,7 +334,7 @@ Win label(Win parent, const Rect& r, const std::string& text, uint32_t font_id, 
     return w;
 }
 
-Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len)
+Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len, bool draw_background)
 {
     Win w = ((CreateFn)a_te_create)(0, nullptr);
     void* e = as_edit(w);
@@ -342,7 +343,8 @@ Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_
     add_ref(w);
     if (font_id)
         vcall<void>(e, 0x18 / 4, font_id); // SetTextStyleID
-    static const uint32_t colors[8] = {0xFFFFFFFF, 0xD0081828, 0xFF808080, 0x80081828,
+    const uint32_t colors[8] = {0xFFFFFFFF, draw_background ? 0xD0081828u : 0u,
+                                       0xFF808080, draw_background ? 0x80081828u : 0u,
                                        0xFF000000, 0xFF9BD8FF, 0xFFFFFFFF, 0xFFFFFFFF};
     for (uint32_t i = 0; i < 8; i++)
         vcall<void>(e, 0x20 / 4, i, colors[i]);
@@ -399,6 +401,13 @@ static void* utf_new(size_t n)
 
 static void obj_addref(void* o) { if (o) vcall<int>(o, 0); }
 static void obj_release(void* o) { if (o) vcall<int>(o, 1); }
+
+bool has_image(uint32_t instance, uint32_t group)
+{
+    void* resource = image(instance, 0x2F7D0004, group);
+    obj_release(resource);
+    return resource != nullptr;
+}
 
 // SporeStdDrawableImageInfo (0x98): vtables +0/+4, ref count +8, background image +0xC,
 // icon image +0x10, the rest plain values

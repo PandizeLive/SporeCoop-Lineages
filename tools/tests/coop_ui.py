@@ -193,23 +193,27 @@ def main():
     # guest: discovery + join
     guest.type_into('name', 'Bob')
     # our host among the LAN rows (other lanes' hosts on this machine are listed too)
-    ours = lambda s: next((r for r in ('lan0', 'lan1', 'lan2') if s[r]['vis'] and 'Alice' in s[r]['text']  # noqa: E731
-                           and f':{lane.PORT}' in s[r]['text']), None)
+    lan_rows = [f'lan{i}' for i in range(6)]
+    ours = lambda s: next((r for r in lan_rows if s[r]['vis'] and 'Alice' in s[r]['text']), None)  # noqa: E731
     st = guest.wait(lambda s: ours(s) is not None, 30, 'LAN game')
     row = ours(st) if st else None
-    listed = [guest.state()[r]['text'] for r in ('lan0', 'lan1', 'lan2') if guest.state()[r]['vis']]
+    listed = [guest.state()[r]['text'] for r in lan_rows if guest.state()[r]['vis']]
     shot(gc, 'ui_guest_lan.png')
     if row is not None:
         check(True, f'guest: host found on the network: {st[row]["text"]}')
         guest.click(row)
+        selected = guest.wait(lambda s: s['joinport']['text'] == str(lane.PORT), 3, 'selected server port')
+        if selected is None:
+            guest.type_into('address', f'127.0.0.1:{lane.PORT}')
+        guest.click('join')
     else:
-        # the window lists three games: with more hosts on this machine (other lanes of a lab run, all
-        # answering on 127.0.0.1) ours can be the fourth, not a failure of ours. Never click another
+        # The window shows six games at once: with other lab lanes hosting,
+        # ours can be below the first six. Never click another
         # lane's game (that joins a test of another lane): join ours by its address
-        if len(listed) < 3:
+        if len(listed) < len(lan_rows):
             check(False, f'guest: host found on the network (listed: {listed})')
         else:
-            print(f'  guest: three other games listed ({listed}): join by address')
+            print(f'  guest: six other games listed ({listed}): join by address')
         guest.type_into('address', f'127.0.0.1:{lane.PORT}')
         guest.click('join')
     st = guest.wait(lambda s: s['page'] == 'lobby' and len(s['rows']) >= 2, 20, 'guest lobby')
@@ -235,9 +239,12 @@ def main():
     check(any('Creature' in r[1] for r in st['rows']), 'guest: stages shown')
     check(any(r[2].endswith('ms') for r in st['rows']), 'guest: ping shown')
 
+    check(not st['ready']['vis'], 'guest: Ready hidden outside a vote')
+    hc.call('coop.vote test')
+    check(guest.wait(lambda s: s['ready']['vis'], 10, 'vote prompt') is not None, 'guest: Ready appears during a vote')
     guest.click('ready')
-    st = host.wait(lambda s: any('Bob' in r[0] and r[3] == 'ready' for r in s['rows']), 10, 'ready')
-    check(st is not None, 'host: sees the guest ready')
+    st = host.wait(lambda s: any('everybody is ready' in c for c in s['chat']), 10, 'vote result')
+    check(st is not None, 'host: receives the guest Ready and finishes the vote')
 
     guest.type_into('chatedit', 'hello from Bob')
     gc.call(f'key {VK_RETURN}')

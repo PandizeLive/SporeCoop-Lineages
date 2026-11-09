@@ -246,6 +246,10 @@ void vcursor_tick();            // auto-release after inactivity
 void vcursor_hold(bool on);     // a held button keeps the virtual cursor active
 void place_test_window();
 void apply_frame_limit();
+void set_frame_target(int fps);
+void pace_frame_target();
+bool set_borderless(bool enabled);
+void borderless_video_mode(bool windowed);
 void set_frame_limit(int ms);    // console: frame.limit <ms> (33 = the game's own, 0 = none)        // test runs: lift the game's 30 fps cap ([sporekit] test_frame_ms)       // test runs: move the game window to a secondary monitor
 
 // fixes.cpp: fixes with a switch for tests (`kit.fix <name> 0|1`): 1 (default) = fixed, 0 = the old

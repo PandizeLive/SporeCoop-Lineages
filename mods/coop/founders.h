@@ -24,6 +24,7 @@ struct CampaignRules {
     bool operator==(const CampaignRules&) const = default;
     uint32_t workload_percent() const { return 100u + (seats - 1u) * difficulty_percent; }
     static constexpr unsigned native_fleet_limit = 36;
+    static constexpr unsigned native_military_interval_ms = 40000;
     static constexpr unsigned max_fleet_overflow = 11; // ceil(36 * 30%) at four seats
     unsigned civ_military_limit(unsigned base) const {
         const unsigned extra = (base * (workload_percent() - 100u) + 999u) / 1000u;
@@ -40,7 +41,7 @@ struct CampaignRules {
         // The native AI compares elapsed milliseconds to 40,000. Keep a
         // positive interval even with exceptionally high custom difficulty.
         const unsigned reduction = workload_percent() - 100u;
-        return reduction < 1000u ? 40000u - 40u * reduction : 1u;
+        return reduction < 1000u ? native_military_interval_ms - 40u * reduction : 1u;
     }
     uint32_t rival_target(uint16_t baseline) const {
         const uint32_t added = (uint32_t(baseline) * difficulty_percent + 99u) / 100u;

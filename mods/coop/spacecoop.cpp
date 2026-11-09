@@ -15,6 +15,7 @@
 #include "space_logic.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "world.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -892,6 +893,7 @@ static void SK_THISCALL h_SetState(void* m, int s)
         return;
     }
     if (s == 5 && !(F<uint32_t>(m, 0x130) & 1)) { // a mission (not an event) is completed
+        if (C.sess->role() == net::Role::Host) world::request_autosave();
         net::Writer w;
         std::vector<Key> keys;
         Key k;

@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages36-dev] - 2026-11-09
+
+- Add the framed Co-op server browser and connection panels, saved server
+  addresses, privacy toggles, and optional session passwords.
+- Add the host seat selector, a live difficulty breakdown, and explicit
+  Optimal (paced) and Fast (unmanaged) transfer choices.
+- Show six servers at a time with wheel scrolling and a draggable scrollbar.
+  Keep successfully joined servers in most-recent-first order, mark discovered
+  hosts as LAN, and use eye icons for connection field visibility.
+- Draw one background per connection field and show difficulty changes
+  relative to vanilla rather than the resulting totals.
+
+- Separate the Co-op connection screen into server, address, and host sections.
+  Use the native Spore logo with the Lineages wordmark over the native header.
+  Give the lobby a player roster, world panel, and Ready controls during votes.
+  Move Report Issue to the top and use light captions on the muted red buttons.
+- Add host checkpoints after campaign milestones and a ten-minute fallback
+  when no checkpoint has completed. Show a confirmation after an autosave writes.
+- Retry interrupted update asset downloads, including temporary GitHub server
+  errors (upstream BUG-0755). Remove Co-op settings during uninstall.
+- Add a live frame rate cap of 1–360 FPS and a borderless window setting to
+  Spore's Graphic Settings. Setup can set both, and its Windows executable
+  can carry the release pack for a standalone offline install.
+
 ## [0.7.3.6-lineages30-dev] - 2026-11-08
 
 - Open personal Cell edits without a Ready vote. Partners get a passive notice

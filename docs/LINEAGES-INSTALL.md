@@ -7,35 +7,58 @@ Keep a pre-mod save backup for vanilla play.
 
 ## Install
 
-1. Close Spore. Extract the entire ZIP into a folder you can keep.
-2. Keep SporeCoopSetup.exe and the included .pack file together.
-3. Open SporeCoopSetup.exe, select the Galactic Adventures installation and
-   click Install. If Windows denies access, run setup as administrator.
+1. Close Spore and open the standalone Lineages setup executable. If you
+   received the ZIP instead, extract it and open SporeCoopSetup.exe.
+2. Select the Galactic Adventures installation. Choose a frame rate cap from
+   1 to 360 or leave it blank for Spore's default. Enable Borderless Window
+   if you use Spore in windowed mode.
+3. Click Install. If Windows denies access, run setup as administrator.
 4. Launch Galactic Adventures normally. Select Co-op in the galaxy menu or F9.
+
+You can change the cap and borderless mode in Spore's Graphic Settings and
+apply both with its green check mark. Turn off Full Screen Mode before enabling
+borderless. Spore may ask for a restart if you also change its screen size.
 
 ## Join friends
 
-One player selects Host, then loads or starts the test campaign. Friends select
-Join and enter the host's reachable address. The default game port is UDP 47810.
+One player selects Start Server, then loads or starts the test campaign. Friends
+can select a nearby server or enter its reachable address and port, then click
+Join. The default game port is UDP 47810. Successful joins appear at the top
+of the server list, newest first. Nearby hosts have a LAN label. Use the mouse
+wheel over the list or drag its scrollbar. Save and Delete manage addresses in
+the list. Passwords are optional and are kept in memory for the session.
+Password protection controls admission. Co-op traffic itself is unencrypted.
 For your existing Tailscale or Hamachi setup, use the host's VPN address and
 ensure the PCs can reach each other. The VPN is configured separately.
 Allow the game through Windows Firewall when prompted; do not disable it.
 
 If a guest connects but the world download stalls, switch **Transfer** from
-**Normal** to **Paced** on the host's Co-op connection screen before hosting.
-Paced uses smaller packets and spaces out retries. It can take several minutes
-for a full world, so keep **Normal** for links that already transfer reliably.
+**Fast** to **Optimal** on the host's Co-op connection screen before hosting.
+Optimal uses smaller packets and spaces out retries. It can take several minutes
+for a full world, so keep **Fast** for links that already transfer reliably.
 The setting is saved on the host and guests can use the same join steps.
 
-In Creature and Adventure third person, hold **Shift** and scroll to widen
-the camera by up to 18 degrees. Scroll back while holding Shift to restore
-the vanilla field of view. This is local to your game on Steam and GOG 2024.
+In the Co-op lobby, **Copy Host Address** copies the host's detected addresses with
+the current UDP port. Share the address reachable from your friends' network.
+**I'm Ready** appears during a shared vote. **Send World** remains available
+to the host when there is a loaded world and a guest.
+
+While hosting, Lineages queues saves after campaign milestones. If ten minutes
+pass without a confirmed checkpoint, it queues a fallback save. Both wait for
+a safe gameplay state and do not send a world by themselves. Set `autosave=0`
+under `[coop]` in `mods/coop.ini` to disable this behavior.
+
+In Creature and Adventure third person, hold **Alt** and scroll down to widen
+the camera by up to 18 degrees. Hold Alt and scroll up to return to vanilla.
+Ordinary scroll still controls zoom. This is local on Steam and GOG 2024.
 
 ## Uninstall
 
 Close Spore, open the same setup and click Uninstall. The installer restores
-the original Steam API loader and preserves saves, settings and logs. Use your
-pre-mod backup for vanilla play; custom-founder campaigns can depend on the mod.
+the original Steam API loader and removes the Co-op and graphics settings and
+Lineages report archives. It preserves saves and the native creation library.
+Use your pre-mod backup for vanilla play, since custom-founder
+campaigns can depend on the mod.
 
 ## Lineages Cache
 
@@ -52,10 +75,8 @@ selection system; the cache does not force them to spawn or alter existing world
 Use matching installed content/mods. Arbitrary missing-part combinations and
 Adventure/flora libraries have not been qualified.
 
-Uninstall removes the mod's category, but retains imported native creations and
-the profile's SporeCoop/LineagesCache files. Deleting only the cache folder does
-not remove creations already imported into Spore. Manage those through the
-normal Sporepedia; do not delete Pollination.package or campaign saves.
+Uninstall removes the mod's category and the cache in the current user's
+standard Spore profile. Imported native creations stay in the Sporepedia.
 
 ## Preview qualification
 

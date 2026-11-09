@@ -3719,6 +3719,14 @@ bool partner_down(int id)
     return it != g_ko.end() && it->second.state == KO_OUT;
 }
 
+bool rescue_pending()
+{
+    if (g_downed) return true;
+    for (const auto& entry : g_ko)
+        if (entry.second.state == KO_OUT) return true;
+    return false;
+}
+
 void draw_overlay()
 {
     if (!in_cell() || !C.sess || !C.sess->connected())

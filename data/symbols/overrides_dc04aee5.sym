@@ -348,6 +348,9 @@ App::cCameraManager::Update=0x007C6440 ; verified thiscall(int), ret 4; passes v
 App::cGameModeManager::GetCameraManager=0x00967D90 ; verified thiscall(), mov eax,[ecx+0x2C], ret
 App::cViewer::SetPerspectiveProjection=0x007C5480 ; verified thiscall(float), computes tan of half FOV, preserves aspect, updates the view window
 App::cViewer::SetViewWindow=0x007C4BD0 ; verified thiscall(float,float), ret 8, writes view extents and reciprocals on camera at viewer+0x170
+App::cViewer::BeginUpdate=0x007C5080 ; verified thiscall() bool in AL, ret; checks projection aspect then begins RenderWare camera update
+App::cViewer::EndUpdate=0x007C3CE0 ; verified thiscall(), tail-jumps to RenderWare camera end update with camera at viewer+0x170
+SporeCoop::BT_AttackTick=0x00D67CD0 ; verified upstream b063830c, cdecl attack node tick, owner first, target combatant at owner+0xE7C, returns 0 to end node (BUG-0453)
 App::Property::SetValueVector3=0x006A3570 ; verified thiscall(Property*, const Vector3*) ret 4: mov esi,ecx; test [esi+0x10],4 (BUG-0143)
 App::cViewer::GetCameraToPoint=0x007C4800 ; verified thiscall bool(cViewer*, float x, float y, Vector3* origin, Vector3* dir) ret 0x10: reads [ecx+0x170], [esp+0x10]/[esp+0x14] after sub esp,0xC (BUG-0143)
 EditorRequest_ctor=0x005A9140 ; verified thiscall(EditorRequest*) plain ret: mov esi,ecx; [esi+4]=vtable 0x13EB8B8 (BUG-0143)

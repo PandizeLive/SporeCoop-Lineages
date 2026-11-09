@@ -24,19 +24,23 @@ struct PlayerRow {
 struct LanGame {
     std::string name, address, info;
     int players = 0, max_players = 0;
+    int scaling = -1;
+    unsigned settings = 0;
 };
 
 // what the UI needs from the mod (filled in coop.cpp)
 struct Api {
     std::function<std::string()> name;
     std::function<void(const std::string&)> set_name;
-    std::function<bool(const std::string& address, std::string& err)> join;
-    std::function<bool(uint16_t port, unsigned seats, unsigned scaling, std::string& err)> host;
+    std::function<bool(const std::string& address, std::string& err, const std::string& password)> join;
+    std::function<bool(uint16_t port, unsigned seats, unsigned scaling, std::string& err, const std::string& password)> host;
     std::function<bool(unsigned seats, std::string& message)> queue_seats;
     std::function<void()> leave;
     std::function<int()> role;        // 0 offline, 1 host, 2 guest
     std::function<bool()> connected;
     std::function<std::string()> session_line;
+    std::function<std::string()> invite;
+    std::function<unsigned()> seat_limit;
     std::function<std::vector<PlayerRow>()> players;
     std::function<std::string()> world_line; // transfer progress / hints, "" if nothing
     std::function<bool()> ready;
@@ -93,6 +97,7 @@ extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the firs
 extern bool g_status_fix; // tests: `coop.corefix ui_status 0` keeps the status of the last button (BUG-0104)
 // the session was joined (connected) or ended (why): replaces the status line of the join
 void session_event(bool connected, const std::string& why);
+void remember_server(const std::string& address, const std::string& name);
 extern bool g_recenter_fix;  // tests: `coop.corefix window_recenter 0` keeps the first position (BUG-0113)
 extern bool g_menu_drop_fix; // tests: `coop.corefix menu_drop 0` keeps the menu item pointer after the menu (BUG-0163)
 

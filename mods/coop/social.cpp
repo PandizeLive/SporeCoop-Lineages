@@ -12,6 +12,7 @@
 #include "net/validate.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
+#include "world.h"
 
 using namespace skg;
 
@@ -273,6 +274,7 @@ static bool host_goal_pay(const ResourceKey& k, int outcome)
         return false;
     g_goal_paid[id] = true;
     g_goal_dna_paid++;
+    world::request_autosave();
     return true;
 }
 

@@ -12,7 +12,7 @@ fixed_in:
 branch:
 commits:
 tests:
-signature:
+signature: 3010a413:SporeApp.exe+0x965D23 (rebased 0xD65D23, null read)
 docs:
 related:
 ---
@@ -34,3 +34,4 @@ Target: 0.7.4.
 
 ## History
 - 2026-11-02: opened.
+- 2026-11-08: same signature in a Lineages Creature-stage report on Steam. The stack reaches the NPC behavior tree. The report does not establish what invalidated the target.

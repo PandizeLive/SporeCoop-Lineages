@@ -33,6 +33,8 @@ void invalidate_campaign_rules(); // native load, including reloading the same s
 bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+// Host milestone, saved once the native save path is ready.
+void request_autosave();
 // Tribal reconstruction: confirm a new native save, transfer it to connected
 // peers, then reload the host through the existing menu/load path.
 bool checkpoint_reload(std::string& err);

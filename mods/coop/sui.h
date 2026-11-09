@@ -69,6 +69,7 @@ void set_enabled(Win w, bool on);
 void set_flag(Win w, uint32_t flag, bool on);
 void set_ids(Win w, uint32_t control_id, uint32_t command_id);
 void set_font(Win w, uint32_t font_id);
+void set_shade_color(Win w, uint32_t argb);
 uint32_t font(Win w);
 void add_child(Win parent, Win child);
 void remove_child(Win parent, Win child);
@@ -86,7 +87,8 @@ Win button_like(Win parent, Win like, const Rect& r, const std::string& caption)
 Win label(Win parent, const Rect& r, const std::string& text, uint32_t font_id, uint32_t argb, int align);
 void set_label_color(Win label, uint32_t argb);
 // a one-line text field
-Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len);
+Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len,
+              bool draw_background = true);
 std::string edit_text(Win edit);
 void set_edit_text(Win edit, const std::string& text);
 
@@ -95,6 +97,7 @@ void set_edit_text(Win edit, const std::string& text);
 void* image(uint32_t instance, uint32_t type, uint32_t group);
 // a window showing a png from a package at its own size (IImageDrawable::AddImageWindow)
 Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y);
+bool has_image(uint32_t instance, uint32_t group);
 // a new SporeStdDrawable copying `src` (a SporeStdDrawable) with another icon image
 void* std_drawable_with_icon(void* src, void* icon);
 void set_drawable(Win w, void* drawable);

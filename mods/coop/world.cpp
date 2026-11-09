@@ -14,6 +14,7 @@
 #include <set>
 
 #include "game.h"
+#include "autosave.h"
 #include "founders.h"
 #include "creations.h"
 #include "civ.h"
@@ -32,6 +33,33 @@ namespace world {
 static const SkHost* H;
 static SkMod* M;
 static std::function<void(const std::string&)> g_feed;
+static AutosaveClock g_autosave;
+static bool g_autosave_enabled;
+static bool g_autosave_show_confirmation;
+static uint32_t g_autosave_world;
+static uint64_t g_autosave_posted, g_autosave_retry, g_autosave_before;
+static std::wstring g_autosave_slot;
+
+static void autosave_world(uint32_t world)
+{
+    if (world == g_autosave_world) return;
+    g_autosave_world = world;
+    g_autosave = {};
+    g_autosave_posted = g_autosave_retry = g_autosave_before = 0;
+    g_autosave_show_confirmation = false;
+    g_autosave_slot.clear();
+}
+
+void request_autosave()
+{
+    if (!g_autosave_enabled) return;
+    const auto world = modes::current_world();
+    if (!world) return;
+    autosave_world(world);
+    g_autosave.event_pending = true;
+    // Give an existing milestone share time to post its own native save first.
+    g_autosave_retry = GetTickCount64() + 3000;
+}
 struct CheckpointReload {
     std::wstring slot;
     std::string planet, key;
@@ -236,6 +264,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     H = host;
     M = mod;
     g_feed = std::move(feed);
+    g_autosave_enabled = H->config_int(M, "coop", "autosave", 1) != 0;
     H->command_add(M, "coop.worldfix",
                    "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
@@ -478,6 +507,15 @@ bool save_game(std::string& err)
     g_saved_at = GetTickCount64();
     g_box_seen_at = 0;
     g_box_watch_until = g_saved_at + 30000;
+    // Existing checkpoint and share saves count too. A pending milestone
+    // already covered by this write does not need a second native save.
+    if (g_autosave_enabled && g_autosave_world && g_autosave_world == modes::current_world()) {
+        g_autosave_slot = current_db_dir(false);
+        g_autosave_before = g_autosave_slot.empty() ? 0 : newest_write(g_autosave_slot);
+        g_autosave_posted = g_autosave_slot.empty() ? 0 : g_saved_at;
+        g_autosave_show_confirmation = false;
+        if (g_autosave_posted) g_autosave.event_pending = false;
+    }
     return true;
 }
 
@@ -631,6 +669,7 @@ static void reset_campaign_setup();
 
 void on_session_end()
 {
+    autosave_world(0);
     reset_launch_offers();
     g_wait_resume = {};
     reset_campaign_setup();
@@ -1655,6 +1694,44 @@ static void checkpoint_reload_tick(net::Session& s)
         g_feed("Rebuild reload failed: " + error);
 }
 
+static void autosave_tick(net::Session& s)
+{
+    if (!g_autosave_enabled || !s.connected() || !g_playing || !g_playing()) return;
+    const auto world = modes::current_world();
+    if (!world) return;
+    autosave_world(world);
+    const auto now = GetTickCount64();
+    if (!g_autosave.since) g_autosave.saved(now);
+    if (g_autosave_posted) {
+        if (g_box_seen_at >= g_autosave_posted && newest_write(g_autosave_slot) > g_autosave_before) {
+            g_autosave.saved(now);
+            g_autosave_posted = 0;
+            if (g_autosave_show_confirmation) {
+                g_autosave_show_confirmation = false;
+                H->log(M, SK_INFO, "world: campaign autosave confirmed");
+                g_feed("Campaign autosaved");
+            }
+        } else if (now >= g_autosave_posted + 30000) {
+            g_autosave_posted = 0;
+            g_autosave.event_pending = true;
+            g_autosave_retry = now + 15000;
+        }
+        return;
+    }
+    if (!g_autosave.due(now) || now < g_autosave_retry || save_busy() || save_pending() ||
+        load_queued() || cinematic_playing() || time_paused() || g_checkpoint_reload.requested ||
+        (game::mode_id() == modes::kCell && cellsync::rescue_pending()))
+        return;
+    g_autosave_retry = now + 5000;
+    if (current_db_dir(false).empty()) return;
+    const bool event = g_autosave.event_pending;
+    std::string error;
+    if (save_game(error)) {
+        g_autosave_show_confirmation = g_autosave_posted != 0;
+        H->log(M, SK_INFO, "world: %s autosave requested", event ? "event" : "interval");
+    }
+}
+
 void tick(net::Session& s)
 {
     via_menu_tick();
@@ -1664,6 +1741,7 @@ void tick(net::Session& s)
     checkpoint_reload_tick(s);
     retain_launch_tick(s);
     campaign_setup_tick(s);
+    autosave_tick(s);
     if (g_drop_peer_fix) {
         // BUG-0166: a player who left takes its shares and transfers with it (the host saved for
         // nobody, held its editors up to 15 s and read the slot for a peer that was gone)

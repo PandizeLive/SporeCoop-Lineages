@@ -34,6 +34,7 @@
 #include "net/ipmask.h"
 #include "civ_economy.h"
 #include "civ_influence.h"
+#include "autosave.h"
 #include <limits>
 
 using namespace net;
@@ -407,6 +408,27 @@ static void test_session()
     pump(host, bad, 300);
     CHECK(why.find("build") != std::string::npos);
     CHECK(bad.role() == Role::None);
+}
+
+static void test_session_password()
+{
+    puts("session requires the configured password before admitting a peer");
+    Session host, guest;
+    std::string error, disconnected;
+    guest.cb.disconnected = [&](const std::string& reason) { disconnected = reason; };
+    CHECK(host.host(0, "host", error, "shared password"));
+    const auto address = "127.0.0.1:" + std::to_string(host.port());
+    for (auto password : {"", "wrong password"}) {
+        disconnected.clear();
+        CHECK(guest.join(address, "guest", error, password));
+        pump(host, guest, 300);
+        CHECK(guest.role() == Role::None);
+        CHECK(disconnected.find("password") != std::string::npos);
+        CHECK(host.players().size() == 1);
+    }
+    CHECK(guest.join(address, "guest", error, "shared password"));
+    pump(host, guest, 300);
+    CHECK(guest.connected() && host.players().size() == 2);
 }
 
 // BUG-0029: a guest that gets REJECT or BYE must not free its connection while that connection is
@@ -924,6 +946,20 @@ static void test_updater_paths()
     CHECK(upd::canonical_path("SporebinEP1/mods/COOP.dll") == "sporebinep1/mods/coop.dll");
 }
 
+static void test_autosave_clock()
+{
+    world::AutosaveClock autosave;
+    autosave.saved(1000);
+    CHECK(!autosave.due(600999));
+    CHECK(autosave.due(601000));
+    autosave.event_pending = true;
+    CHECK(autosave.due(2000));
+    autosave.event_pending = false;
+    autosave.saved(2000);
+    CHECK(!autosave.due(601000));
+    CHECK(autosave.due(602000));
+}
+
 static void test_updater()
 {
     printf("updater: packs, paths, versions, release answer\n");
@@ -956,6 +992,17 @@ static void test_updater()
           upd::compare_versions("0.10.0", "0.9.9") == 1 && upd::compare_versions("1.0", "1.0.1") == -1);
     CHECK(upd::compare_versions("0.7.2.1", "0.7.2") == 1 && upd::compare_versions("0.7.3", "0.7.2.1") == 1 &&
           upd::compare_versions("v0.7.2.1", "0.7.2.1") == 0);
+    CHECK(upd::compare_versions("v0.7.3.6-lineages31-dev", "0.7.3.6-lineages30-dev") == 1);
+    auto preview = [](int number, const std::string& owner) {
+        const std::string version = "0.7.3.6-lineages" + std::to_string(number) + "-dev";
+        const std::string prefix = "https://github.com/" + owner + "/SporeCoop-Lineages/releases/download/v" + version + '/';
+        return "{\"tag_name\":\"v" + version + "\",\"assets\":[{\"browser_download_url\":\"" + prefix +
+               "SporeCoop-" + version + ".pack\"},{\"browser_download_url\":\"" + prefix + "SHA256SUMS.txt\"}]}";
+    };
+    upd::Release preview_release;
+    CHECK(upd::parse_preview_releases("[" + preview(30, "PandizeLive") + "," + preview(99, "Other") + "," +
+                                     preview(31, "PandizeLive") + "]", preview_release));
+    CHECK(preview_release.version == "0.7.3.6-lineages31-dev");
     const char* json = R"({"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.5.1","tag_name":"v0.5.1",
       "assets":[{"name":"SporeCoop-0.5.1.zip","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.zip"},
       {"name":"SporeCoop-0.5.1.pack","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.pack"},
@@ -2564,6 +2611,7 @@ int main(int argc, char** argv)
     test_be_keys();
     test_dbbf();
     test_refpack_untrusted();
+    test_autosave_clock();
     test_updater();
     test_updater_dup();
     test_updater_paths();
@@ -2574,6 +2622,7 @@ int main(int argc, char** argv)
     test_civ_economic_packet();
     test_civ_religious_packet();
     test_session();
+    test_session_password();
     test_session_end_in_delivery();
     test_rejoin_same_endpoint();
     test_unique_names();

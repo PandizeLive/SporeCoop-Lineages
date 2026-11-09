@@ -979,6 +979,7 @@ static int SK_THISCALL h_ChangeOwner(void* city, uint32_t faction, int quiet, in
         if (country != player_civ() && kind >= 0 && kind < 3)
             ++F<int>(player_civ(), 0x4C0 + 4 * kind);
         g_campaign_share_at = H->time_seconds() + 2;
+        world::request_autosave();
     }
     return result;
 }

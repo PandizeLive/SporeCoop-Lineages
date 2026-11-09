@@ -155,11 +155,10 @@ void init(const SkHost* host, SkMod* mod, const char* version)
     H = host;
     M = mod;
     g_version = version;
-    g_enabled = H->config_int(M, "update", "check", 1) != 0;
     char b[512];
-    H->config_str(M, "update", "url", upd::kLatestUrl, b, sizeof b);
+    H->config_str(M, "update", "url", upd::kLineagesPreviewUrl, b, sizeof b);
     g_url = b;
-    g_enabled = g_enabled && !g_url.empty();
+    g_enabled = !g_url.empty() && H->config_int(M, "update", "check", g_url != upd::kLineagesPreviewUrl) != 0;
     upd::cleanup_old(game_root()); // the files an update replaced last time
     if (g_enabled && !g_busy.exchange(true))
         if (!start_thread(check_thread))
@@ -220,6 +219,12 @@ bool ui(std::string& line, std::string& button)
         line = "Update failed: " + g_err;
         button = "Try again";
         return true;
+    case Idle:
+    case UpToDate:
+        if (g_url != upd::kLineagesPreviewUrl) return false;
+        line = g_enabled ? "Lineages preview updates are on" : "Lineages preview updates are off";
+        button = g_enabled ? "Preview Off" : "Preview On";
+        return true;
     default:
         return false;
     }
@@ -227,14 +232,23 @@ bool ui(std::string& line, std::string& button)
 
 void start_update()
 {
+    bool check = false;
     {
         std::lock_guard<std::mutex> l(g_mu);
-        if (g_state != Available && g_state != Failed)
+        if ((g_state == Idle || g_state == UpToDate) && g_url == upd::kLineagesPreviewUrl && !g_busy) {
+            const bool next = !g_enabled;
+            if (!H->config_set_str || H->config_set_str(M, "update", "check", next ? "1" : "0") != 0)
+                return;
+            g_enabled = next;
+            check = next;
+            if (!check) return;
+        } else if (g_state != Available && g_state != Failed) {
             return;
+        }
         g_told_failed = false;
     }
     if (!g_busy.exchange(true))
-        if (!start_thread(apply_thread))
+        if (!start_thread(check ? check_thread : apply_thread))
             g_busy = false;
 }
 

@@ -3,6 +3,7 @@
 // the real mouse pointer.
 #include <algorithm>
 #include "core.h"
+#include "../sdk/include/lineages_graphics.h"
 
 #include <atomic>
 
@@ -12,6 +13,49 @@ static bool g_background = true;
 static bool g_test_run; // started with a test profile or as instance 2+
 static WNDPROC o_WndProc;
 static HWND g_sub_hwnd;
+static bool g_borderless, g_windowed, g_borderless_applied;
+static LONG_PTR g_window_style;
+static WINDOWPLACEMENT g_window_placement{sizeof(WINDOWPLACEMENT)};
+
+bool set_borderless(bool enabled)
+{
+    g_borderless = enabled;
+    if (!g_sub_hwnd || !g_windowed)
+        return !enabled; // the windowed renderer is required
+    if (enabled == g_borderless_applied)
+        return true;
+    if (enabled) {
+        MONITORINFO monitor{sizeof(MONITORINFO)};
+        if (!GetMonitorInfoW(MonitorFromWindow(g_sub_hwnd, MONITOR_DEFAULTTONEAREST), &monitor) ||
+            !GetWindowPlacement(g_sub_hwnd, &g_window_placement))
+            return false;
+        g_window_style = GetWindowLongPtrW(g_sub_hwnd, GWL_STYLE);
+        SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, g_window_style & ~WS_OVERLAPPEDWINDOW);
+        const RECT& r = monitor.rcMonitor;
+        if (!SetWindowPos(g_sub_hwnd, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                          SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOZORDER)) {
+            SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, g_window_style);
+            return false;
+        }
+    } else {
+        SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, g_window_style);
+        if (!SetWindowPlacement(g_sub_hwnd, &g_window_placement) ||
+            !SetWindowPos(g_sub_hwnd, nullptr, 0, 0, 0, 0,
+                          SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER))
+            return false;
+    }
+    g_borderless_applied = enabled;
+    return true;
+}
+
+void borderless_video_mode(bool windowed)
+{
+    g_windowed = windowed;
+    if (!windowed)
+        g_borderless_applied = false; // the renderer owns the exclusive fullscreen style
+    if (windowed && g_borderless)
+        run_outside_frame([] { set_borderless(g_borderless); });
+}
 
 std::atomic<bool> g_vcursor_active{false};
 std::atomic<int> g_vcursor_x{0}, g_vcursor_y{0};
@@ -116,6 +160,40 @@ void focus_install_hooks()
 static int g_forced = -2; // -2: not read yet, -1: automatic
 static int g_menu_ms = -1;
 static int g_game_ms = 33; // the game's own value, read before the first change
+static int g_target_fps = 0;
+static double g_last_paced_frame = 0;
+
+void set_frame_target(int fps)
+{
+    // Initialize the stock limiter before recording the live override.
+    apply_frame_limit();
+    g_target_fps = std::clamp(fps, 0, 360);
+    g_last_paced_frame = 0;
+    apply_frame_limit();
+}
+
+void pace_frame_target()
+{
+    if (!g_target_fps || g_forced >= 0)
+        return;
+    const double now = now_seconds();
+    const double remaining = g_last_paced_frame + 1.0 / g_target_fps - now;
+    if (remaining > 0) {
+        // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION is available on recent Windows.
+        // The legacy timer still enforces the cap on systems without that flag.
+        static HANDLE timer = [] {
+            HANDLE precise = CreateWaitableTimerExW(nullptr, nullptr, 0x2, TIMER_ALL_ACCESS);
+            return precise ? precise : CreateWaitableTimerW(nullptr, FALSE, nullptr);
+        }();
+        LARGE_INTEGER delay{};
+        delay.QuadPart = -std::max<LONGLONG>(1, (LONGLONG)(remaining * 10000000.0));
+        if (timer && SetWaitableTimer(timer, &delay, 0, nullptr, nullptr, FALSE))
+            WaitForSingleObject(timer, INFINITE);
+        else
+            Sleep((DWORD)(remaining * 1000.0) + 1);
+    }
+    g_last_paced_frame = now_seconds();
+}
 
 void set_frame_limit(int ms)
 {
@@ -130,6 +208,8 @@ void apply_frame_limit()
         std::wstring ini = mods_dirw() + L"\\sporekit.ini";
         g_forced = ini_int(ini, "sporekit", "frame_ms", -1);
         g_menu_ms = g_test_run ? ini_int(ini, "sporekit", "test_frame_ms", -1) : -1;
+        if (!g_test_run)
+            g_target_fps = lineages_graphics::read(mods_dirw() + L"\\" + lineages_graphics::file_name).fps;
         if (g_menu_ms >= 0)
             SKLOG(SK_INFO, "frame limit: %d ms in the menus (test run)", g_menu_ms);
     }
@@ -146,6 +226,8 @@ void apply_frame_limit()
     uint32_t mode = game_mode_id();
     bool menu = mode == 0 || mode == 0x2CCD1D2; // startup / GalaxyGameEntry
     int want = g_forced >= 0 ? g_forced : (menu && g_menu_ms >= 0 ? g_menu_ms : g_game_ms);
+    if (g_target_fps && g_forced < 0)
+        want = 0;
     if (*(int*)(cfg + 0xB0) != want)
         *(int*)(cfg + 0xB0) = want;
 }
@@ -156,6 +238,9 @@ void focus_attach_window(void* hwnd)
     if (!hwnd || g_sub_hwnd == hwnd)
         return;
     g_sub_hwnd = (HWND)hwnd;
+    g_borderless_applied = false;
+    if (!g_test_run)
+        g_borderless = lineages_graphics::read(mods_dirw() + L"\\" + lineages_graphics::file_name).borderless;
     o_WndProc = (WNDPROC)SetWindowLongPtrW(g_sub_hwnd, GWLP_WNDPROC, (LONG_PTR)h_WndProc);
     SKLOG(SK_INFO, "window %p subclassed (background mode %s)", hwnd, g_background ? "on" : "off");
 }

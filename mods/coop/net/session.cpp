@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "fixes.h"
+#include "../../../updater/sha256.h"
 
 namespace net {
 
@@ -35,12 +36,21 @@ static uint32_t new_conn_id(uint32_t now, uint32_t salt)
     return (uint32_t)x ? (uint32_t)x : 1u;
 }
 
-bool Session::host(uint16_t port, const std::string& name, std::string& err)
+static std::string join_proof(const std::string& password, uint32_t connection)
+{
+    Writer input;
+    input.u32(connection);
+    input.raw(password.data(), password.size());
+    return upd::sha256_hex(input.data);
+}
+
+bool Session::host(uint16_t port, const std::string& name, std::string& err, std::string password)
 {
     leave("restart");
     if (!tr_->open(port, &err))
         return false;
     role_ = Role::Host;
+    password_ = std::move(password);
     my_id_ = 0;
     my_name_ = name;
     welcomed_ = true;
@@ -78,7 +88,7 @@ static void lookup_main(void* arg)
     delete ref;
 }
 
-bool Session::join(const std::string& addr, const std::string& name, std::string& err)
+bool Session::join(const std::string& addr, const std::string& name, std::string& err, std::string password)
 {
     leave("restart");
     Endpoint ep;
@@ -93,6 +103,7 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     if (!tr_->open(0, &err))
         return false;
     role_ = Role::Client;
+    password_ = std::move(password);
     my_name_ = name;
     welcomed_ = false;
     welcome_world_ = 0;
@@ -135,6 +146,7 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
     h.resume_world = resume_world;
+    if (!password_.empty()) h.join_proof = join_proof(password_, p->conn.conn_id);
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
@@ -199,6 +211,7 @@ void Session::leave(const char* why)
     retired_.clear();
     tr_->close();
     role_ = Role::None;
+    password_.clear();
     welcomed_ = false;
     welcome_world_ = 0;
     logf(cb, "session closed (%s)", why);
@@ -461,6 +474,14 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             if (!h.read(r))
                 return;
             Reject rej;
+            if (!password_.empty() && h.join_proof != join_proof(password_, p.conn.conn_id)) {
+                rej.reason = REJ_VERSION; // older clients still display the rejection text
+                rej.text = "Incorrect or missing server password.";
+                Writer w;
+                rej.write(w);
+                p.conn.send_reliable(MSG_REJECT, w);
+                return;
+            }
             if (!campaign_profile.empty() && campaign_profile != h.campaign_profile) {
                 rej.reason = REJ_VERSION;
                 rej.text = h.campaign_profile.empty() ? "This host needs SporeCoop Lineages." :
@@ -781,6 +802,8 @@ void Session::update()
             rep.info = lobby_info;
             rep.has_id = g_fix.lan_dedup;
             rep.host_id = lan_id_;
+            rep.scaling = lobby_scaling;
+            rep.settings = (paced_world_transfer ? 1 : 0) | (password_.empty() ? 0 : 2);
             Writer w;
             rep.write(w);
             tr_->send_to(from, w.data.data(), w.size());
