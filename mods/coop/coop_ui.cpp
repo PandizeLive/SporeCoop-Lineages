@@ -528,11 +528,17 @@ static void show_eye(const char* name, bool hidden)
         text(eye.button, hidden ? "Show" : "Hide");
 }
 
-static void privacy_button(std::vector<Win>& page, const char* name, Rect area, Win field, bool hidden)
+static void set_field_hidden(Win field, bool hidden)
 {
     D.hidden_fields[field] = hidden;
+    sui::set_edit_masked(field, hidden);
+}
+
+static void privacy_button(std::vector<Win>& page, const char* name, Rect area, Win field, bool hidden)
+{
+    set_field_hidden(field, hidden);
     eye_button(page, name, area, [field] {
-        D.hidden_fields[field] = !D.hidden_fields[field];
+        set_field_hidden(field, !D.hidden_fields[field]);
         g_dirty = true;
     });
 }
@@ -683,8 +689,7 @@ static void do_report()
         return; // one is being made
     for (Win password : {D.join_password, D.host_password}) {
         if (!password) continue;
-        D.hidden_fields[password] = true;
-        show(password, false);
+        set_field_hidden(password, true);
     }
     g_dirty = true;
     g_report_shot = A.report_shot ? A.report_shot() : 0;
@@ -1114,7 +1119,6 @@ static void refresh_connect()
         {"hidejoinpassword", D.join_password}, {"hidehostport", D.port_edit}, {"hidehostpassword", D.host_password}};
     for (const auto& [button, field] : privacy) {
         const bool hidden = D.hidden_fields[field];
-        show(field, !hidden);
         show_eye(button, hidden);
     }
     show_eye("hidehostaddresses", !D.show_host_addresses);

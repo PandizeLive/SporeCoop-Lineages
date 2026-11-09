@@ -22,19 +22,23 @@ bool set_borderless(bool enabled)
     g_borderless = enabled;
     if (!g_sub_hwnd || !g_windowed)
         return !enabled; // the windowed renderer is required
-    if (enabled == g_borderless_applied)
+    if (!enabled && !g_borderless_applied)
         return true;
     if (enabled) {
         MONITORINFO monitor{sizeof(MONITORINFO)};
-        if (!GetMonitorInfoW(MonitorFromWindow(g_sub_hwnd, MONITOR_DEFAULTTONEAREST), &monitor) ||
-            !GetWindowPlacement(g_sub_hwnd, &g_window_placement))
+        if (!GetMonitorInfoW(MonitorFromWindow(g_sub_hwnd, MONITOR_DEFAULTTONEAREST), &monitor))
             return false;
-        g_window_style = GetWindowLongPtrW(g_sub_hwnd, GWL_STYLE);
-        SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, g_window_style & ~WS_OVERLAPPEDWINDOW);
+        const LONG_PTR style = GetWindowLongPtrW(g_sub_hwnd, GWL_STYLE);
+        if (!g_borderless_applied) {
+            if (!GetWindowPlacement(g_sub_hwnd, &g_window_placement))
+                return false;
+            g_window_style = style;
+        }
+        SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
         const RECT& r = monitor.rcMonitor;
         if (!SetWindowPos(g_sub_hwnd, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top,
                           SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOZORDER)) {
-            SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, g_window_style);
+            SetWindowLongPtrW(g_sub_hwnd, GWL_STYLE, style);
             return false;
         }
     } else {
@@ -48,13 +52,29 @@ bool set_borderless(bool enabled)
     return true;
 }
 
+void maintain_borderless()
+{
+    if (!g_borderless || !g_windowed || !g_sub_hwnd || IsIconic(g_sub_hwnd))
+        return;
+    RECT window{};
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    if (!GetWindowRect(g_sub_hwnd, &window) ||
+        !GetMonitorInfoW(MonitorFromWindow(g_sub_hwnd, MONITOR_DEFAULTTONEAREST), &monitor))
+        return;
+    if (!g_borderless_applied || (GetWindowLongPtrW(g_sub_hwnd, GWL_STYLE) & WS_OVERLAPPEDWINDOW) ||
+        !EqualRect(&window, &monitor.rcMonitor))
+        run_outside_frame([] {
+            if (g_borderless && g_windowed && !IsIconic(g_sub_hwnd))
+                set_borderless(true);
+        });
+}
+
 void borderless_video_mode(bool windowed)
 {
     g_windowed = windowed;
     if (!windowed)
         g_borderless_applied = false; // the renderer owns the exclusive fullscreen style
-    if (windowed && g_borderless)
-        run_outside_frame([] { set_borderless(g_borderless); });
+    maintain_borderless();
 }
 
 std::atomic<bool> g_vcursor_active{false};

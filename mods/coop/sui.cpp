@@ -360,6 +360,13 @@ Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_
     return w;
 }
 
+void set_edit_masked(Win w, bool masked)
+{
+    constexpr int kPasswordMode = 0x80;
+    if (void* e = as_edit(w))
+        vcall<void>(e, 0x44 / 4, kPasswordMode, masked); // SetTextEditFlag
+}
+
 std::string edit_text(Win w)
 {
     void* e = as_edit(w);

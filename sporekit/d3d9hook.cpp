@@ -196,8 +196,10 @@ static void frame_common()
     // the game sizes/centers its window around device resets: place test windows afterwards
     if (g_frame == 2 || g_frame == 120 || g_frame == 600)
         run_outside_frame(place_test_window);
-    if (g_frame % 10 == 1)
+    if (g_frame % 10 == 1) {
         apply_frame_limit();
+        maintain_borderless();
+    }
 
     vcursor_tick();
     cheats_flush_pending();

@@ -89,6 +89,7 @@ void set_label_color(Win label, uint32_t argb);
 // a one-line text field
 Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len,
               bool draw_background = true);
+void set_edit_masked(Win edit, bool masked);
 std::string edit_text(Win edit);
 void set_edit_text(Win edit, const std::string& text);
 

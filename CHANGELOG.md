@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages37-dev] - 2026-11-09
+
+- Keep hidden connection fields editable with Spore's native masking.
+- Reapply saved borderless mode if Spore restores window borders or resizes
+  the game window during startup or a graphics reset.
+
 ## [0.7.3.6-lineages36-dev] - 2026-11-09
 
 - Add the framed Co-op server browser and connection panels, saved server
