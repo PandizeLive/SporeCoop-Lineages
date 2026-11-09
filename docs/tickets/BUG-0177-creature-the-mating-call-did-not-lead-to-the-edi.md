@@ -28,7 +28,22 @@ Copied from docs/known-issues.md, where the entry stays up to date:
   editor through the stage switch, not the creature mating call.
 
 ## Root cause
-See the report (observed vs inferred as marked there).
+A hosted 37-dev reproduction in a disposable copy of the reported campaign
+showed the Mating Call animation and nest marker, with no heart marker over a
+nestmate. Clicking a nearby nestmate reached the avatar's native mating
+behavior (Steam/GOG 2024 code, preferred address 0x00D6D560). Runtime sampling
+showed phase 1 with a resolved animal target. The target stayed in action
+0x71BE644C instead of entering the reply action 0x91BFFC22 that advances the
+native behavior to phase 2. The egg-laying cinematic did not start and the
+game stayed in Creature. The reason the target never entered the reply action
+is still open. A separate run with Co-op unloaded reached phase 2, but the test ended before confirming editor entry. The two runs did not establish that they selected an equivalent nestmate.
+
+In a later same-save comparison the native click classifier found an eligible
+mate in upstream 0.7.8 and both Lineages builds. Dispatching that action opened
+the Creature editor on upstream 0.7.8 and in a separate 37-dev run. In the
+30-dev comparison the native action stayed in Creature without starting the
+egg cinematic. This establishes intermittent failure before editor submission
+and does not identify a regression commit or explain the missing local cue.
 
 ## Fix
 Not fixed yet.
@@ -39,3 +54,4 @@ Not fixed yet.
 - 2026-10-24: first recorded in docs/known-issues.md.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached: how a player answers the Creature mating call (which object to click after Backspace) is unexplored reverse engineering. Left open.
+- 2026-11-09: reproduced the native mating behavior waiting for its partner in a 37-dev hosted QA copy.

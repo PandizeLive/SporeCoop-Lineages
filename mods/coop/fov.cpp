@@ -88,7 +88,7 @@ static bool __fastcall begin_view(void* viewer, void*)
     }
     constexpr float half_rad_to_deg = 114.591559f;
     g_vanilla = g_effective = std::atan(y) * half_rad_to_deg;
-    if (!g_steps || !g_input_allowed()) return original_begin(viewer);
+    if (!g_steps) return original_begin(viewer);
     // Preserve projection aspect and clipping planes through the native setter.
     g_effective = std::min(150.f, g_vanilla + 3.f * g_steps);
     if (g_effective <= g_vanilla) {

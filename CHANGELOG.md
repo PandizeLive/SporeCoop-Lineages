@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages38-dev] - 2026-11-09
+
+- Add a temporary clickable Mate marker that uses Spore's mating sequence (BUG-0177).
+- Let Backspace edit the frame rate cap without closing Graphic Settings.
+- Give full stage names enough room in the lobby roster.
+- Allow Alt+Scroll in the Creature follow camera while the simulation is paused.
+- Replace the preview toggle with Check for Updates.
+
 ## [0.7.3.6-lineages37-dev] - 2026-11-09
 
 - Keep hidden connection fields editable with Spore's native masking.

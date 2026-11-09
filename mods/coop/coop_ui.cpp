@@ -920,8 +920,8 @@ static void build_dialog()
         if (D.difficulty_value[i]) sui::set_font(D.difficulty_value[i], D.font_button);
     }
     D.host_btn = add_button(P, "host", {393, 497, 718, 534}, "Start Server", do_host);
-    D.status = add_label(P, {40, 535, 548, 558}, "", kYellow);
-    D.update_btn = add_button(P, "update", {565, 536, 720, 576}, "", [] {
+    D.status = add_label(P, {40, 535, 503, 558}, "", kYellow);
+    D.update_btn = add_button(P, "update", {515, 536, 720, 576}, "", [] {
         if (A.update_do) A.update_do();
         g_dirty = true;
     });
@@ -976,10 +976,10 @@ static void build_dialog()
     D.preview_status = add_label(L, {40, 529, 438, 548}, "", kDim);
     for (int i = 0; i < 4; i++) {
         float y = 163.f + i * 30;
-        D.row_name[i] = add_label(L, {45, y, 211, y + 26}, "", kWhite);
-        D.row_stage[i] = add_label(L, {213, y, 291, y + 26}, "", kWhite);
-        D.row_ping[i] = add_label(L, {293, y, 364, y + 26}, "", kDim);
-        D.row_ready[i] = add_label(L, {365, y, 385, y + 26}, "", kDim);
+        D.row_name[i] = add_label(L, {45, y, 185, y + 26}, "", kWhite);
+        D.row_stage[i] = add_label(L, {187, y, 320, y + 26}, "", kWhite);
+        D.row_ping[i] = add_label(L, {322, y, 374, y + 26}, "", kDim);
+        D.row_ready[i] = add_label(L, {375, y, 390, y + 26}, "", kDim);
     }
     D.world = add_label(L, {40, 292, 720, 316}, "", kYellow);
     add_label(L, {40, 316, 720, 338}, T("Session Chat", "Чат сессии"), kGold);
@@ -1529,7 +1529,8 @@ static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
         g_graphics_typing = false;
         return false;
     }
-    if (message != WM_LBUTTONDOWN && !(g_graphics_typing && message == WM_CHAR))
+    const bool backspace = value == VK_BACK && (message == WM_KEYDOWN || message == WM_KEYUP);
+    if (message != WM_LBUTTONDOWN && !(g_graphics_typing && (message == WM_CHAR || backspace)))
         return false;
     if (sui::find(sui::main_window(), 0xC00F0111) != g_graphics_fps) {
         g_graphics_typing = false;
@@ -1538,13 +1539,17 @@ static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
     if (message == WM_LBUTTONDOWN) {
         const auto area = sui::screen_rect(g_graphics_fps);
         g_graphics_typing = x >= area.x1 && x < area.x2 && y >= area.y1 && y < area.y2;
-    }
-    if (!g_graphics_typing || message != WM_CHAR || value == VK_ESCAPE || value == VK_RETURN)
         return false;
+    }
+    if (value == VK_ESCAPE || value == VK_RETURN)
+        return false;
+    // Spore handles Backspace as menu navigation on keydown, before WM_CHAR.
+    if (message == WM_KEYUP || (message == WM_CHAR && value == VK_BACK))
+        return true;
     auto text = sui::edit_text(g_graphics_fps);
-    if (value == VK_BACK && !text.empty())
+    if (backspace && !text.empty())
         text.pop_back();
-    else if (value >= '0' && value <= '9' && text.size() < 3)
+    else if (message == WM_CHAR && value >= '0' && value <= '9' && text.size() < 3)
         text += (char)value;
     sui::set_edit_text(g_graphics_fps, text);
     return true;

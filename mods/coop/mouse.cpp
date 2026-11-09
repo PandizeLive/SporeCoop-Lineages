@@ -12,6 +12,7 @@ static HHOOK g_hook;
 static HWND g_wnd;
 static bool (*g_alt_wheel)(int);
 static bool (*g_graphics_input)(unsigned, uintptr_t, int, int);
+static bool (*g_mate_click)(int, int);
 static bool (*g_list_input)(unsigned, uintptr_t, int, int);
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
@@ -46,6 +47,10 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
             if (m->hwnd != g_wnd)
                 MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            if (g_mate_click && g_mate_click(p.x, p.y)) {
+                m->message = WM_NULL;
+                return CallNextHookEx(g_hook, code, wp, lp);
+            }
             g_x = p.x;
             g_y = p.y;
             g_clicks = g_clicks + 1;
@@ -64,6 +69,7 @@ void install(const void* game_window)
 
 void set_alt_wheel(bool (*handler)(int delta)) { g_alt_wheel = handler; }
 void set_graphics_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_graphics_input = handler; }
+void set_mate_click(bool (*handler)(int, int)) { g_mate_click = handler; }
 void set_list_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_list_input = handler; }
 
 void shutdown()

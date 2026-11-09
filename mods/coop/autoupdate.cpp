@@ -15,7 +15,7 @@ static SkMod* M;
 static std::string g_version, g_url;
 static bool g_enabled;
 
-enum State { Idle, Checking, UpToDate, Available, Downloading, Ready, Failed };
+enum State { Idle, Checking, UpToDate, Available, Downloading, Ready, Failed, CheckFailed };
 static std::mutex g_mu;
 static State g_state = Idle;
 static upd::Release g_rel;
@@ -97,7 +97,7 @@ static void check_work(bool exit_inside, void* self)
     if (!upd::latest_release(g_url, r, err)) {
         if (!g_unloaded)
             H->log(M, SK_INFO, "update check: %s", err.c_str());
-        set(Idle); // offline is normal: no message
+        set(CheckFailed, err);
     } else {
         std::lock_guard<std::mutex> l(g_mu);
         g_rel = r;
@@ -219,11 +219,19 @@ bool ui(std::string& line, std::string& button)
         line = "Update failed: " + g_err;
         button = "Try again";
         return true;
+    case Checking:
+        line = "Checking for updates...";
+        return true;
+    case CheckFailed:
+        line = "Could not check for updates. Try again.";
+        button = "Check for Updates";
+        return true;
     case Idle:
     case UpToDate:
-        if (g_url != upd::kLineagesPreviewUrl) return false;
-        line = g_enabled ? "Lineages preview updates are on" : "Lineages preview updates are off";
-        button = g_enabled ? "Preview Off" : "Preview On";
+        if (g_url.empty()) return false;
+        if (g_state == UpToDate)
+            line = "Lineages is up to date";
+        button = "Check for Updates";
         return true;
     default:
         return false;
@@ -235,14 +243,8 @@ void start_update()
     bool check = false;
     {
         std::lock_guard<std::mutex> l(g_mu);
-        if ((g_state == Idle || g_state == UpToDate) && g_url == upd::kLineagesPreviewUrl && !g_busy) {
-            const bool next = !g_enabled;
-            if (!H->config_set_str || H->config_set_str(M, "update", "check", next ? "1" : "0") != 0)
-                return;
-            g_enabled = next;
-            check = next;
-            if (!check) return;
-        } else if (g_state != Available && g_state != Failed) {
+        check = g_state == Idle || g_state == UpToDate || g_state == CheckFailed;
+        if (check ? g_url.empty() : g_state != Available && g_state != Failed) {
             return;
         }
         g_told_failed = false;
@@ -264,7 +266,7 @@ std::string command(const std::string& arg)
         start_update();
         return "updating";
     }
-    static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed"};
+    static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed", "check failed"};
     std::lock_guard<std::mutex> l(g_mu);
     return std::string("update: ") + names[g_state] + " running=" + g_version + " latest=" + g_rel.version +
            (g_rel.from_web ? " via=page" : "") +
