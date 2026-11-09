@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages39-dev] - 2026-11-09
+
+- Restore native mating hearts and allow the selected Creature-stage mate to respond just beyond its nest radius (BUG-0177).
+
 ## [0.7.3.6-lineages38-dev] - 2026-11-09
 
 - Add a temporary clickable Mate marker that uses Spore's mating sequence (BUG-0177).

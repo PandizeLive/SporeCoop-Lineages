@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages38-dev"
+#define COOP_VERSION "0.7.3.6-lineages39-dev"
 #endif
 
 #include <winsock2.h>
@@ -2151,7 +2151,7 @@ int c_exittest(void*, int argc, const char* const* argv, SkOut* out)
 }
 
 void menu_tick(double now);
-void mate_marker_tick(double now);
+void mate_hearts_tick(double now);
 
 // ---- diagnostics (SporeKit 0.3.4+: crash / problem reports, docs/02-modkit.md 2.7) ----
 // the co-op state for a report, built on the frame (a crash report must not read game objects):
@@ -2743,7 +2743,7 @@ void on_frame(void*, int, void*)
     vote_action_tick(now);
     coop_ui::tick();
     menu_tick(now);
-    mate_marker_tick(now);
+    mate_hearts_tick(now);
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     else
@@ -3061,108 +3061,124 @@ COOP_FIX("core.status_block", "BUG-0155", g_status_block_fix, "ui: the status te
 std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
 
 static uintptr_t g_mate_classify;
-static void (SK_THISCALL* g_creature_click)(void*, void*);
-static void* g_marked_mate;
-static net::Vec3 g_mate_marker;
-static int g_mate_x, g_mate_y;
-static bool g_mate_on_screen;
+static void* (SK_THISCALL* g_get_animal_target)(void*);
+static float (*g_native_mate_response)(void*);
 
-static bool mate_marker_allowed()
+static float mate_response(void* creature)
 {
-    return g_mate_classify && g_creature_click && g_sess.connected() && game::in_creature_stage() &&
-           !game_busy() && !g_menu_up && !coop_ui::is_open() && !g_text_up && g_local;
+    const float score = g_native_mate_response(creature);
+    if (score > 0 || !g_sess.connected() || !game::in_creature_stage() ||
+        !g_local || g_local != game::avatar() || creature == g_local ||
+        game::is_dead(g_local) || game::is_dead(creature) || game::is_puppet(creature))
+        return score;
+
+    // Match the game's mating actions. Only help the nestmate the player has
+    // actually selected, after the native input has started the approach.
+    constexpr uint32_t mating = 0x02D852F0u, mating_at_nest = 0xD23FE7CAu;
+    const auto controller = skg::field<void*>(g_local, 0xB4C);
+    const auto action = controller ? skg::field<uint32_t>(controller, 0x1D8) : 0;
+    if ((action != mating && action != mating_at_nest) || g_get_animal_target(g_local) != creature ||
+        skg::cdecl_call<int>(g_mate_classify, creature) != 9)
+        return score;
+
+    const auto herd = game::herd_of(g_local);
+    if (!herd || game::herd_of(creature) != herd)
+        return score;
+    const auto nest = game::herd_nest(herd);
+    net::Vec3 center;
+    if (!nest || !game::object_position(nest, center))
+        return score;
+
+    // Tolerate the player's collision edge and the selected mate's short
+    // wander past the nest. Spore still positions both creatures.
+    const float radius = skg::vcall<float>((uint8_t*)nest + 0x34, 0x74 / 4) +
+                         skg::vcall<float>((uint8_t*)creature + 0xC0, 0x74 / 4);
+    constexpr float mate_wander_margin = 5.f;
+    const float mate_distance = net::dist(center, game::position(creature));
+    const float avatar_distance = net::dist(center, game::position(g_local));
+    constexpr float avatar_edge_margin = 0.25f;
+    if (radius > 0 && avatar_distance < radius + avatar_edge_margin &&
+        mate_distance < radius + mate_wander_margin &&
+        (avatar_distance >= radius || mate_distance >= radius))
+        return 1.f;
+    return score;
 }
 
-static void* find_mate(net::Vec3* pos = nullptr, void* marked = nullptr)
+static bool (*g_native_mate_step)(void*, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uint32_t*);
+static bool (SK_THISCALL* g_mate_position_reached)(void*);
+
+static bool mate_step(void* avatar, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5, uint32_t* state)
 {
-    struct Search {
-        uint32_t species;
-        net::Vec3 origin;
-        void* marked;
-        float range = 40.f;
-        void* mate = nullptr;
-        net::Vec3 pos{};
-    } search{game::species_instance(g_local), game::position(g_local), marked};
-    game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
-        auto& search = *static_cast<Search*>(ctx);
-        if ((search.marked && creature != search.marked) || noun != 0x18EB45Eu || creature == g_local ||
-            game::is_puppet(creature) || !game::object_alive(creature) ||
-            game::species_instance(creature) != search.species)
-            return true;
-        const auto pos = game::position(creature);
-        const float distance = net::dist(search.origin, pos);
-        // Action 9 is the game's native mating click, including its eligibility checks.
-        if (distance < search.range && skg::cdecl_call<int>(g_mate_classify, creature) == 9) {
-            search.range = distance;
-            search.mate = creature;
-            search.pos = pos;
+    if (avatar == g_local && g_sess.connected()) {
+        static double retry_at = 0;
+        static unsigned retries = 0;
+        if (state[0] != 2 || state[1] != 1) {
+            retry_at = 0;
+            if (state[0] != 2)
+                retries = 0;
+        } else {
+            const double now = H->time_seconds();
+            if (!retry_at)
+                retry_at = now + 4.0;
+            if (now >= retry_at && retries < 2) {
+                ++retries;
+                retry_at = now + 4.0;
+                void* mate = g_get_animal_target(avatar);
+                if (mate && !game::is_dead(mate) && !game::is_puppet(mate) &&
+                    game::herd_of(mate) == game::herd_of(avatar) &&
+                    (!g_mate_position_reached((uint8_t*)avatar + 0xC0) ||
+                     !g_mate_position_reached((uint8_t*)mate + 0xC0))) {
+                    // The mate already responded, but its roaming can replace
+                    // the approach goal. Ask Spore to stage the pair again.
+                    trace::line("creature", "restarting the paired mating approach (retry %u)", retries);
+                    state[1] = 0;
+                }
+            }
         }
-        return true;
-    }, &search);
-    if (pos && search.mate)
-        *pos = search.pos;
-    return search.mate;
-}
-
-static bool mate_marker_click(int x, int y)
-{
-    if (!g_mate_on_screen || !g_marked_mate || !mate_marker_allowed())
-        return false;
-    RECT client{};
-    int sw, sh;
-    H->screen_size(&sw, &sh);
-    if (GetClientRect((HWND)H->game_window(), &client) && client.right > 0 && client.bottom > 0) {
-        x = MulDiv(x, sw, client.right);
-        y = MulDiv(y, sh, client.bottom);
     }
-    if (std::abs(x - g_mate_x) > 24 || y < g_mate_y - 32 || y > g_mate_y + 6)
-        return false;
-    H->run_outside_frame([](void* marked) {
-        if (!mate_marker_allowed())
-            return;
-        // Action 9 does not use the input strategy receiver. Resolve and classify
-        // the marked creature again before invoking that branch of the native click.
-        if (void* mate = find_mate(nullptr, marked))
-            g_creature_click(nullptr, mate);
-    }, g_marked_mate);
-    return true;
+    return g_native_mate_step(avatar, a2, a3, a4, a5, state);
 }
 
-void mate_marker_tick(double now)
+static void* (SK_THISCALL* g_get_creature_effect)(void*, uint32_t);
+static void* (SK_THISCALL* g_start_creature_effect)(void*, bool, uint32_t, uint32_t);
+
+void mate_hearts_tick(double now)
 {
     static double next_scan = 0;
-    if (!mate_marker_allowed()) {
-        g_marked_mate = nullptr;
+    if (!g_mate_classify || !g_get_creature_effect || !g_start_creature_effect ||
+        !g_sess.connected() || !g_local || !game::in_creature_stage() || game_busy()) {
         next_scan = 0;
         return;
     }
-    if (now >= next_scan) {
-        next_scan = now + 0.2;
-        g_marked_mate = find_mate(&g_mate_marker);
-    }
-}
+    if (now < next_scan)
+        return;
+    next_scan = now + 1.0;
 
-static void draw_mate_marker(int sw, int sh)
-{
-    if (!g_marked_mate || g_mode != modes::kCreature)
+    struct LocalCreature {
+        void* herd;
+        net::Vec3 position;
+    } local{game::herd_of(g_local), game::position(g_local)};
+    if (!local.herd || !game::herd_nest(local.herd))
         return;
-    const auto& p = g_mate_marker;
-    const float len = net::dist(p, {});
-    const float up = len > 1 ? 1.3f / len : 0;
-    float world[] = {p.x * (1 + up), p.y * (1 + up), p.z * (1 + up)};
-    float screen[2];
-    if (!H->world_to_screen(world, screen) || screen[0] < 24 || screen[0] > sw - 24 || screen[1] < 32 || screen[1] > sh)
-        return;
-    g_mate_on_screen = true;
-    const int x = g_mate_x = (int)screen[0], y = g_mate_y = (int)screen[1];
-    partner_marker::draw(H, x, y - 4, 0, 1, 14, 0xFFFFA4D6);
-    H->overlay_text(x - 15, y - 29, 0xFF000000, "Mate");
-    H->overlay_text(x - 16, y - 30, 0xFFFFBBDD, "Mate");
+    game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
+        auto& local = *static_cast<LocalCreature*>(ctx);
+        if (noun != 0x18EB45Eu || creature == g_local || game::is_puppet(creature) ||
+            !game::object_alive(creature) || game::is_dead(creature) || game::herd_of(creature) != local.herd ||
+            net::dist(local.position, game::position(creature)) >= 40.f)
+            return true;
+
+        // BUG-0177: native nest setup can mark a mate eligible without its
+        // heart effect. Restore the original effect for native mating targets.
+        constexpr uint32_t mating_hearts = 0x9005E011u;
+        if (skg::cdecl_call<int>(g_mate_classify, creature) == 9 &&
+            !g_get_creature_effect(creature, mating_hearts))
+            g_start_creature_effect(creature, true, mating_hearts, mating_hearts);
+        return true;
+    }, &local);
 }
 
 void on_overlay(void*, int, void*)
 {
-    g_mate_on_screen = false;
     modes::CellScope cell_scope; // BUG-0271
     if (!g_overlay)
         return;
@@ -3174,7 +3190,6 @@ void on_overlay(void*, int, void*)
         g_menu_hidden++;
     if (labels) {
         draw_marks();
-        draw_mate_marker(sw, sh);
         cellsync::draw_overlay();
         spacecoop::draw_overlay();
         draw_owner_tags();
@@ -5337,9 +5352,18 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return (game_busy() & ~busy::kPaused) == 0 && !coop_ui::is_open();
         });
     g_mate_classify = H->sym("SporeCoop::CreatureClickAction");
-    g_creature_click = reinterpret_cast<decltype(g_creature_click)>(H->sym("SporeCoop::CreatureClickTarget"));
-    if (g_mate_classify && g_creature_click)
-        mouse::set_mate_click(mate_marker_click);
+    g_get_animal_target = reinterpret_cast<decltype(g_get_animal_target)>(
+        H->sym("Simulator::cCreatureBase::GetAnimalTarget"));
+    if (const auto response = H->sym("SporeCoop::CreatureMateResponse"); response && g_mate_classify && g_get_animal_target)
+        H->hook_create(M, (void*)response, (void*)mate_response, (void**)&g_native_mate_response);
+    g_mate_position_reached = reinterpret_cast<decltype(g_mate_position_reached)>(
+        H->sym("SporeCoop::CreatureMatePositionReached"));
+    if (const auto step = H->sym("SporeCoop::CreatureMateStep"); step && g_get_animal_target && g_mate_position_reached)
+        H->hook_create(M, (void*)step, (void*)mate_step, (void**)&g_native_mate_step);
+    g_get_creature_effect = reinterpret_cast<decltype(g_get_creature_effect)>(
+        H->sym("Simulator::cCreatureBase::GetEffectFromPools"));
+    g_start_creature_effect = reinterpret_cast<decltype(g_start_creature_effect)>(
+        H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2"));
     world::set_playing_probe([] { return g_local != nullptr; });
     world::set_place_probe([] { return g_world; });
     world::set_host_stage_probe([] {

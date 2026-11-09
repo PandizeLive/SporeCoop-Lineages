@@ -35,8 +35,7 @@ behavior (Steam/GOG 2024 code, preferred address 0x00D6D560). Runtime sampling
 showed phase 1 with a resolved animal target. The target stayed in action
 0x71BE644C instead of entering the reply action 0x91BFFC22 that advances the
 native behavior to phase 2. The egg-laying cinematic did not start and the
-game stayed in Creature. The reason the target never entered the reply action
-is still open. A separate run with Co-op unloaded reached phase 2, but the test ended before confirming editor entry. The two runs did not establish that they selected an equivalent nestmate.
+game stayed in Creature. A separate run with Co-op unloaded reached phase 2, but the test ended before confirming editor entry. The two runs did not establish that they selected an equivalent nestmate.
 
 In a later same-save comparison the native click classifier found an eligible
 mate in upstream 0.7.8 and both Lineages builds. Dispatching that action opened
@@ -46,9 +45,35 @@ egg cinematic. This establishes intermittent failure before editor submission
 and does not identify a regression commit or explain the missing local cue.
 
 ## Fix
-Not fixed yet.
+38-dev shipped a temporary clickable Mate marker. The next patch removes it
+and starts Spore's own pooled heart effect when a living, eligible nestmate
+from the local player's herd lacks it. A runtime check confirmed that the
+eligible mate in the report had no instance of effect 0x9005E011.
+
+A separate response trace caught a stalled click with the player 1.61 m from
+the nest and the selected mate 11.30 m away. The native response radius was
+9.67 m, so the mate kept scoring zero. The patch allows up to five additional
+metres of wandering for the selected, native-eligible nestmate while the
+player is within 0.25 m of the original radius and performing the native mating action.
+A separate run reached phase 2, substep 1, but the mate resumed roaming and
+Spore kept waiting for the paired movement to finish. The patch can repeat
+Spore's staging step twice, four seconds apart, if either participant is
+still waiting to reach its position.
+
+The native approach, egg cinematic, editor request and multiplayer vote still
+handle the sequence.
 
 ## Verification
+
+An isolated Steam host loaded a copy of the affected save. It displayed
+Spore's mate hearts, played exactly one egg cinematic after the native
+click handler, and entered Editor mode with zero logged faults. A second
+run moved the mate to 10.88 m from the nest before dispatch, beyond the
+9.67 m baseline, and also entered the editor with zero logged faults.
+The final build passed a normal mouse click in the same save. The log
+recorded both paired-approach retries, one egg cinematic, and zero faults,
+and the Creature editor rendered. Guest mating was outside this reproduction.
+
 
 ## History
 - 2026-10-24: first recorded in docs/known-issues.md.

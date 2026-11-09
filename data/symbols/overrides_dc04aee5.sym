@@ -634,4 +634,6 @@ SporeCoop::PngEncoder_WriteImage=0x0068E190 ; verified native SavePNG caller 5FA
 
 SporeCoop::EditorBudgetMsg_vtable=0x013EB844 ; verified (Ghidra 2026-11-04, GOG 2024, BUG-0560) vtable of the 0x40-byte refcounted message the Cell editor request 0xE84600 posts after EditorRequest::Submit (IMessageManager vt 0x18, id 0x90A03FDF): +4 refcount, +8 the DNA budget (DNAForFood(food) - spent; 1000 from the debug key), +0x10 0, +0x18 1, +0x30 id; cEditor::HandleMessage 0x592FC6 sets the editor's DNA ([cEditor+0x434] vt 0x24(0, +8)) once its listener is in (cEditor::OnEnter 0x58E6D0)
 SporeCoop::CreatureClickAction=0x00D30830 ; verified cdecl(game object), ret int: classifies the Creature input target, action 9 dispatches the native mating stimulus at D331A3 (BUG-0177, checked in Steam QA).
-SporeCoop::CreatureClickTarget=0x00D32FD0 ; verified thiscall(input strategy, game object), ret 4: Creature left-click dispatcher, called at D356A6, action 9 posts native mating stimuli (BUG-0177).
+SporeCoop::CreatureMateResponse=0x00D7DAB0 ; verified cdecl float(nestmate): returns 1 when the player and nestmate are in range for the native mating reply (BUG-0177).
+SporeCoop::CreatureMateStep=0x00D6D560 ; verified cdecl bool(actor, ..., state), six stack arguments; phase 2 stages the pair before the egg cinematic (BUG-0177).
+SporeCoop::CreatureMatePositionReached=0x00C42F80 ; verified thiscall bool(creature spatial component), checks completion of a native locomotion goal (BUG-0177).
