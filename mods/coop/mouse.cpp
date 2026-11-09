@@ -10,7 +10,7 @@ bool g_fix = true;
 COOP_FIX("map.click", "BUG-0090 BUG-0145", g_fix, "space: map name tags react only to clicks in the game window");
 static HHOOK g_hook;
 static HWND g_wnd;
-static bool (*g_alt_wheel)(int);
+static bool (*g_fov_wheel)(int);
 static bool (*g_graphics_input)(unsigned, uintptr_t, int, int);
 static bool (*g_list_input)(unsigned, uintptr_t, int, int);
 static volatile uint32_t g_clicks;
@@ -39,8 +39,9 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
         if (g_graphics_input && ours(m->hwnd) &&
             g_graphics_input(m->message, m->wParam, (short)LOWORD(m->lParam), (short)HIWORD(m->lParam)))
             m->message = WM_NULL;
-        if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_alt_wheel &&
-            (GetKeyState(VK_MENU) & 0x8000) && g_alt_wheel((short)HIWORD(m->wParam)))
+        if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_fov_wheel &&
+            ((LOWORD(m->wParam) & MK_CONTROL) || (GetKeyState(VK_CONTROL) & 0x8000)) &&
+            g_fov_wheel((short)HIWORD(m->wParam)))
             m->message = WM_NULL;
         if ((m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONDBLCLK) && ours(m->hwnd)) {
             POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
@@ -62,7 +63,7 @@ void install(const void* game_window)
     g_hook = SetWindowsHookExW(WH_GETMESSAGE, proc, nullptr, GetCurrentThreadId());
 }
 
-void set_alt_wheel(bool (*handler)(int delta)) { g_alt_wheel = handler; }
+void set_fov_wheel(bool (*handler)(int delta)) { g_fov_wheel = handler; }
 void set_graphics_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_graphics_input = handler; }
 void set_list_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_list_input = handler; }
 

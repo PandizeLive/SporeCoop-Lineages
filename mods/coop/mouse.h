@@ -16,8 +16,8 @@ extern bool g_fix;
 
 // install the hook (main thread; again after a hot reload). Safe to call every frame.
 void install(const void* game_window);
-// Return true to consume the shifted wheel event instead of native zoom.
-void set_alt_wheel(bool (*handler)(int delta));
+// Return true to consume the Ctrl+Scroll event instead of native zoom.
+void set_fov_wheel(bool (*handler)(int delta));
 void set_graphics_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
 void set_list_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
 // remove it (on_unload: the hook procedure lives in this DLL)

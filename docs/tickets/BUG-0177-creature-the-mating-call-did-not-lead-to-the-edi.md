@@ -80,3 +80,28 @@ and the Creature editor rendered. Guest mating was outside this reproduction.
 - 2026-10-27: ticket backfilled from docs/known-issues.md (every entry carries its ticket id, CLAUDE.md 1).
 - 2026-10-28: fix/w4-tests (wave 4): not reached: how a player answers the Creature mating call (which object to click after Backspace) is unexplored reverse engineering. Left open.
 - 2026-11-09: reproduced the native mating behavior waiting for its partner in a 37-dev hosted QA copy.
+- Follow-up after 39-dev: the player reported overlapping heart clouds and a
+  mate that only responded after it moved. A read-only check found one
+  eligible nestmate in an active adult player's herd. The same player had
+  +18 degrees of FOV. Spore's native cursor ray used the stock lens between
+  draws, while the visible position used the wide lens. The next build
+  aligns the ray with the visible lens and limits heart restoration to once
+  per continuous eligibility window.
+- A two-evolution QA run reached the adult state after the first editor.
+  Backspace marked the second mate, but the native click classifier returned
+  action 0 for it through the observation window. The live player, by contrast,
+  had one nestmate classified as action 9. Do not bypass the native rejection
+  until its specific gate has been identified.
+- In a copy of the post-edit checkpoint, the hatchling fallback grew the
+  avatar to age 1, but the native simulator input-block counter stayed at 1
+  even after walking away from the nest. Spore classified the nestmate's
+  click as action 0. The live adult had a zero counter and action 9.
+- Follow-up traced the simulator counter to native UI hover. In the QA
+  checkpoint it was 1 over the HUD and returned to 0 on a mouse move into
+  the world. The earlier keyboard movement left the virtual cursor at the
+  editor's Done-button coordinates. The native HUD lock is preserved.
+- The 40-dev Steam host candidate opened the Creature editor twice in one
+  session, with a native mating call and click dispatch each time. After
+  accepting the first editor, the test waited for adulthood and moved the
+  cursor into the world. The second mate classified as action 9, played one
+  egg cinematic and reached the editor with zero logged faults.

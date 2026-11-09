@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages40-dev] - 2026-11-09
+
+- Use Ctrl+Scroll for third-person field of view. Scroll down to widen and up to return to the native field of view.
+- Match world clicks to the widened view while preserving native zoom travel.
+- Prevent repeated restoration of the same Creature mating heart effect (BUG-0177).
+
 ## [0.7.3.6-lineages39-dev] - 2026-11-09
 
 - Restore native mating hearts and allow the selected Creature-stage mate to respond just beyond its nest radius (BUG-0177).

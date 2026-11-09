@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages39-dev"
+#define COOP_VERSION "0.7.3.6-lineages40-dev"
 #endif
 
 #include <winsock2.h>
@@ -3145,36 +3145,55 @@ static void* (SK_THISCALL* g_start_creature_effect)(void*, bool, uint32_t, uint3
 void mate_hearts_tick(double now)
 {
     static double next_scan = 0;
+    static uint32_t epoch = 0;
+    static std::vector<uint32_t> restored;
     if (!g_mate_classify || !g_get_creature_effect || !g_start_creature_effect ||
-        !g_sess.connected() || !g_local || !game::in_creature_stage() || game_busy()) {
+        !g_sess.connected() || !game::in_creature_stage()) {
         next_scan = 0;
+        restored.clear();
         return;
     }
-    if (now < next_scan)
+    if (const auto current = game::stage_epoch(modes::kCreature); current != epoch) {
+        epoch = current;
+        restored.clear();
+        next_scan = 0;
+    }
+    if (!g_local || game_busy() || now < next_scan)
         return;
     next_scan = now + 1.0;
 
     struct LocalCreature {
         void* herd;
         net::Vec3 position;
-    } local{game::herd_of(g_local), game::position(g_local)};
-    if (!local.herd || !game::herd_nest(local.herd))
+        std::vector<uint32_t> still_eligible;
+    } local{game::herd_of(g_local), game::position(g_local), {}};
+    if (!local.herd || !game::herd_nest(local.herd)) {
+        restored.clear();
         return;
+    }
     game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
         auto& local = *static_cast<LocalCreature*>(ctx);
         if (noun != 0x18EB45Eu || creature == g_local || game::is_puppet(creature) ||
             !game::object_alive(creature) || game::is_dead(creature) || game::herd_of(creature) != local.herd ||
-            net::dist(local.position, game::position(creature)) >= 40.f)
+            skg::cdecl_call<int>(g_mate_classify, creature) != 9)
             return true;
 
-        // BUG-0177: native nest setup can mark a mate eligible without its
-        // heart effect. Restore the original effect for native mating targets.
+        const auto serial = game::object_serial(creature);
+        if (std::find(restored.begin(), restored.end(), serial) != restored.end()) {
+            local.still_eligible.push_back(serial);
+            return true;
+        }
+
+        // BUG-0177: restore a missing native cue once per eligibility window.
+        // The effect can leave the pool before all its particles have faded.
         constexpr uint32_t mating_hearts = 0x9005E011u;
-        if (skg::cdecl_call<int>(g_mate_classify, creature) == 9 &&
-            !g_get_creature_effect(creature, mating_hearts))
-            g_start_creature_effect(creature, true, mating_hearts, mating_hearts);
+        if (net::dist(local.position, game::position(creature)) < 40.f &&
+            !g_get_creature_effect(creature, mating_hearts) &&
+            g_start_creature_effect(creature, true, mating_hearts, mating_hearts))
+            local.still_eligible.push_back(serial);
         return true;
     }, &local);
+    restored.swap(local.still_eligible);
 }
 
 void on_overlay(void*, int, void*)

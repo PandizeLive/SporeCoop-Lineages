@@ -17,6 +17,7 @@ static bool (*g_input_allowed)();
 static uintptr_t g_mode_manager, g_camera_manager, g_active_camera, g_perspective, g_view_window;
 static bool (__thiscall* original_begin)(void*);
 static void* (__thiscall* original_end)(void*);
+static bool (__thiscall* original_camera_to_point)(void*, float, float, void*, void*);
 static int g_steps, g_wheel_delta;
 static bool g_eligible;
 static float g_vanilla, g_effective;
@@ -61,7 +62,7 @@ static bool third_person(void* manager)
     const auto mode = game::mode_id();
     const auto id = skg::thiscall<uint32_t>(g_active_camera, manager);
     // Creature and stock Adventure play both use this follow camera. The
-    // Adventure briefing uses a separate camera and must ignore Alt+Scroll.
+    // Adventure briefing uses a separate camera and must ignore Ctrl+Scroll.
     constexpr uint32_t follow_camera = 0xB03AF999u;
     return (mode == modes::kCreature || mode == modes::kScenario) && id == follow_camera;
 }
@@ -109,7 +110,30 @@ static void* __fastcall end_view(void* viewer, void*)
     return result;
 }
 
-static bool alt_wheel(int delta)
+static bool __fastcall camera_to_point(void* viewer, void*, float x, float y, void* origin, void* direction)
+{
+    // The scene uses a wider lens only while drawing. Match that lens when
+    // Spore turns a cursor position into a ray between draws.
+    if (g_steps && !g_projection.viewer) {
+        void* manager = active_manager();
+        void* camera = perspective_camera(viewer);
+        if (camera && viewer == viewer_of(manager) && third_person(manager)) {
+            constexpr float deg_to_half_rad = 0.00872664626f;
+            const float base_y = skg::field<float>(camera, 0x60);
+            if (base_y > 0 && std::isfinite(base_y)) {
+                const float wide = std::min(150.f, std::atan(base_y) / deg_to_half_rad + 3.f * g_steps);
+                const float scale = std::max(1.f, std::tan(wide * deg_to_half_rad) / base_y);
+                const float cx = skg::field<uint16_t>(camera, 0x78) + skg::field<uint16_t>(camera, 0x80) * 0.5f;
+                const float cy = skg::field<uint16_t>(camera, 0x7C) + skg::field<uint16_t>(camera, 0x84) * 0.5f;
+                x = cx + (x - cx) * scale;
+                y = cy + (y - cy) * scale;
+            }
+        }
+    }
+    return original_camera_to_point(viewer, x, y, origin, direction);
+}
+
+static bool fov_wheel(int delta)
 {
     void* manager = active_manager();
     if (!g_eligible || !manager || !third_person(manager) || !g_input_allowed()) return false;
@@ -130,14 +154,17 @@ bool init(const SkHost* host, SkMod* mod, bool (*input_allowed)())
     g_view_window = H->sym("App::cViewer::SetViewWindow");
     const auto begin = H->sym("App::cViewer::BeginUpdate");
     const auto end = H->sym("App::cViewer::EndUpdate");
-    if (!g_mode_manager || !g_camera_manager || !g_active_camera || !g_perspective || !g_view_window || !begin || !end)
+    const auto point = H->sym("App::cViewer::GetCameraToPoint");
+    if (!g_mode_manager || !g_camera_manager || !g_active_camera || !g_perspective || !g_view_window || !begin || !end || !point)
         return false;
-    if (H->hook_create(mod, reinterpret_cast<void*>(end), reinterpret_cast<void*>(end_view),
+    if (H->hook_create(mod, reinterpret_cast<void*>(point), reinterpret_cast<void*>(camera_to_point),
+                       reinterpret_cast<void**>(&original_camera_to_point)) != 0 ||
+        H->hook_create(mod, reinterpret_cast<void*>(end), reinterpret_cast<void*>(end_view),
                        reinterpret_cast<void**>(&original_end)) != 0 ||
         H->hook_create(mod, reinterpret_cast<void*>(begin), reinterpret_cast<void*>(begin_view),
                        reinterpret_cast<void**>(&original_begin)) != 0)
         return false;
-    mouse::set_alt_wheel(alt_wheel);
+    mouse::set_fov_wheel(fov_wheel);
     H->command_add(mod, "coop.fov", "coop.fov - show the local third-person FOV", [](void*, int, const char* const*, SkOut* out) {
         void* manager = active_manager();
         const auto id = manager ? skg::thiscall<uint32_t>(g_active_camera, manager) : 0u;
@@ -150,7 +177,7 @@ bool init(const SkHost* host, SkMod* mod, bool (*input_allowed)())
 
 void shutdown()
 {
-    mouse::set_alt_wheel(nullptr);
+    mouse::set_fov_wheel(nullptr);
     if (g_projection.viewer) restore(viewer_of(active_manager()));
 }
 
