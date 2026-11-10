@@ -47,6 +47,11 @@ A first-use Civilization tutorial also reached two native species capitals throu
 2. **Test three founders, then four.** Verify that every player keeps their species and settlements, and that larger rival counts remain playable from founding through victory.
 3. **Complete shared Adventures and cross-PC testing.** Synchronize the remaining objectives and rewards, verify the return to the campaign, and run the supported setup on separate PCs.
 
+Next, with the campaign work:
+
+- **Lower progress requirement: 75% per extra seat.** Each reserved seat adds 75% of the solo requirement instead of 100%.
+- **One difficulty slider for everything.** Difficulty Scaling currently changes only the progress requirement and Civilization military pressure. Enemy health and damage, hunger and city takeover effort use fixed per-seat values. The slider should scale all of them. Saved campaigns keep their current rules.
+
 Later, after the campaign is playable through Space:
 
 - **Cell creations in Cell stage.** Let cells made in the Cell editor, including partners' cells, appear as other species in Cell stage.
