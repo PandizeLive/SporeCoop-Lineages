@@ -1466,3 +1466,40 @@ added twelve, and the last group had three distinct native pool IDs
   edge and exclude stale/other-world peers. Cell knockout labels keep their own
   rescue indicator. Behind-camera direction in 3D uses the existing bottom-edge
   fallback; a full 3D bearing compass has not been implemented.
+
+## Lineages cells, extra predators and plant food (2026-11-10, feat/lineages-43)
+<a id="cell-lineage-cells"></a>
+
+BUG-9109, BUG-9110, BUG-9111. GOG 2024 code (Steam copy), Windows QA, `coop.pool species|lineage|enemy_groups`.
+
+* ✔ The model a native spawn gets is decided once, inside CreateCellObject, by
+  GetModelKeyForCellResource (hooked in modes.cpp). No call of it happens outside a population
+  marker while a game runs (`coop.pool lineage` outside=0 on the host): the graphics are built from
+  the cell's `+0xFC`, so a key answered at creation stays the cell's look and diet.
+* ✔ The cell resource reference passed to it (`+0x108`, `*(u32*)ref` = the .cell instance) is shared
+  by every cell of a species (same pointer).
+* ~ superseded (2026-11-10): "the .cell resource's model entries (`res+0x14`, count `+0x18`)" in
+  creations.md 2.2 does not hold for GetData's result: `+0x18` read 0 or garbage for creature species.
+  CORRECTION (2026-11-10, feat/lineages-43): the mod tells the player's own species by its model key
+  (native key = S+0x10), not by the model entry kind.
+* ✔ A native predator species (.cell 0BC1FF72, AI 0x1006, wild combatant) has a herbivore model
+  (B0B9BAFF: +0x1250 = 0, +0x1251 = 1). AI 0x1006 picks prey with the model's diet (IsPrey -> CanEat),
+  so a carnivore model on it hunts creatures and a herbivore model grazes: the model's mouth leads.
+* ✔ A cell creation's model is its bem record (type 0x1A99B06B) plus metadata (0x030BDEE3) in
+  EditorSaves.package; there is no record of type cll (0x3D97A8E4) although the key says cll.
+* ✔ cCellGFX::PreloadCreature 0xE64980: cdecl `void(u32 instance)`, plain ret (sym file).
+* ✔ Level 1 creature species of a new carnivore game had no loot table (`res+0xD4` = 0); bubbles
+  (cellType 4) had one. The loot table's data (GetData on `res+0xD4`) starts with a .cell-like id but
+  its entries did not resolve to cell types by `ref_for` + GetData (all read cellType 0): the layout is
+  not known. The mod learns part carriers at run time instead: a SpawnLoot whose new cells include a
+  cellType 6 (part token) marks the dead cell's .cell (one learned in the first 5 minutes of play).
+* ✔ The extra predators: `+0x58` is a scale, the collision radius is model radius (+0x1244) times it
+  (`cell_sphere`). Measured overlap at creation: 2 of 48 extras with the old spacing, 0 of 40 with the
+  sphere spacing. Top speeds sampled every frame: extras 2.6 m/s, natives 2.6 m/s (no flight seen).
+* An unpainted cell creation is drawn as a pale, see-through membrane in the pool (an NPC of it and the
+  player's own cell alike); a painted one is drawn with its paint.
+* Test recipe (Windows): `coop.host <port> <name> 4 100` in the galaxy menu, then
+  `tools/tests/new_stage_game.py cell -i N --slot K` (1440x1080 window), `coop.save` at once (a hot
+  reload keeps the rules only once the planet is saved); `coop.pool mate button`, a click on the heart
+  (721, 1018), `coop.pool mate tp` opens the cell editor; paint mode (776, 36), a pattern and a colour,
+  the green check (1416, 1058) saves a new creation.

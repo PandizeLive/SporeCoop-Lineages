@@ -591,3 +591,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9106](BUG-9106-cache-failed-import-never-retried.md) | fixed | bug | All | 2026-11-10 | 0.7.3.6-lineages42-dev | Lineages Cache: a creation whose import failed once never comes back |
 | [BUG-9107](BUG-9107-coop-window-tooltips.md) | fixed | feature | All | 2026-11-10 | 0.7.3.6-lineages42-dev | Co-op window: buttons have no tooltips |
 | [BUG-9108](BUG-9108-coop-ui-console-raw-window-address.md) | fixed | crash | All | 2026-11-10 | 0.7.3.6-lineages42-dev | coop.ui show/btn/font/tree used a typed number as a window address; a control id crashed the game |
+| [BUG-9109](BUG-9109-cell-extra-predators-crowd-and-fly.md) | fixed | bug | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Cell: extra predators per reserved seat crowd the pool and some fly off (spawned overlapping) |
+| [BUG-9110](BUG-9110-cell-omnivore-out-of-reach.md) | fixed | bug | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Cell: with extra predators an omnivore is almost out of reach (many bodies, little plant food) |
+| [BUG-9111](BUG-9111-player-cells-in-cell-stage.md) | fixed | feature | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Player cells (Lineages cells) appear in the Cell stage as native NPC species |

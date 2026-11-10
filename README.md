@@ -6,7 +6,7 @@ Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](h
 
 ## Playable today
 
-**Development build** `0.7.3.6-lineages42-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
+**Development build** `0.7.3.6-lineages43-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
 
 | Stage | What players have done together |
 | --- | --- |
@@ -51,9 +51,7 @@ Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (
 
 Done in 42-dev: a depth cube in the Creature editor pushes details and weapons into the body or pulls them out; received creations have their own Lineages Cache tab; Share Onward lets you allow hosts to pass your creations on; and the co-op window's buttons have short tooltips.
 
-Planned for 43:
-
-- **Cell creations in Cell stage.** Cells made in the Cell editor, including partners' cells, spawn natively as their own species with Maxis AI behaviour, alongside Maxis species. Species that carry cell parts stay Maxis so part unlocks keep working. Cell population is reviewed at the same time: it currently feels crowded.
+Done in 43-dev: player cells (the host's older ones, the lobby's, and Share Onward authors') swim in the Cell stage as native creatures, about one in four spawns, and follow their mouth's diet; part-dropping species keep their look; the host switches it in the lobby (Player Cells). Cell crowding: one extra predator per group from three seats on, placed clear of other cells, and plant food is worth 25% more meanwhile.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

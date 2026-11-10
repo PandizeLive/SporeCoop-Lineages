@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages43-dev] - 2026-11-10
+
+- Player Cells: cells from your group now swim in the Cell stage as native
+  creatures, about one in four spawns of a species. They come from the host's
+  older cells, the cells of everyone in the lobby, and Lineages Cache cells
+  whose authors turned on Share Onward. Nobody's current cell is used, and
+  Spore's own spread of your species is untouched. A carnivore mouth hunts and
+  a herbivore mouth grazes. Species that drop cell parts keep their own look.
+  The host can switch it off in the lobby (Player Cells: On/Off) (BUG-9111).
+- Cell difficulty: predator groups get one extra member from three reserved
+  seats on, instead of one per extra seat, and extras no longer appear
+  overlapping other cells, which could fling them across the pool (BUG-9109).
+- Cell food: plant food is worth 25% more while those extra predators spawn,
+  so finishing the stage as an omnivore stays within reach (BUG-9110).
+
 ## [0.7.3.6-lineages42-dev] - 2026-11-10
 
 - Creature editor: select a detail or weapon and drag the new depth cube to

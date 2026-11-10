@@ -4238,3 +4238,22 @@ install: rebuild the package (`tools/build_lineages_resources.py build/SporeCoop
 to out/release36/native/Data, start the QA game and run `coop.creations mount <that path>` before
 the image is first used: Spore remembers an image it did not find. A mounted package is locked
 until the game exits.
+
+## Windows Cell QA: a new 4-seat Cell game, hot reload, a local guest (2026-11-10, feat/lineages-43)
+<a id="test-windows-cell-qa"></a>
+
+- A fresh QA profile (copy `Preferences` with `AudioMuteAll true` into `SporeKit-<name>\Spore`) shows
+  Spore's EA registration box on the galaxy menu: close it (its X, then OK on "Quit registration?";
+  tick "don't ask again"). Never type anything into it.
+- `tools/tests/new_stage_game.py` imports `lane`: run it with `py` (not `py -I`). Window 1440x1080.
+- Campaign rules are recorded with the planet: `coop.host <port> <name> 4 100` in the galaxy menu
+  first, then the new planet, then `coop.save` at once. A `mod.reload coop` drops the session and a
+  planet never saved comes back with seats=1.
+- `sym.reload` on the Steam QA copy left `game.mode` at "none" (symbol lookups broken until restart):
+  hot reload with `mod.reload coop` alone.
+- A second instance as guest: `-sporekit-instance:8 -sporekit-profile:<other>`, `coop.join
+  127.0.0.1:<port>`. Both instances load `mods\coop.dll` of the same copy: reload both after a copy.
+- Python's `print`/scripts that write C++ through heredocs: `\n` inside generated C string literals
+  became real newlines more than once (a compile error, not a test failure).
+- Counters: `coop.pool enemy_groups` (extras, overlap, speeds, plant / meat credit),
+  `coop.pool lineage [find <model hex>]`, `coop.pool species`, `coop.lineagecells`.
