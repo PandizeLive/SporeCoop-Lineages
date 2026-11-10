@@ -1173,3 +1173,33 @@ Roadmap 42: the vehicle/outfitter depth square in the Creature editor, for non-l
 - ✔ Moving a part works: EditorRigblock +0x48 and model +0x0C, EditorModel +0x51 = 1,
   cEditor::CommitEditHistory(true, 0). Save keeps it in the bem, reopening keeps it, Undo restores it.
   Implemented as the mod's own depth square: mods/coop/editor_depth.cpp (BUG-9103).
+
+## My Creations and the offline author (2026-11-10, feat/lineages-42)
+<a id="creations-cache-my-creations-split"></a>
+
+- ✔ cAssetMetadata::GetAuthorID (0x5508A0, thiscall, int64 in edx:eax) reads metadata +0x68.
+  Metadata +0x20 is the asset key (instance, type, group; cAssetMetadata::Set 551258).
+- ✔ Spore treats the signed-in user's ID or -2 as "mine" (Sporepedia 66DE73..66DE90). Every
+  creation made without an EA account carries -2, the player's and every partner's alike
+  (EditorSaves metadata record 030BDEE3, big-endian, version 0x0D: author ID FFFFFFFF FFFFFFFE
+  after the two timestamps).
+- ✔ The Sporepedia index stores a hash of the author ID (parameter 0518AF1D, fnv-1a of the 8
+  bytes; 56C5D9 and 56C6F0 via 571790) when an asset is imported, and keeps it on disk: a game
+  start calls GetAuthorID only a couple of times.
+- ✔ My Creations is FeedItems 4E5892EB!146C1D8C: queryType C84E51B6, rootFilter 37216F9C =
+  fnv("userCreated"); Recent Downloads 742F7490: queryType BAD9C836, rootFilter 89CA8A12; Maxis
+  8F71F965: queryType E04C2D57. The filter props (00B1B104/CC489C6F) only list sub-filters. The
+  query ids are not immediates in the code dump or resources found so far (? where they resolve).
+- ✔ Negative result: answering author -3 during an import (so the index got another author's
+  hash) still listed the asset in My Creations. The list does not go by the author hash.
+- ✔ The list is filled through FeedItem_GetAssetKeys (0x668D60) like the keyList feeds; removing
+  keys from its output after the original call removes the cards and, on the next Sporepedia
+  open, the sidebar count. Everything keeps them. See BUG-9104.
+
+## Passing creations on, opt-in (2026-11-10, feat/lineages-42)
+<a id="creations-cache-pass-on"></a>
+
+Decision 5B implemented (BUG-9105): `[library] share_onward`, MSG_LIBRARY kind 5 (u8 5, str8
+source identity, u8 allow; ignored by older builds), applied by the host only when the same peer
+offers a creation under that identity, kept in LineagesCache\relay.bin, offered by that host in
+later sessions after its own creations.

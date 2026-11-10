@@ -26,6 +26,8 @@ void set_list_input(bool (*handler)(unsigned message, uintptr_t value, int x, in
 void shutdown();
 // primary clicks seen so far; a consumer keeps the last value it handled
 uint32_t clicks();
+// where the mouse last moved over the game window (client pixels; -1 before any move)
+void last_move(int& x, int& y);
 // where the last one was, in the game window's client pixels
 void last_click(int& x, int& y);
 

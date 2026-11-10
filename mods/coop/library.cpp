@@ -7,7 +7,10 @@
 #include "net/library_sync.h"
 #include "slotfs.h"
 #include "sporekit_game.hpp"
+#include <windows.h>
+
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -26,7 +29,11 @@ struct Entry {
     library_sync::Item item;
     dbpf::Key key;
     bool local = false, failed = false;
+    unsigned tries = 0; // BUG-9106: decode attempts this game start (not saved)
 };
+// BUG-9106: decodes that failed and wait for another try (hash, when)
+static std::deque<std::pair<std::string, double>> g_later;
+static double g_now = 0;
 static std::map<std::string, Entry> g_entries;
 static std::set<std::string> g_relay;
 static std::set<uint8_t> g_peers;
@@ -51,6 +58,18 @@ static double g_scan_at = -100, g_step_at = -100;
 static library_sync::Exchange g_exchange;
 static std::vector<library_sync::Item> g_offers;
 static std::set<std::string> g_offered;
+// BUG-9104: the received creations' keys, kept out of My Creations (h_FeedKeys).
+static void refresh_received();
+static void load_onward(); // BUG-9105
+static bool g_retry_fix = true;
+COOP_FIX("library.retry", "BUG-9106", g_retry_fix, "Lineages Cache: a failed import is tried again at the next game start");
+static unsigned g_retried = 0;
+static bool g_split_fix = true;
+COOP_FIX("library.split", "BUG-9104", g_split_fix,
+         "Lineages Cache: received creations show in the Lineages Cache, not in My Creations");
+static SRWLOCK g_received_lock = SRWLOCK_INIT;
+static std::set<std::pair<uint32_t, uint32_t>> g_received; // (instance, group) of imported items
+static unsigned g_mine_hidden = 0;
 static void offer(const Entry &e) {
     if (!S->connected() || !g_offered.insert(e.item.hash).second)
         return;
@@ -190,8 +209,17 @@ static bool load_index() {
         return false;
     g_entries = std::move(entries);
     for (auto &[hash, e] : g_entries)
-        if (!e.local && !e.failed)
-            g_imports.push_back(hash);
+        if (!e.local) {
+            // BUG-9106: a failed import gets one more try per game start. A decode that ran while
+            // the game was loading failed once and the creation never came back: its partner's
+            // offer finds the file already here, so it is not sent again.
+            if (e.failed && g_retry_fix) {
+                e.failed = false;
+                ++g_retried;
+            }
+            if (!e.failed)
+                g_imports.push_back(hash);
+        }
     return true;
 }
 static bool paths() {
@@ -235,6 +263,8 @@ static bool paths() {
         g_error = "Library index is unreadable; preserved without overwriting.";
         return false;
     }
+    refresh_received();
+    load_onward();
     return true;
 }
 static bool read_record(const dbpf::Entry &entry, std::vector<uint8_t> &bytes) {
@@ -404,9 +434,18 @@ static void import_one() {
         uint32_t group = 0;
         std::string author, name;
         if (!creations::inspect_library_png(object_path(hash), group, author, name)) {
+            // BUG-9106: right after the game starts the decoder fails on PNGs that read fine a
+            // minute later (MSI: the same file inspected fine from the console). Try again later,
+            // three times per game start, before giving up until the next start.
+            if (g_retry_fix && ++e.tries < 3) {
+                g_later.emplace_back(hash, g_now + 60);
+                H->log(M, SK_WARN, "library: %s could not be decoded yet, trying again in 60 s", hash.c_str());
+                return;
+            }
             e.failed = true;
             g_error = "Received PNG has no readable creation.";
             save_index();
+            H->log(M, SK_WARN, "library: import rejected %s (no readable creation)", hash.c_str());
             return;
         }
         // Native decoding/import must wait until the editor/loading cinematic
@@ -416,6 +455,7 @@ static void import_one() {
         if (!creations::import_library_png(object_path(hash), e.key, g_error))
             e.failed = true;
         save_index();
+        refresh_received();
         H->log(M, e.failed ? SK_WARN : SK_INFO, "library: %s %s", e.failed ? "import rejected" : "imported",
                hash.c_str());
         return;
@@ -456,6 +496,128 @@ static void SK_THISCALL h_FeedKeys(void *self, Vector *out) {
             return;
     }
     o_FeedKeys(self, out);
+    // BUG-9104: My Creations (FeedItems 146C1D8C, query C84E51B6 on filter "userCreated") lists
+    // every creation authored offline (-2), so partners' creations showed there too. The
+    // received ones are taken out of that list; they stay in the Lineages Cache feed.
+    void *mine = nullptr;
+    if (g_split_fix && pm && out && out->begin && vcall<bool>(pm, 0x2C / 4, uint32_t(0x146C1D8C), uint32_t(0x4E5892EB), &mine) &&
+        mine) {
+        const bool is_mine = mine == field<void *>(self, 0x180);
+        vcall<int>(mine, 0x04 / 4);
+        if (is_mine) {
+            AcquireSRWLockShared(&g_received_lock);
+            Asset *w = out->begin;
+            for (Asset *r = out->begin; r != out->end; ++r)
+                if (!g_received.count({r->key.instance, r->key.group}))
+                    *w++ = *r;
+            ReleaseSRWLockShared(&g_received_lock);
+            g_mine_hidden += unsigned(out->end - w);
+            out->end = w;
+        }
+    }
+}
+
+// BUG-9104: a creation made without an EA account carries the offline author ID -2, which Spore
+// treats as the player's own (Sporepedia 66DE73..66DE90, metadata +0x68), so every partner's
+// creation counted as the player's and showed in My Creations. The Sporepedia index (author hash,
+// parameter 0518AF1D, 56C5D9) is built when an asset is imported and kept on disk; answering
+// another author during the import did not move it out of My Creations (the list's own query is
+// not the author hash), so h_FeedKeys removes the received keys from that list instead.
+static void refresh_received() {
+    std::set<std::pair<uint32_t, uint32_t>> keys;
+    for (auto &[hash, e] : g_entries)
+        if (!e.local && !e.failed && e.key.instance)
+            keys.emplace(e.key.instance, e.key.group);
+    AcquireSRWLockExclusive(&g_received_lock);
+    g_received.swap(keys);
+    ReleaseSRWLockExclusive(&g_received_lock);
+}
+
+// BUG-9105 (roadmap 42, 5B): passing creations on. A host relays a creation to the people in the
+// session it arrived in (g_relay); beyond that only when its author opted in (coop.ini [library]
+// share_onward=1, or `coop.library onward on`). Each player tells the host their choice in a
+// MSG_LIBRARY kind 5 message (u8 5, str8 source identity, u8 allow); older builds drop it (their
+// receive() reads a hash and finds none). The host keeps the opted-in sources in relay.bin and, as
+// host of a later session, offers those authors' received creations too.
+static constexpr uint8_t kOnwardMsg = 5;
+static bool g_onward = false;               // this player's own choice
+static std::set<std::string> g_onward_ok;   // authors (source identities) who allow passing on
+static std::set<uint8_t> g_onward_told;     // peers told our choice this session
+static unsigned g_onward_offered = 0;
+static void save_onward() {
+    net::Writer w;
+    w.u32(0x31524C4C); // "LLR1"
+    w.u32(uint32_t(g_onward_ok.size()));
+    for (auto &s : g_onward_ok)
+        w.str8(s);
+    atomic_file(g_dir + L"\\relay.bin", w.data);
+}
+static void load_onward() {
+    std::vector<uint8_t> bytes;
+    if (!read_file(g_dir + L"\\relay.bin", bytes, 4u << 20))
+        return;
+    net::Reader r(bytes.data(), bytes.size());
+    if (r.u32() != 0x31524C4C)
+        return;
+    uint32_t n = r.u32();
+    std::set<std::string> out;
+    for (uint32_t i = 0; i < n && i < kMaxEntries && r.ok(); ++i) {
+        std::string s = r.str8();
+        if (r.ok() && library_sync::valid_hash(s))
+            out.insert(s);
+    }
+    if (r.ok())
+        g_onward_ok = std::move(out);
+}
+static void tell_onward(uint8_t peer) {
+    if (g_identity.empty())
+        return;
+    net::Writer w;
+    w.u8(kOnwardMsg);
+    w.str8(g_identity);
+    w.u8(g_onward);
+    if (S->send_reliable_to(peer, net::MSG_LIBRARY, w))
+        g_onward_told.insert(peer);
+}
+// A player's claim is applied once that player sends a creation under the same identity (a guest
+// offers only its own creations), so nobody can opt in someone else; opting out applies at once.
+static std::map<uint8_t, std::string> g_onward_claim; // peer -> source it opted in this session
+static std::set<std::pair<uint8_t, std::string>> g_peer_sources; // creations a peer offered this session
+static void onward_message(uint8_t peer, net::Reader &r) {
+    std::string source = r.str8();
+    uint8_t allow = r.u8();
+    if (!r.ok() || r.left() || allow > 1 || !library_sync::valid_hash(source))
+        return;
+    if (!allow) {
+        g_onward_claim.erase(peer);
+        if (g_onward_ok.erase(source))
+            save_onward();
+    } else {
+        g_onward_claim[peer] = source;
+        // switched on during a session: the peer's creations may have come already
+        if (g_peer_sources.count({peer, source}) && g_onward_ok.insert(source).second)
+            save_onward();
+    }
+}
+static void onward_seen(uint8_t peer, const library_sync::Item &item) {
+    if (!item.source.empty() && g_peer_sources.size() < kMaxEntries)
+        g_peer_sources.emplace(peer, item.source);
+    auto c = g_onward_claim.find(peer);
+    if (c != g_onward_claim.end() && c->second == item.source && g_onward_ok.insert(item.source).second)
+        save_onward();
+}
+// A received creation the host may offer in any session: its author opted in.
+static bool onward_ok(const Entry &e) {
+    return !e.local && !e.failed && !e.item.source.empty() && g_onward_ok.count(e.item.source);
+}
+static void offer_onward() {
+    if (S->role() != net::Role::Host)
+        return;
+    for (auto &[hash, e] : g_entries)
+        if (onward_ok(e) && !g_offered.count(hash)) {
+            offer(e);
+            ++g_onward_offered;
+        }
 }
 
 static bool store_item(uint8_t peer, const library_sync::Item &item, const std::vector<uint8_t> &png) {
@@ -495,8 +657,9 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
     g_exchange.inventory = []() -> const std::vector<library_sync::Item> & { return g_offers; };
     g_exchange.eligible = [](const library_sync::Item &i) {
         auto e = g_entries.find(i.hash);
-        return e != g_entries.end() && ((e->second.local && g_active_local.count(i.hash)) ||
-                                        (!e->second.local && S->role() == net::Role::Host && g_relay.count(i.hash)));
+        return e != g_entries.end() &&
+               ((e->second.local && g_active_local.count(i.hash)) ||
+                (!e->second.local && S->role() == net::Role::Host && (g_relay.count(i.hash) || onward_ok(e->second))));
     };
     g_exchange.have = [](const library_sync::Item &item) {
         auto it = g_entries.find(item.hash);
@@ -510,8 +673,9 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
         return read_file(object_path(hash), data);
     };
     g_exchange.store = store_item;
-    g_exchange.seen = [](uint8_t, const library_sync::Item &item) {
+    g_exchange.seen = [](uint8_t peer, const library_sync::Item &item) {
         if (S->role() == net::Role::Host) {
+            onward_seen(peer, item);
             g_relay.insert(item.hash);
             auto e = g_entries.find(item.hash);
             if (e != g_entries.end())
@@ -519,6 +683,7 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
         }
     };
     g_exchange.send = [](uint8_t peer, const net::Writer &w) { return S->send_reliable_to(peer, net::MSG_LIBRARY, w); };
+    g_onward = H->config_int(mod, "library", "share_onward", 0) != 0;
 }
 void on_session_end() {
     g_exchange.reset();
@@ -527,12 +692,18 @@ void on_session_end() {
     g_incoming.clear();
     g_offers.clear();
     g_offered.clear();
+    g_onward_told.clear();
+    g_onward_claim.clear();
+    g_peer_sources.clear();
     g_editor_stamp = 0;
     g_scan_at = -100;
 }
 void on_player_leave(uint8_t id) {
     g_exchange.leave(id);
     g_peers.erase(id);
+    g_onward_told.erase(id);
+    g_onward_claim.erase(id);
+    std::erase_if(g_peer_sources, [&](const auto &p) { return p.first == id; });
     std::erase_if(g_incoming, [&](const Incoming &m) { return m.peer == id; });
 }
 static bool peer_ready(uint8_t peer) {
@@ -550,21 +721,30 @@ static void work(void *) {
     if (!paths())
         return;
     if (S->connected()) {
-        if (g_offers.empty())
+        if (g_offers.empty()) {
             for (auto &hash : g_active_local) {
                 auto e = g_entries.find(hash);
                 if (e != g_entries.end())
                     offer(e->second);
             }
+            offer_onward(); // BUG-9105: opted-in authors' creations, after our own
+        }
         for (auto &player : S->players())
-            if (peer_ready(player.id) && g_peers.insert(player.id).second)
-                g_exchange.join(player.id);
+            if (peer_ready(player.id)) {
+                if (g_peers.insert(player.id).second)
+                    g_exchange.join(player.id);
+                if (!g_onward_told.count(player.id))
+                    tell_onward(player.id);
+            }
     } else if (!g_peers.empty())
         on_session_end();
     for (unsigned n = 0; n < 32 && !g_incoming.empty(); ++n) {
         auto m = std::move(g_incoming.front());
         g_incoming.pop_front();
-        if (peer_ready(m.peer)) {
+        if (peer_ready(m.peer) && !m.data.empty() && m.data[0] == kOnwardMsg) {
+            net::Reader r(m.data.data() + 1, m.data.size() - 1);
+            onward_message(m.peer, r);
+        } else if (peer_ready(m.peer)) {
             net::Reader r(m.data.data(), m.data.size());
             g_exchange.receive(m.peer, r);
         }
@@ -579,6 +759,11 @@ static void work(void *) {
             g_scan_active.clear();
             g_scanning = false;
         }
+        while (!g_later.empty() && g_later.front().second <= g_now) { // BUG-9106
+            g_imports.push_back(std::move(g_later.front().first));
+            g_later.pop_front();
+            ++g_retried;
+        }
         import_one();
         if (g_local_dirty && (g_local_dirty >= 16 || g_scan.empty())) {
             if (save_index())
@@ -591,6 +776,7 @@ static void work(void *) {
 }
 void tick(double now, bool safe) {
     g_safe = safe;
+    g_now = now;
     if (g_pending || now - g_step_at < 0.05)
         return;
     g_step_at = now;
@@ -607,9 +793,17 @@ void tick(double now, bool safe) {
     g_pending = true;
     H->run_outside_frame(work, nullptr);
 }
+bool share_onward() { return g_onward; }
+void set_share_onward(bool on) {
+    g_onward = on;
+    H->config_set_str(M, "library", "share_onward", on ? "1" : "0");
+    g_onward_told.clear(); // the next work tick tells the session
+}
 std::string debug(const std::vector<std::string> &args) {
     if (!paths())
         return g_error.empty() ? "Native library database unavailable." : g_error;
+    if (args.size() == 2 && args[0] == "onward") // BUG-9105: may hosts pass my creations on?
+        set_share_onward(args[1] == "on" || args[1] == "1");
     if (!args.empty() && args[0] == "scan") {
         g_editor_stamp = 0;
         g_scan.clear();
@@ -658,6 +852,8 @@ std::string debug(const std::vector<std::string> &args) {
            " pending=" + std::to_string(pending) + " failed=" + std::to_string(failed) +
            " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
            " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) +
-           " export_failed=" + std::to_string(g_export_failed) + (g_error.empty() ? "" : " error=" + g_error) + list;
+           " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " onward=" + (g_onward ? "on" : "off") +
+           " onward_authors=" + std::to_string(g_onward_ok.size()) + " onward_offered=" + std::to_string(g_onward_offered) + " retried=" + std::to_string(g_retried) +
+           (g_error.empty() ? "" : " error=" + g_error) + list;
 }
 } // namespace library

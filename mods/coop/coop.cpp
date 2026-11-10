@@ -3202,6 +3202,7 @@ void mate_hearts_tick(double now)
 void on_overlay(void*, int, void*)
 {
     if (build_id() == 0xDC04AEE5u) editor_depth::draw(); // BUG-9103
+    coop_ui::draw_tooltip(); // BUG-9107
     modes::CellScope cell_scope; // BUG-0271
     if (!g_overlay)
         return;
@@ -5091,6 +5092,8 @@ void init_ui()
     a.vote_active = [] { return g_vote.active; };
     a.paced_transfer = [] { return g_sess.paced_world_transfer; };
     a.set_paced_transfer = [](bool on) { g_sess.paced_world_transfer = on; };
+    a.share_onward = [] { return library::share_onward(); };
+    a.set_share_onward = [](bool on) { library::set_share_onward(on); };
     a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
@@ -5828,7 +5831,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.library", "coop.library [status|list|scan|import <PNG>] - persistent shared library",
+    H->command_add(M, "coop.library", "coop.library [status|list|scan|onward on|off|import <PNG>] - persistent shared library",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        SAY("%s", library::debug(std::vector<std::string>(argv+1,argv+argc)).c_str());
                        return 0;

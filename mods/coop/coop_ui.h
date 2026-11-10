@@ -52,6 +52,9 @@ struct Api {
     std::function<int()> share_state;
     std::function<bool()> paced_transfer;
     std::function<void(bool)> set_paced_transfer;
+    // BUG-9105: may hosts pass this player's creations on to people they have not played with
+    std::function<bool()> share_onward;
+    std::function<void(bool)> set_share_onward;
     // own creation of the current stage: kind 0 creature / 1 cell / 2 ship, its name ("" = the
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;
@@ -89,6 +92,8 @@ void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);
 bool is_open();
+// SK_EV_OVERLAY: a short tooltip for the co-op window button under the mouse
+void draw_tooltip();
 int input_lock_now(); // the game's input lock count (cGameInputManager +0x110; > 0 = clicks are dropped)
 void shutdown(); // mod unload: hide our windows
 std::string debug_state();

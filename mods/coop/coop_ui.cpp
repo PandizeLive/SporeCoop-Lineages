@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <d3d9.h>
 #include <shellapi.h>
 
 #include <algorithm>
@@ -282,7 +283,7 @@ struct Dialog {
     std::vector<Win> page_lobby;
     Win session = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
     Win invite_btn = nullptr, rules = nullptr, transfer_mode = nullptr, preview_status = nullptr;
-    Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, leave_caption = nullptr;
+    Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, leave_caption = nullptr, onward_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
@@ -1043,6 +1044,18 @@ static void build_dialog()
         A.share_world();
         set_status(T("Sending the world to everyone...", "Мир отправляется всем..."), kYellow, g_status_fix ? 5 : 0);
     });
+    // BUG-9105: the player's own choice; placed by refresh_lobby (under Send World for the host)
+    D.onward_btn = add_button(L, "shareonward", {445, 249, 706, 285}, "", [] {
+        if (!A.share_onward || !A.set_share_onward) return;
+        const bool on = !A.share_onward();
+        A.set_share_onward(on);
+        set_status(on ? T("Hosts may now pass your creations on to players you haven't met",
+                          "Хозяева могут передавать ваши создания другим игрокам")
+                      : T("Your creations stay with the people you play with",
+                          "Ваши создания остаются у тех, с кем вы играете"),
+                   on ? kGreen : kYellow, 8);
+        g_dirty = true;
+    });
     D.leave_btn = add_button(L, "leave", {500, 488, 720, 528}, "", [] {
         A.leave();
         set_status(T("Left the session", "Вы вышли из игры"), kYellow, g_status_fix ? 5 : 0);
@@ -1351,6 +1364,13 @@ static void refresh_lobby()
     show(D.ready_btn, vote);
     text(D.ready_btn, A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
     show(D.share_btn, host);
+    // BUG-9105: hosts under Send World, guests in its place; the vote's Ready button takes the row
+    if (D.onward_btn) {
+        sui::set_area(D.onward_btn, host ? Rect{445, 249, 706, 285} : Rect{445, 212, 706, 248});
+        show(D.onward_btn, A.share_onward && !(host && vote));
+        text(D.onward_btn, A.share_onward && A.share_onward() ? T("Share Onward: On", "Передавать дальше: Вкл")
+                                                              : T("Share Onward: Off", "Передавать дальше: Выкл"));
+    }
     enable(D.share_btn, !share_why || !g_share_explain_fix);
     text(D.share_btn, A.vote_active && A.vote_active() ? T("Start Now", "Начать сейчас") : T("Send World", "Отправить мир"));
     const auto leave_title = host ? T("Stop Hosting", "Закрыть игру") : T("Leave", "Выйти");
@@ -1706,6 +1726,102 @@ void open(bool on)
 }
 
 bool is_open() { return g_want_open; }
+
+// ---- tooltips: a couple of words for the button under the mouse, after a short hover ----
+static bool g_tips_fix = true;
+COOP_FIX("ui.tooltips", "BUG-9107", g_tips_fix, "co-op window: buttons show a short tooltip on hover");
+static const char* tip_for(const std::string& name)
+{
+    struct Tip { const char* name; const char* en; const char* ru; };
+    static const Tip kTips[] = {
+        {"report", "Send a bug report", "Отправить отчёт"},
+        {"refreshlan", "Find LAN games", "Найти игры в сети"},
+        {"join", "Join this server", "Подключиться"},
+        {"saveserver", "Save to Server List", "Сохранить сервер"},
+        {"deleteserver", "Remove from Server List", "Удалить сервер"},
+        {"host", "Host a new session", "Создать сервер"},
+        {"update", "Check or install updates", "Обновления"},
+        {"optimal", "Steady world transfer", "Плавная передача"},
+        {"fast", "Fastest world transfer", "Быстрая передача"},
+        {"seat1", "Seats for a new campaign", "Места в кампании"},
+        {"seat2", "Seats for a new campaign", "Места в кампании"},
+        {"seat3", "Seats for a new campaign", "Места в кампании"},
+        {"seat4", "Seats for a new campaign", "Места в кампании"},
+        {"hideaddress", "Show or hide", "Показать / скрыть"},
+        {"hidejoinport", "Show or hide", "Показать / скрыть"},
+        {"hidejoinpassword", "Show or hide", "Показать / скрыть"},
+        {"hidehostport", "Show or hide", "Показать / скрыть"},
+        {"hidehostpassword", "Show or hide", "Показать / скрыть"},
+        {"hidehostaddresses", "Show or hide addresses", "Показать / скрыть адреса"},
+        {"copyinvite", "Copy your address for friends", "Копировать адрес"},
+        {"queueseats", "Seats for the next stage", "Места на этап"},
+        {"chatup", "Older messages", "Ранние сообщения"},
+        {"chatdown", "Newer messages", "Новые сообщения"},
+        {"cprev", "Previous creation", "Предыдущее создание"},
+        {"cnext", "Next creation", "Следующее создание"},
+        {"jump", "Jump to your partner", "К партнёру"},
+        {"give", "Give selected units", "Отдать выбранных"},
+        {"givenext", "Choose who receives", "Выбрать получателя"},
+        {"space", "Space co-op page", "Космос вместе"},
+        {"send", "Send chat message", "Отправить сообщение"},
+        {"ready", "Vote ready", "Готовность"},
+        {"share", "Send your world to everyone", "Отправить мир всем"},
+        {"shareonward", "Let hosts pass your creations on", "Разрешить передачу ваших созданий"},
+        {"leave", "Leave the session", "Выйти из игры"},
+        {"sback", "Back to the Lobby", "Назад в лобби"},
+        {"sprev", "Previous page", "Предыдущая страница"},
+        {"snext", "Next page", "Следующая страница"},
+    };
+    for (const auto& t : kTips)
+        if (name == t.name)
+            return g_ru ? t.ru : t.en;
+    if (name.rfind("lan", 0) == 0)
+        return g_ru ? "Выбрать сервер" : "Pick this server";
+    return nullptr;
+}
+
+void draw_tooltip()
+{
+    static Win s_over;
+    static double s_since;
+    if (!g_tips_fix || !g_want_open || !D.root || !sui::visible(D.root))
+        return;
+    int mx = -1, my = -1;
+    mouse::last_move(mx, my);
+    Win over = nullptr;
+    const char* tip = nullptr;
+    for (const auto& [name, w] : g_named) {
+        if (!w || !g_btn_fn.contains(w) || !sui::visible(w))
+            continue;
+        const Rect r = sui::screen_rect(w);
+        if (mx >= r.x1 && mx < r.x2 && my >= r.y1 && my < r.y2 && (tip = tip_for(name))) {
+            over = w;
+            break;
+        }
+    }
+    const double now = H->time_seconds();
+    if (over != s_over) {
+        s_over = over;
+        s_since = now;
+    }
+    if (!over || !tip || now - s_since < 0.5)
+        return;
+    auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
+    if (!device)
+        return;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    // Arial 18 bold (the overlay font): about 10 pixels a character
+    const int w = int(strlen(tip)) * 10 + 16, h = 26;
+    int x = std::min(mx + 14, sw - w - 4), y = my + 24;
+    if (y + h > sh - 4)
+        y = my - h - 8;
+    x = std::max(x, 4);
+    D3DRECT edge{x - 1, y - 1, x + w + 1, y + h + 1}, body{x, y, x + w, y + h};
+    device->Clear(1, &edge, D3DCLEAR_TARGET, 0xFFB8963A, 1.f, 0); // the window's gold
+    device->Clear(1, &body, D3DCLEAR_TARGET, 0xFF0E1A26, 1.f, 0); // its dark panel blue
+    H->overlay_text(x + 8, y + 3, 0xFFFFFFFF, tip);
+}
 int input_lock_now() { return input_lock(); }
 
 void tick()

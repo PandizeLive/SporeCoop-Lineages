@@ -16,6 +16,7 @@ static bool (*g_list_input)(unsigned, uintptr_t, int, int);
 static bool (*g_depth_input)(unsigned, uintptr_t, int, int);
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
+static volatile int g_mx = -1, g_my = -1; // the last mouse move over the game window (client pixels)
 
 static bool ours(HWND w)
 {
@@ -56,6 +57,13 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             (LOWORD(m->wParam) & MK_CONTROL) && (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
             g_fov_wheel((short)HIWORD(m->wParam)))
             m->message = WM_NULL;
+        if (m->message == WM_MOUSEMOVE && ours(m->hwnd)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            g_mx = p.x;
+            g_my = p.y;
+        }
         if ((m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONDBLCLK) && ours(m->hwnd)) {
             POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
             if (m->hwnd != g_wnd)
@@ -89,6 +97,12 @@ void shutdown()
 }
 
 uint32_t clicks() { return g_clicks; }
+
+void last_move(int& x, int& y)
+{
+    x = g_mx;
+    y = g_my;
+}
 
 void last_click(int& x, int& y)
 {

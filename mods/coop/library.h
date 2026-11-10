@@ -11,4 +11,7 @@ void on_message(uint8_t from, net::Reader &reader);
 void on_session_end();
 void on_player_leave(uint8_t peer);
 std::string debug(const std::vector<std::string> &args); // outside Present
+// BUG-9105: this player's choice to let hosts pass their creations on (coop.ini [library])
+bool share_onward();
+void set_share_onward(bool on);
 } // namespace library
