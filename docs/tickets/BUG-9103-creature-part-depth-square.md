@@ -1,16 +1,16 @@
 ---
 id: BUG-9103
 title: Creature editor: a depth square pushes details and weapons into the body or pulls them out
-status: open
+status: fixed
 kind: feature
 stage: Creature
 reported: 2026-11-09
 source: player request (roadmap 42)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-42
-commits:
+commits: 10c433b9 820f896b 513e0983
 tests: QA coop.depth (single PC: drag, save, reload, undo); two-PC TITAN host + MSI guest, see Verification
 signature: -
 docs: docs/re/creations.md#creations-editor-depth-handle
@@ -61,6 +61,8 @@ hands and feet keep their placement; weapons and details move.
 
 ## Verification
 
+no-fail-run: new feature (nothing to fail before it); checked by hand on the Windows QA copy below, no lab test yet
+
 Single PC (QA copy, profile LineagesDepthQA, Creature save Samuth, 640x480, muted):
 - ear 05A9FD99 square at (560,293); hover green, drag orange, release pale blue
   (out/sq-strip.png); position 0.089 -> 0.239 along out (0.908 -0.395 -0.143),
@@ -90,3 +92,14 @@ Single PC (QA copy, profile LineagesDepthQA, Creature save Samuth, 640x480, mute
   the old maximum (beak -0.351 -> -0.689), 0 faults. The new limits keep parts far nearer.
 - 2026-11-10: cube handle, dialog hiding and body limits (beak range -0.124..+0.050 at body
   depth 0.166; a second drag out gets 0), 0 faults.
+- 2026-11-10: crash review before closing 42. The R6025 left no crash report, dump or log line
+  anywhere in the QA logs (the CRT's pure-call abort ends the process before SporeKit's handler), so
+  only the earlier note exists. Likely cause: the test wrote a rigblock pointer into cEditor +0xD4
+  without the editor's own select (no reference taken, no selection events), so the editor later
+  released or called an object it did not own. No shipped code writes +0xD4 (editor_depth.cpp only
+  reads it); selection by click never showed it. Closed as a test artefact; reopen on any R6025 in
+  an editor. The four editor crashes of 2026-11-09 23:40-23:43 (QA instance 8, SporeApp.exe+0x2F0E0,
+  +0x802DF/+0x802FB/+0x8030D under the UI renderer) each came right after a "depth: call model=..."
+  log line: the abandoned GetDeformationHandles append (Findings), whose code is gone. The other QA
+  crash of the day (12:57) was a console command, not this feature: BUG-9108.
+- 2026-11-10: closed for roadmap 42 (status fixed; version set at release).

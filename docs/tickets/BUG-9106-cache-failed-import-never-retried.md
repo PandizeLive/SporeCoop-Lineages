@@ -1,16 +1,16 @@
 ---
 id: BUG-9106
 title: Lineages Cache: a creation whose import failed once never comes back
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-10
 source: two-PC QA (MSI guest)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-42
-commits:
+commits: 63abe7bf
 tests: QA (MSI received cache), see Verification
 signature: "Received PNG has no readable creation."
 docs: docs/re/creations.md#creations-cache-pass-on
@@ -42,6 +42,8 @@ First version (retry once at load) failed again on the MSI: the retry ran right 
 started, when the decoder fails; the same file inspected fine from the console a minute later.
 
 ## Verification
+
+FAIL without the fix: on the MSI build before it, creation 9d9d7a18 stayed failed=1 and was never tried again (Report). PASS with it: below. Manual QA, no lab run id.
 
 MSI QA (stripped build 757CFA57): the creation stuck since the first two-PC test, 9d9d7a18,
 "could not be decoded yet" 2 s before GalaxyGameEntry, imported 59 s later on the delayed try

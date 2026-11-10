@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- Creature editor: select a detail or weapon and drag the new depth cube to
+  push it into the body or pull it out. Limbs, hands and feet keep their
+  placement, mirrored parts move together, and Undo and saving work as usual
+  (BUG-9103).
+- Lineages Cache: creations received from partners move to their own tab and
+  no longer fill My Creations. They still appear in your worlds (BUG-9104).
+- Share Onward: choose in the lobby whether hosts may pass your creations on
+  to players you have not met. It is off until you turn it on (BUG-9105).
+- A received creation that failed to import once is tried again a minute
+  later instead of being lost (BUG-9106).
+- Co-op window buttons show short tooltips in Spore's own style after a short
+  rest (BUG-9107).
+- Developer console: `coop.ui` commands refuse a window that does not exist
+  instead of crashing the game (BUG-9108).
+
 ## [0.7.3.6-lineages41-dev] - 2026-11-09
 
 - Return the third-person field of view to normal when you leave Creature or

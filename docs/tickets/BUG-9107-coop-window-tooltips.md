@@ -1,16 +1,16 @@
 ---
 id: BUG-9107
 title: Co-op window: buttons have no tooltips
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-10
 source: player request (roadmap 42)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-42
-commits:
+commits: 63abe7bf 08b969f4 91b64154
 tests: QA hover screenshots, see Verification
 signature: -
 docs: -
@@ -40,6 +40,8 @@ related: BUG-9105
 - First version drew a square box with the Arial overlay font: the player asked for the native look.
 
 ## Verification
+
+no-fail-run: new feature (nothing to fail before it); checked by hand on the Windows QA copy below, no lab test yet
 
 QA, second TITAN instance (LineagesDiff41Guest), Connect page at 800x600: Refresh "Find LAN
 games", eye "Show or hide", Fast "Fastest world transfer", Start Server "Host a new session"

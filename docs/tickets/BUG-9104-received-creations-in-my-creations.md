@@ -1,16 +1,16 @@
 ---
 id: BUG-9104
 title: Lineages Cache: received creations also show in My Creations
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-09
 source: player request (roadmap 42, cache decision 3B)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-42
-commits:
+commits: 63abe7bf
 tests: QA Sporepedia counts (single PC), see Verification
 signature: -
 docs: docs/re/creations.md#creations-cache-my-creations-split
@@ -45,6 +45,8 @@ received keys, also during the import (the Sporepedia index stores an author has
 My Creations, so the list's query does not go by that hash.
 
 ## Verification
+
+no-fail-run: new feature (nothing to fail before it); checked by hand on the Windows QA copy below, no lab test yet
 
 Single PC, QA copy, profile LineagesDepthQA, 800x600, muted: two received creations imported
 with `coop.library import`. Before: My Creations (8), Everything 2598 = Maxis 2590 + 8. After:

@@ -1,16 +1,16 @@
 ---
 id: BUG-9105
 title: Lineages Cache: authors opt in before hosts pass their creations on
-status: open
+status: fixed
 kind: feature
 stage: All
 reported: 2026-11-09
 source: player request (roadmap 42, cache decision 5B)
 role: host guest
 versions: 0.7.3.6-lineages41-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-42
-commits:
+commits: 63abe7bf
 tests: three-player QA (TITAN, second TITAN instance as host, MSI), see Verification
 signature: -
 docs: docs/re/creations.md#creations-cache-pass-on
@@ -44,6 +44,8 @@ cleared at session end); received creations are never offered later.
   onward_offered.
 
 ## Verification
+
+no-fail-run: new feature (nothing to fail before it); checked by hand on the Windows QA copy below, no lab test yet
 
 See History.
 
