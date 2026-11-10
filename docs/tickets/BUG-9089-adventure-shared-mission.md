@@ -65,3 +65,30 @@ export is fixed. Combat, actor replication, all other objective types and
 terminal rewards remain open. Both games shut down natively with zero faults
 and exit code 0. Marker-mode player-object sync mismatches remain. This ticket
 is not fixed and full Adventures are not complete.
+
+## Two-instance playthrough on 43-dev (2026-11-10, test/lineages-adventures)
+
+Windows QA copy, host DuoQAAdvHost (instance 9) + guest DuoQAAdvGuest (instance 8), UDP 47839,
+hosted at the galaxy menu, both opening the same adventure from Galactic Adventures.
+
+Adventure Town (tutorial), played to the end, alternating captains per goal:
+- act 0 move-to (host arrived), act 1 talk (host), act 2 three parallel talks (guest, guest, host),
+  act 3 two talks (guest, host), act 4 talk (guest): every credit reached the other game once, the
+  idle captain never moved, act/goals matched after every step.
+- both games reached play state 5 together: "Mission Complete! 100%" on each, each captain with its
+  own reward choice; Done returned both to the galaxy menu. Zero faults, no [ERR].
+- `mod.reload coop` on both games + rehost/rejoin in act 3: goals still matched, play continued.
+
+City Assault (combat: defeat 5 buildings, defend 5, defeat the city hall; goal types 3 and 11):
+- no adventure credit was committed (the journal covers move-to and talk only).
+- the allied army destroyed the same enemy buildings at the same moments in both games (each game's
+  own simulation, identical while nobody intervened).
+- the host's captain, sent alone into the enemy city, was killed (hp 0/300): the host's game failed
+  the mission ("Mission Failed! 53%") while the guest's game completed it ("Mission Complete! 100%").
+  Defeat goals (3) and defend goals (11) are separate per player; a player's defeat does not reach the
+  partner. Zero faults on both.
+
+Verdict for the player: story / exploration adventures (go to, talk to) are playable together;
+combat adventures run as two parallel solo copies that can end differently. Not tested: collect and
+timed goals, returning from an Adventure into a Space campaign, more than two players, two PCs.
+Screenshots: out/qa43/adventure-town-both-complete.png, out/qa43/adventure-city-assault-split.png.

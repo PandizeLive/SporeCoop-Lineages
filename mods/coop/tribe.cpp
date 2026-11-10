@@ -5665,11 +5665,12 @@ std::string debug(const std::vector<std::string>& a)
             &q);
         std::sort(q.v.begin(), q.v.end());
         std::string out;
-        for (size_t i = 0; i < q.v.size() && i < 40; i++)
+        const size_t max = a.size() >= 3 ? std::clamp<size_t>(strtoul(a[2].c_str(), nullptr, 10), 1, 2000) : 40; // tests: objs <noun> [max]
+        for (size_t i = 0; i < q.v.size() && i < max; i++)
             out += q.v[i].second;
         return out + std::to_string(q.v.size()) + " objects";
     }
-    return "usage: coop.tribe select <id> <0|1> | select_own <n> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
+    return "usage: coop.tribe select <id> <0|1> | select_own <n> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex> [max]";
 }
 
 // the citizen's current behaviour-tree node (ai = c+0xB4C, node id at ai+0x1D8; docs/re/tribe.md B)

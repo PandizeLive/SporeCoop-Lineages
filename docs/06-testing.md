@@ -4257,3 +4257,21 @@ until the game exits.
   became real newlines more than once (a compile error, not a test failure).
 - Counters: `coop.pool enemy_groups` (extras, overlap, speeds, plant / meat credit),
   `coop.pool lineage [find <model hex>]`, `coop.pool species`, `coop.lineagecells`.
+
+## Windows two-instance Adventure playthrough (2026-11-10, test/lineages-adventures)
+<a id="test-windows-adventure-playthrough"></a>
+
+BUG-9089. Fresh DuoQA profiles (the state reader asserts "duoqa" in the save path), 1440x1080.
+- Start: `coop.host` / `coop.join` at the galaxy menu, then `tools/tests/adventure_start.py -i N` on
+  each (tutorial). Another adventure: Play (566,542), the card (828,546), the adventure in the list,
+  the green check (1400,1056), next (1068,626) twice.
+- Two fresh profiles give their random captains the same instance id: `duo_adventure.py` then stops
+  with "Pick different captains" although the captains differ; drive the gate by hand (play+0xE0 is
+  the move-to target, `coop.npc gopos x y z`).
+- Tutorial tips: their check button is window 05943B78; conversation next / finish: 062EF353 /
+  0445C99D; find them with `coop.ui where <id>` (positions depend on the window size).
+- A scenario creature's class (the goal target) is at object +0x1C (noun 18EB45E); buildings are noun
+  70703B3. `coop.tribe objs <noun>` lists only the 40 nearest: `coop.tribe objs <noun> 2000` for all.
+- Clicking a character the own captain hides does nothing: stand aside (6-9 m, 45 degrees) and click
+  its projected point from `coop.targets objs`.
+- Results screen: Done is window 07C79948.
