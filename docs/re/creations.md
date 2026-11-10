@@ -1114,3 +1114,32 @@ Player decisions on the options in [cache scope](#creations-cache-scope-roadmap)
    `g_exchange.eligible`.
 Open probe for 3B: which My Creations filter shows Pollination items, and
 whether moving them out changes NPC selection.
+
+## Editor depth (nudge) handle for creature parts (2026-11-09, feat/lineages-42)
+<a id="creations-editor-depth-handle"></a>
+
+Roadmap 42: the vehicle/outfitter depth square in the Creature editor, for non-limb parts.
+- ✔ Editor setups are props in group 0x40600100 (key list: `editorEnabledManipulators`
+  0x10119203, array of 12-byte keys; `parent` inherits at runtime: CreatureEditorExtraLarge
+  0x465C50BA resolves to Creature Editor Setup CF2DC8D0's list). Tools per setup:
+  - Creature CF2DC8D0: 8665F54D E931544D A9910288 5FDE642E BB46D99A 889CDBFF 9ED74A02 9F48C094 855DE44D 7AD67439
+  - Vehicle Template 99F87089: F48AB41C A9910288 9F48C094 855DE44D
+  - Building D817CD63 and Cake E0B69B49: 6125EE88 A9910288 67B68E4D 9F48C094 855DE44D
+  - Tribal/Civ/Space/Adventure Accessories (156276D1 and children): A9910288 9F48C094 855DE44D F818C5BA
+  - Cell 3615A30B: 1B73114C 2D35AF62 9F48C094 855DE44D 7AD67439; Flora 1C7ECA95 has 6125EE88 too.
+- ✔ Only Adventure Accessories Editor Setup A56567F7 (GA captain outfitter) sets
+  `editorNudgeHandleTuningFile` (fnv 0xB8E88BEC) = {3C3BA77F, 0, 10CB4B28}, beside
+  `editorPowerHandleTuningFile` 0x3042E156.
+- ✔ 0x5DBEA5..0x5DBF23 loads handle tuning keys into a block: +0x60 spine (0x50FC283),
+  +0x6C deform (0x50FC287), +0x78 nudge (0xB8E88BEC), +0x84 power (0x3042E156), via 0x6A1250
+  (read key property).
+- ✔ The tool ids are checked in cEditor's mouse-down path through 0x5740E0 (thiscall(id) bool,
+  "editor has tool"): F48AB41C at 0x58905A (creates a 0x48-byte object, ctor 0x5B4C40),
+  6125EE88 at 0x588FD6, 67B68E4D at 0x5895C3. They are mouse behaviours, not handle models.
+- ✔ negative: adding F48AB41C 6125EE88 67B68E4D F818C5BA to CF2DC8D0 in memory and copying the
+  nudge tuning key (`coop.editorcfg`) before opening the stage editor (`coop.vote editor`) showed
+  no new handle on a mouth or a detail part (only the usual deform cones, rotation ring, scale ball).
+- ? Which code creates the nudge handle (EditorBaseHandle subclass reading tuning +0x78) and its
+  condition (outfitter-only flag, rigblock prop, or editor mode). ModAPI EditorRigblock has
+  `mAxisHandles[3]` at +0x154; the ModAPI sub_ addresses are a different build (none matched here).
+- Tools: `coop.editorcfg show|manips|copy` (mods/coop/editor_cfg.cpp).

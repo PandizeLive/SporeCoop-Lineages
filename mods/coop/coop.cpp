@@ -35,6 +35,7 @@
 #include "stage_epoch.h"
 #include "mouse.h"
 #include "fov.h"
+#include "editor_cfg.h"
 #include "shared.h"
 #include "sui.h"
 #include "teamplay.h"
@@ -5382,6 +5383,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trace::init(H, M);
     trace::g_detail = std::max(0, std::min(2, H->config_int(M, "coop", "log_detail", 1)));
     world::init(H, M, feed);
+    if (build_id() == 0xDC04AEE5u)
+        editor_cfg::init(H, M);
     if (build_id() == 0xDC04AEE5u)
         fov::init(H, M, [] {
             // Creature can pause its simulation without taking away the follow camera.
