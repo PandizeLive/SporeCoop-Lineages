@@ -101,6 +101,9 @@ Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y
 bool has_image(uint32_t instance, uint32_t group);
 // a new SporeStdDrawable copying `src` (a SporeStdDrawable) with another icon image
 void* std_drawable_with_icon(void* src, void* icon);
+// a new StdDrawable drawing `image` stretched like Spore's tooltip background (the native
+// tooltip drawable's class and layout values, read at runtime 2026-11-10)
+void* std_drawable_tooltip(void* image);
 void set_drawable(Win w, void* drawable);
 
 // ---- events ----

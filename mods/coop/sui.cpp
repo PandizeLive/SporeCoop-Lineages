@@ -484,6 +484,30 @@ void* std_drawable_with_icon(void* src, void* icon)
     return d;
 }
 
+void* std_drawable_tooltip(void* image)
+{
+    // UTFWin::StdDrawable (0x7C bytes, vtable 0x1A85238 at runtime), the class of Spore's own
+    // tooltip background: images[8] at +0x10, layout values +0x30..+0x78, hit mask +0x4C
+    static uintptr_t ctor = H->sym("UTFWin::StdDrawable::StdDrawable");
+    if (!ctor || !image)
+        return nullptr;
+    uint8_t* d = (uint8_t*)utf_new(0x7C);
+    if (!d)
+        return nullptr;
+    thiscall<void*>(ctor, d);
+    for (int i = 0; i < 8; i++) { // the pill in every state slot
+        *(void**)(d + 0x10 + i * 4) = image;
+        obj_addref(image);
+    }
+    // the native tooltip's values (window 03754E6C, read at runtime 2026-11-10): mode 2, the image
+    // cut in thirds (0.333 x4), scale 1 / 1; +0x4C (hit mask) stays the constructor's
+    static const uint32_t kHead[7] = {2, 0x3EAAAAAB, 0x3EAAAAAB, 0x3EAAAAAB, 0x3EAAAAAB, 0x3F800000, 0x3F800000};
+    static const uint32_t kTail[11] = {0, 0x40C00000, 0, 2, 2, 0, 0, 0, 0x399D4952, 0x3F000000, 0};
+    memcpy(d + 0x30, kHead, sizeof kHead);
+    memcpy(d + 0x50, kTail, sizeof kTail);
+    return d;
+}
+
 // ---------------- events ----------------
 struct HandlerBox {
     std::function<bool(Win, const Msg&)> fn;

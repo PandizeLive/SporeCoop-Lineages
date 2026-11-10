@@ -4228,3 +4228,13 @@ Both consoles recorded zero native faults. Audio stayed muted at 20 FPS.
   without pressing a real key in the player's foreground window.
 - `tools/tickets.py new` needs fcntl (Linux only); on Windows write the ticket
   file by hand with the next free number.
+
+## QA copy and new UI images (2026-11-10, feat/lineages-42)
+<a id="test-qa-mount-package"></a>
+
+The QA game copy (out/release36/native) reads SporeCoop.package from the registered Steam
+installation's Data folder, not from its own. To try new data/ui images without touching that
+install: rebuild the package (`tools/build_lineages_resources.py build/SporeCoop.package`), copy it
+to out/release36/native/Data, start the QA game and run `coop.creations mount <that path>` before
+the image is first used: Spore remembers an image it did not find. A mounted package is locked
+until the game exits.

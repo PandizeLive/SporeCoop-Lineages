@@ -3496,6 +3496,13 @@ std::string debug(const std::vector<std::string>& a)
                  g_paints_substituted);
         return out + b;
     }
+    if (a.size() >= 2 && a[0] == "mount") { // mount <package path>: tests (a resource package of a QA build)
+        std::string path = a[1];
+        for (size_t i = 2; i < a.size(); ++i)
+            path += " " + a[i];
+        return register_package(slotfs::widen(path), 2000) ? std::string("mounted\n")
+                                                           : "mount failed: " + g_last_error + "\n";
+    }
     if (a.size() >= 2 && a[0] == "bem") { // bem <hex crt instance>: the body the game finds for that key (tests)
         Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group};
         std::vector<dbpf::Record> recs;

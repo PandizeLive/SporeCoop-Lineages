@@ -27,12 +27,17 @@ related: BUG-9105
   name (Connect, Lobby and Space pages, the eye buttons, server rows); the Space page's action
   buttons change meaning per row and have none.
 - mouse.cpp keeps the last WM_MOUSEMOVE over the game window (client pixels, `mouse::last_move`).
-- `draw_tooltip()` (SK_EV_OVERLAY, coop.cpp `on_overlay`): when the window is open and the mouse
-  has rested 0.5 s on a visible button with a tip, a box in the window's gold edge and dark panel
-  blue is drawn next to the cursor (kept on screen) with the overlay font. Nothing is added to the
-  Spore UI, so there are no new windows to manage. `coop.fix ui.tooltips off` hides them.
-- Spore's own tooltip window procedure (UTFWin::SporeTooltipWinProc, march2017 sym) was not used:
-  it needs a serializer and proxy IDs that are not mapped yet.
+- Look of Spore's own tooltips (sampled from the native "Mating Call [Backspace]" tooltip, window
+  03754E6C): a UTFWin::StdDrawable (ctor 0x988350, 0x7C bytes) drawing a 50x20 pill image cut in
+  thirds, and the tooltip font 025A6D0F (about 6.5 px a character at 800x600), placed just above
+  the control. Ours: data/ui/lineages_tooltip.png (navy pill, light grey edge, slightly
+  see-through) in a StdDrawable with the native layout values (`sui::std_drawable_tooltip`) as a
+  button window, plus a label in font 025A6D0F, made at the first hover (after every page widget,
+  so on top) and moved/shown outside Present. `coop.fix ui.tooltips off` hides them;
+  `ui.tooltip_pill off` (tests) uses the stock button look.
+- The native tooltip window is made per hover from a text id (0x510A95B, 835D13) and destroyed
+  after, so it cannot be reused; its image object carries no resource key.
+- First version drew a square box with the Arial overlay font: the player asked for the native look.
 
 ## Verification
 
@@ -42,3 +47,8 @@ games", eye "Show or hide", Fast "Fastest world transfer", Start Server "Host a 
 
 ## History
 - 2026-11-10: built on feat/lineages-42; QA above.
+- 2026-11-10: native look; QA second TITAN instance with the QA package mounted (`coop.creations
+  mount`): Find LAN games, Show or hide, Fastest world transfer, Host a new session, compared
+  with the native tooltip (screenshot), 0 faults. Test pitfall: the QA copy loads SporeCoop.package
+  from the registered Steam Data folder, so new images need `coop.creations mount <package>`
+  before the first use (the game remembers a missing image).

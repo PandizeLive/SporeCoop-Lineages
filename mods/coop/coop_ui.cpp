@@ -733,6 +733,9 @@ static void do_send_chat()
     g_dirty = true;
 }
 
+static void build_tooltip(); // BUG-9107
+static Win g_tip_bg, g_tip_text;
+static std::string g_tip_want, g_tip_shown;
 static void build_dialog()
 {
     Win root = sui::find(sui::main_window(), kIdDialog);
@@ -1116,6 +1119,8 @@ static void build_dialog()
         });
     for (Win w : common)
         (void)w;
+    g_tip_bg = g_tip_text = nullptr; // BUG-9107: made at the first hover, after every page widget
+    g_tip_shown.clear();
     sui::set_visible(root, false);
     g_cache[root] = Cache{"", 0, 0};
     H->log(M, SK_INFO, "ui: co-op dialog ready");
@@ -1780,47 +1785,101 @@ static const char* tip_for(const std::string& name)
     return nullptr;
 }
 
+// The tooltip is made of Spore's own UI pieces so it looks like the game's: a native text field
+// box (dark navy, thin light edge, rounded) and a label in the font of Spore's tooltips
+// (025A6D0F, about 7 px a character at 800x600), placed just above the button like the game's.
+constexpr uint32_t kTipFont = 0x025A6D0F;
+static bool g_tip_pill = true; // tests: off = the stock button look
+COOP_FIX("ui.tooltip_pill", "BUG-9107", g_tip_pill, "tests: tooltips use the native-style pill background");
+static Rect g_tip_area;
+static bool g_tip_queued;
+static void build_tooltip()
+{
+    // the pill: our copy of Spore's tooltip background (data/ui/lineages_tooltip.png) drawn the
+    // way the native tooltip draws its own; a native text field box if the image is missing
+    g_tip_bg = nullptr;
+    void* img = sui::image(sui::fnv("lineages_tooltip"), 0x2F7D0004, sui::fnv("sporecoop"));
+    void* look = img ? sui::std_drawable_tooltip(img) : nullptr;
+    if (img)
+        sui::release(img); // the drawable holds its own reference
+    if (look && (g_tip_bg = sui::button_like(D.root, D.like_button, {0, 0, 10, 20}, "")) && g_tip_pill)
+        sui::set_drawable(g_tip_bg, look);
+    H->log(M, look && g_tip_bg ? SK_INFO : SK_WARN, "ui: tooltip background: image %p, look %p, window %p", img, look,
+           g_tip_bg);
+    if (!g_tip_bg)
+        g_tip_bg = sui::text_edit(D.root, {0, 0, 10, 20}, "", kTipFont, 1, true);
+    g_tip_text = sui::label(D.root, {0, 0, 10, 20}, "", kTipFont, 0xFFFFFFFF, sui::kAlignLeft);
+    for (Win w : {g_tip_bg, g_tip_text})
+        if (w) {
+            sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+            sui::set_visible(w, false);
+        }
+    g_tip_shown.clear();
+}
+static void apply_tooltip(void*)
+{
+    g_tip_queued = false;
+    if (!D.root)
+        return;
+    if (!g_tip_text && !g_tip_want.empty())
+        build_tooltip();
+    if (!g_tip_bg || !g_tip_text)
+        return;
+    const bool on = !g_tip_want.empty();
+    if (on) {
+        sui::set_caption(g_tip_text, g_tip_want);
+        sui::set_area(g_tip_bg, g_tip_area);
+        sui::set_area(g_tip_text, {g_tip_area.x1 + 8, g_tip_area.y1, g_tip_area.x2 + 40, g_tip_area.y2} /* room: no wrap */);
+    }
+    sui::set_visible(g_tip_bg, on);
+    sui::set_visible(g_tip_text, on);
+    g_tip_shown = g_tip_want;
+}
+
 void draw_tooltip()
 {
     static Win s_over;
     static double s_since;
-    if (!g_tips_fix || !g_want_open || !D.root || !sui::visible(D.root))
-        return;
-    int mx = -1, my = -1;
-    mouse::last_move(mx, my);
     Win over = nullptr;
     const char* tip = nullptr;
-    for (const auto& [name, w] : g_named) {
-        if (!w || !g_btn_fn.contains(w) || !sui::visible(w))
-            continue;
-        const Rect r = sui::screen_rect(w);
-        if (mx >= r.x1 && mx < r.x2 && my >= r.y1 && my < r.y2 && (tip = tip_for(name))) {
-            over = w;
-            break;
+    Rect btn{};
+    int mx = -1, my = -1;
+    mouse::last_move(mx, my);
+    if (g_tips_fix && g_want_open && D.root && sui::visible(D.root))
+        for (const auto& [name, w] : g_named) {
+            if (!w || !g_btn_fn.contains(w) || !sui::visible(w))
+                continue;
+            const Rect r = sui::screen_rect(w);
+            if (mx >= r.x1 && mx < r.x2 && my >= r.y1 && my < r.y2 && (tip = tip_for(name))) {
+                over = w;
+                btn = r;
+                break;
+            }
         }
-    }
     const double now = H->time_seconds();
     if (over != s_over) {
         s_over = over;
         s_since = now;
     }
-    if (!over || !tip || now - s_since < 0.5)
-        return;
-    auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
-    if (!device)
-        return;
-    int sw = 0, sh = 0;
-    H->screen_size(&sw, &sh);
-    // Arial 18 bold (the overlay font): about 10 pixels a character
-    const int w = int(strlen(tip)) * 10 + 16, h = 26;
-    int x = std::min(mx + 14, sw - w - 4), y = my + 24;
-    if (y + h > sh - 4)
-        y = my - h - 8;
-    x = std::max(x, 4);
-    D3DRECT edge{x - 1, y - 1, x + w + 1, y + h + 1}, body{x, y, x + w, y + h};
-    device->Clear(1, &edge, D3DCLEAR_TARGET, 0xFFB8963A, 1.f, 0); // the window's gold
-    device->Clear(1, &body, D3DCLEAR_TARGET, 0xFF0E1A26, 1.f, 0); // its dark panel blue
-    H->overlay_text(x + 8, y + 3, 0xFFFFFFFF, tip);
+    std::string want = over && tip && now - s_since >= 0.5 ? tip : "";
+    if (!want.empty()) {
+        // positions are relative to the dialog root
+        const Rect root = sui::screen_rect(D.root);
+        int sw = 0, sh = 0;
+        H->screen_size(&sw, &sh);
+        // native: about 6.5 px a character, 8 px of padding each side
+        const float w = float(strlen(tip)) * 6.9f + 18, h = 20;
+        float x = std::clamp(float(mx) - 18, 4.f, float(sw) - w - 4);
+        float y = btn.y1 - h - 3;
+        if (y < 4)
+            y = btn.y2 + 3;
+        g_tip_area = {x - root.x1, y - root.y1, x - root.x1 + w, y - root.y1 + h};
+    }
+    if (want != g_tip_shown && !g_tip_queued) {
+        g_tip_want = want;
+        g_tip_queued = true;
+        H->run_outside_frame(apply_tooltip, nullptr); // UI changes: outside Present
+    }
 }
 int input_lock_now() { return input_lock(); }
 
