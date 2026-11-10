@@ -125,8 +125,8 @@ static void set_position(void* rb, const Vec3& p)
     if (model && readable(model, 0x18)) field<Vec3>(model, 0x0C) = p;
 }
 
-// "Out of the body": from the nearest spine segment through the part.
-static Vec3 outward(void* em, void* rb)
+// "Out of the body": from the nearest spine segment through the part (and that distance).
+static Vec3 outward(void* em, void* rb, float* dist = nullptr)
 {
     const Vec3 p = position(rb);
     float best = 1e9f;
@@ -137,6 +137,7 @@ static Vec3 outward(void* em, void* rb)
         const float l = d.len();
         if (l > 1e-4f && l < best) { best = l; dir = d * (1.f / l); }
     }
+    if (dist) *dist = best < 1e8f ? best : 0.f;
     return dir;
 }
 
@@ -159,7 +160,12 @@ static void* twin(void* em, void* rb)
 
 // ---- the square ----
 constexpr float kOffset = 0.18f;   // world units outside the part's anchor, times the part scale
-constexpr float kRange = 0.6f;     // the farthest a part moves either way, times the part scale
+// How far a part goes, measured as its distance from the nearest spine segment, relative to that
+// distance when the editor first saw it (the part sitting on the skin): out only a little past the
+// skin, in no further than short of the spine (never through to the other side of the body).
+constexpr float kOutBody = 0.3f;   // at most this fraction of the body depth out...
+constexpr float kOutScale = 0.2f;  // ...and at most this many times the part scale
+constexpr float kInBody = 0.25f;   // stays at least this fraction of the body depth from the spine
 constexpr int kHalf = 9;           // square half size in pixels
 struct Drag {
     void* rb = nullptr;
@@ -167,8 +173,11 @@ struct Drag {
     Vec3 start{}, twin_start{}, dir{};
     float px_per_unit = 0, sx = 0, sy = 0; // screen direction of +dir per world unit, unit vector
     int x0 = 0, y0 = 0;
-    float depth = 0, limit = 0;
+    float depth = 0, lo = 0, hi = 0;
 };
+// first-seen spine distance of each part in the open editor model (drags do not add up)
+static void* g_base_em;
+static std::vector<std::pair<void*, float>> g_base;
 static Drag g_drag;
 static bool g_dragging, g_hover;
 static float g_square[2] = {-1, -1};
@@ -316,7 +325,7 @@ static bool input(unsigned message, uintptr_t, int x, int y)
     if (g_dragging) {
         if (message == WM_MOUSEMOVE) {
             const float along = ((x - g_drag.x0) * g_drag.sx + (y - g_drag.y0) * g_drag.sy) / g_drag.px_per_unit;
-            g_drag.depth = std::clamp(along, -g_drag.limit, g_drag.limit);
+            g_drag.depth = std::clamp(along, g_drag.lo, g_drag.hi);
             set_position(g_drag.rb, g_drag.start + g_drag.dir * g_drag.depth);
             if (g_drag.twin) {
                 const Vec3 mirrored{-g_drag.dir.x, g_drag.dir.y, g_drag.dir.z};
@@ -353,7 +362,17 @@ static bool input(unsigned message, uintptr_t, int x, int y)
     d.sy = dy / l;
     d.x0 = x;
     d.y0 = y;
-    d.limit = kRange * part_scale(d.rb);
+    float cur = 0;
+    outward(em, d.rb, &cur);
+    if (g_base_em != em) { g_base.clear(); g_base_em = em; }
+    float base = cur;
+    auto it = std::find_if(g_base.begin(), g_base.end(), [&](const auto& b) { return b.first == d.rb; });
+    if (it != g_base.end()) base = it->second;
+    else g_base.emplace_back(d.rb, cur);
+    if (!(base > 1e-3f)) return false;
+    // depth moves the part along the line from the spine, so its spine distance is cur + depth
+    d.hi = std::max(0.f, base + std::min(kOutBody * base, kOutScale * part_scale(d.rb)) - cur);
+    d.lo = std::min(0.f, kInBody * base - cur);
     d.twin = twin(em, d.rb);
     if (d.twin) d.twin_start = position(d.twin);
     g_drag = d;
@@ -418,8 +437,8 @@ static int command(void*, int argc, const char* const* argv, SkOut* out)
     }
     void* ed = nullptr;
     void* em = editor_model(&ed);
-    say("fix=%d editor=%p dragging=%d moves=%u commits=%u square=%.0f %.0f\n", g_fix, em ? ed : nullptr, g_dragging, g_moves,
-        g_commits, g_square_rb ? g_square[0] : -1.f, g_square_rb ? g_square[1] : -1.f);
+    say("fix=%d editor=%p dragging=%d moves=%u commits=%u square=%.0f %.0f last range %.3f..%.3f\n", g_fix, em ? ed : nullptr,
+        g_dragging, g_moves, g_commits, g_square_rb ? g_square[0] : -1.f, g_square_rb ? g_square[1] : -1.f, g_drag.lo, g_drag.hi);
     if (!em) return 0;
     void* sel = field<void*>(ed, 0xD4);
     if (argc >= 2 && !strcmp(argv[1], "parts")) {

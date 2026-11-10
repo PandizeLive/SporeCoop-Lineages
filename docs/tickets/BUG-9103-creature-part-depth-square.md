@@ -45,8 +45,16 @@ hands and feet keep their placement; weapons and details move.
   (ball/socket connector, capability limb), hands and feet get none.
 - Colours from Spore's editor handle tuning: pale blue (0.67, 0.75, 1.2), green on
   rollover; orange (the power handle's colour) while held.
+- The handle is drawn as a small lit cube (corners projected with the game camera, no outline,
+  shading bent toward the corners, tones matched to the editor's handle balls); `coop.fix
+  editor.depth_cube off` draws the flat square instead. No handle while a dialog is the window
+  manager's modal window (+0x82C): before this the square showed over the exit box.
 - Press on the square: the editor does not see the press (the part stays selected); moving
-  the mouse moves the part along its outward line (at most 0.6 x part scale either way);
+  the mouse moves the part along its outward line. Limits come from the body, not the part
+  size: the part's distance from the nearest spine segment when the editor first saw it is the
+  body depth there; it goes out at most 0.3 x that (and 0.2 x part scale), and in no closer to
+  the spine than 0.25 x that, so it never comes out the other side. Drags do not add up (the
+  first-seen depth is kept per part while the editor model is open);
   the mirrored twin (x mirrored, any part id: left and right ears differ) moves mirrored;
   release commits an undo step and marks the creation changed.
 - `coop.fix editor.depth` (off = no square); `coop.depth [parts | open <creature>]` (tests).
@@ -64,3 +72,21 @@ Single PC (QA copy, profile LineagesDepthQA, Creature save Samuth, 640x480, mute
 
 ## History
 - 2026-11-09: built on feat/lineages-42; single-PC QA above.
+- 2026-11-10: two PCs (TITAN host, MSI guest over Tailscale, both QA instances, muted): the
+  MSI joined, TITAN dragged the ear (0.090 -> 0.241, twin mirrored), Save New, 0 faults on
+  both. The partner's "player 0 creature" (7CE5A798) arrived byte-identical on the MSI (bem
+  hash E85A00D6 on both), but it is the host's unchanged avatar body (same hash as 2919A819):
+  in this QA world the avatar species stays 2919A819 after a Save New from the editor vote, so
+  co-op does not send the edited creation. Only the avatar travels today; sending saved
+  creations to partners is the Lineages Cache work of roadmap 42 (1A). The depth itself is in
+  the bem (a byte-identical transfer carries it).
+- 2026-11-10: depth kept in a new creation, checked by opening it in a fresh editor:
+  291D1C46 beak C8F7A86A -0.351 -> -0.438 kept. Test pitfall: `coop.depth open` while an
+  editor is already open does not switch creations and stacks editors (letterboxed UI); open
+  only from the stage.
+- 2026-11-10: one R6025 (pure virtual function call) after Save New, once, in a run where the
+  test set the editor's selection by writing cEditor +0xD4 (bypassing the editor's own select)
+  and pushed the ear 0.47 out. Not seen with selection by click: three Save New runs, one at
+  the old maximum (beak -0.351 -> -0.689), 0 faults. The new limits keep parts far nearer.
+- 2026-11-10: cube handle, dialog hiding and body limits (beak range -0.124..+0.050 at body
+  depth 0.166; a second drag out gets 0), 0 faults.
