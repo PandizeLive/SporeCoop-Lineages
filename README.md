@@ -47,16 +47,13 @@ A first-use Civilization tutorial also reached two native species capitals throu
 2. **Test three founders, then four.** Verify that every player keeps their species and settlements, and that larger rival counts remain playable from founding through victory.
 3. **Complete shared Adventures and cross-PC testing.** Synchronize the remaining objectives and rewards, verify the return to the campaign, and run the supported setup on separate PCs.
 
-Next, with the campaign work:
+Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
-- **Lower progress requirement: 60% per extra seat.** Each reserved seat adds 60% of the solo requirement instead of 100%.
-- **One difficulty slider for everything.** Difficulty Scaling currently changes only the progress requirement and Civilization military pressure. Enemy health and damage, hunger and city takeover effort use fixed per-seat values. The slider should scale all of them. Saved campaigns keep their current rules.
+Planned for 42:
 
-Later, after the campaign is playable through Space:
-
-- **Cell creations in Cell stage.** Let cells made in the Cell editor, including partners' cells, appear as other species in Cell stage.
-- **Depth control for creature parts.** Add the depth square from the vehicle and building editors to the Creature editor, so parts can be pushed in or pulled out.
-- **Separate Lineages Cache from My Creations.** Keep received creations out of My Creations while they still appear in worlds, and let each player choose whose creations they receive. Design notes: [creations.md](docs/re/creations.md#creations-cache-scope-roadmap).
+- **Cell creations in Cell stage.** Cells made in the Cell editor, including partners' cells, spawn natively as their own species with Maxis AI behaviour, alongside Maxis species. Species that carry cell parts stay Maxis so part unlocks keep working. Cell population is reviewed at the same time: it currently feels crowded.
+- **Depth control for creature parts.** Add the depth square from the vehicle and building editors to the Creature editor for weapons, details and other non-limb parts. Limbs, hands and feet keep their current placement.
+- **Lineages Cache in its own tab.** Received creations leave My Creations but still appear in worlds. Everyone keeps sharing their whole library with partners, received creations are kept, and a player can allow their creations to be passed on further. Design notes: [creations.md](docs/re/creations.md#creations-cache-scope-roadmap).
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

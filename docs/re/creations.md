@@ -1095,3 +1095,22 @@ Options for whose creations a player receives (a per-player setting):
 Plus: senders choose whether their creations may be passed on beyond the
 people they played with, a size cap, and a "remove cached creations no save
 uses" cleanup.
+
+## Lineages Cache decisions for 42 (2026-11-09, fix/fov-stuck-wide-lens)
+<a id="creations-cache-decisions-42"></a>
+
+Player decisions on the options in [cache scope](#creations-cache-scope-roadmap):
+1. Send: the whole locally authored library (unchanged, 1A).
+2. Receive: everything partners send (unchanged, 2A).
+3. Where: received creations only in the Lineages Cache tab, out of My Creations
+   (3B), provided a runtime probe shows Spore still places them in worlds.
+4. Keep: forever, no cap or cleanup (unchanged, 4A).
+5. Passing on: a player may opt in to let their creations be relayed beyond the
+   people they played with (5B). Today a host relays only items seen in the
+   current session (`g_relay`, cleared in `on_session_end`), and received
+   items live in the Pollination database (011AC19D) and are never inventoried
+   as local, so nothing is passed on. 5B needs a per-item "may relay" flag in
+   `library_sync::Item` set by the author's choice and honoured by
+   `g_exchange.eligible`.
+Open probe for 3B: which My Creations filter shows Pollination items, and
+whether moving them out changes NPC selection.
