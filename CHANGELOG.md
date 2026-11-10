@@ -5,6 +5,11 @@
 - Return the third-person field of view to normal when you leave Creature or
   Adventure play, show a message when it changes, and only react to Ctrl+Scroll
   while Ctrl is really held (BUG-9099).
+- New campaigns: each extra seat adds 60% to stage progress at 100% Difficulty
+  Scaling, and the slider now also scales enemy health and damage, hunger, city
+  takeover effort and Space raid size. Saved campaigns keep their rules (BUG-9100).
+- Give the mouse back right after an autosave instead of about 5 seconds later,
+  and confirm Spore's "game saved" box sooner (BUG-9101).
 
 ## [0.7.3.6-lineages40-dev] - 2026-11-09
 

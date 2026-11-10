@@ -79,7 +79,8 @@ static void SK_CDECL h_BuildRaidFleet(void* fleet, int* bombers, int* raiders, i
     if (!fresh || *bombers < 1) return;
     auto* mission = static_cast<uint8_t*>(fleet) - 0x238;
     if (F<uint32_t>(mission,0x78) != 0xA4B0A2DF || !F<uint8_t>(mission,0x215)) return;
-    const unsigned extra = world::rules_for_current().seats - 1;
+    // One raider per extra seat at 100% difficulty; new campaigns scale it (BUG-9100).
+    const unsigned extra = std::min(world::rules_for_current().extra_total(1), 12u);
     auto end = F<uint8_t*>(fleet,4);
     if (!extra || !end || !F<uint8_t*>(fleet,0)) return;
     g_base_ships = unsigned(end - F<uint8_t*>(fleet,0)) / 0x20;

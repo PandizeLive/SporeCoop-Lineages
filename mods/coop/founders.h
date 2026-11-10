@@ -17,12 +17,25 @@ struct CampaignRules {
     uint16_t extra_health_percent = 15, extra_damage_percent = 5;
     uint16_t extra_hunger_basis_points = 250; // 100 basis points = 1%
     uint16_t extra_takeover_percent = 5;
-    uint32_t takeover_percent() const { return 100u + (seats - 1u) * extra_takeover_percent; }
-    float hunger_factor() const { return 1.f + (seats - 1u) * extra_hunger_basis_points / 10000.f; }
-    uint32_t enemy_health_percent() const { return 100u + (seats - 1u) * extra_health_percent; }
-    uint32_t enemy_damage_percent() const { return 100u + (seats - 1u) * extra_damage_percent; }
+    // 0 (campaigns before 41-dev): difficulty_percent is the progress added per extra seat and the
+    // other extras are fixed. 1 (BUG-9100): difficulty_percent scales every per-seat extra, and
+    // progress adds kProgressPerSeat percent per extra seat at 100%.
+    uint8_t model = 0;
+    static constexpr uint32_t kProgressPerSeat = 60;
+    // The whole bonus of the extra seats, rounded to the nearest unit.
+    uint32_t extra_total(uint32_t per_seat) const {
+        const uint64_t seats_over = seats > 1 ? seats - 1u : 0u;
+        if (!model) return uint32_t(seats_over * per_seat);
+        return uint32_t((seats_over * per_seat * difficulty_percent + 50u) / 100u);
+    }
+    uint32_t takeover_percent() const { return 100u + extra_total(extra_takeover_percent); }
+    float hunger_factor() const { return 1.f + extra_total(extra_hunger_basis_points) / 10000.f; }
+    uint32_t enemy_health_percent() const { return 100u + extra_total(extra_health_percent); }
+    uint32_t enemy_damage_percent() const { return 100u + extra_total(extra_damage_percent); }
     bool operator==(const CampaignRules&) const = default;
-    uint32_t workload_percent() const { return 100u + (seats - 1u) * difficulty_percent; }
+    uint32_t workload_percent() const {
+        return 100u + (model ? extra_total(kProgressPerSeat) : (seats - 1u) * difficulty_percent);
+    }
     static constexpr unsigned native_fleet_limit = 36;
     static constexpr unsigned native_military_interval_ms = 40000;
     static constexpr unsigned max_fleet_overflow = 11; // ceil(36 * 30%) at four seats
@@ -44,6 +57,10 @@ struct CampaignRules {
         return reduction < 1000u ? native_military_interval_ms - 40u * reduction : 1u;
     }
     uint32_t rival_target(uint16_t baseline) const {
+        if (model) {
+            const uint64_t seats_over = seats > 1 ? seats - 1u : 0u;
+            return baseline + uint32_t((baseline * seats_over * kProgressPerSeat * difficulty_percent + 9999u) / 10000u);
+        }
         const uint32_t added = (uint32_t(baseline) * difficulty_percent + 99u) / 100u;
         return baseline + (seats - 1u) * added;
     }

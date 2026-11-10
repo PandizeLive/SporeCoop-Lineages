@@ -128,7 +128,7 @@ bool input_wheel(int x, int y, int notches)
     return true;
 }
 
-bool input_click(int x, int y, int button)
+bool input_click(int x, int y, int button, bool release_cursor)
 {
     HWND w = (HWND)game_window();
     if (!w)
@@ -145,9 +145,12 @@ bool input_click(int x, int y, int button)
         g_vkdown[vk] = 1;
         PostMessageW(w, d, mk, MAKELPARAM(x, y));
     });
-    run_after_frames(6, [w, u, x, y, vk] {
+    run_after_frames(6, [w, u, x, y, vk, release_cursor] {
         g_vkdown[vk] = 0;
         PostMessageW(w, u, 0, MAKELPARAM(x, y));
+        // BUG-9101: otherwise the game reads the click position as the mouse for 5 s.
+        if (release_cursor)
+            vcursor_release();
     });
     return true;
 }

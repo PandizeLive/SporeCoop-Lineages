@@ -3947,6 +3947,7 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, 
     end_open_session();
     reset_lobby();
     founders::CampaignRules requested{uint8_t(seats),uint16_t(scaling)};
+    requested.model = 1; // BUG-9100: new campaigns scale every extra with the difficulty
     int health = H->config_int(M,"campaign","enemy_health_per_extra_founder",requested.extra_health_percent);
     int damage = H->config_int(M,"campaign","enemy_damage_per_extra_founder",requested.extra_damage_percent);
     if (health < 0 || health > UINT16_MAX || damage < 0 || damage > UINT16_MAX) {
@@ -4131,6 +4132,18 @@ int c_founders(void*, int, const char* const*, SkOut* out)
     }
     SAY("No readable founding roster for this planet.");
     return 1;
+}
+
+// The campaign rules in effect here and every value derived from them (BUG-9100, tests).
+int c_rules(void*, int, const char* const*, SkOut* out)
+{
+    const auto r = world::rules_for_current();
+    SAY("seats=%u difficulty=%u%% model=%u progress=%u%% enemy_hp=%u%% enemy_dmg=%u%% hunger=%.4f "
+        "takeover=%u%% raid_extra=%u civ_interval_ms=%u rival_target(5)=%u\n",
+        r.seats, r.difficulty_percent, r.model, r.workload_percent(), r.enemy_health_percent(),
+        r.enemy_damage_percent(), r.hunger_factor(), r.takeover_percent(), r.extra_total(1),
+        r.civ_military_interval_ms(), r.rival_target(5));
+    return 0;
 }
 
 int c_status(void*, int, const char* const*, SkOut* out)
@@ -5539,6 +5552,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
     H->command_add(M, "coop.founders", "show the two species registered on this saved planet", c_founders, nullptr, MT);
+    H->command_add(M, "coop.rules", "the campaign rules in effect and their derived difficulty values", c_rules, nullptr, MT);
     H->command_add(M, "coop.track", "coop.track start|stop|count|dump [from] [n]|lift <m>|novel 0|1 - every frame: the partners' puppets and the own avatar; in Tribe the player tribe's members (tests, BUG-0360, BUG-0365, BUG-0366)",
                    c_track, nullptr, MT);
     H->command_add(M, "coop.log", "coop.log detail [0|1|2] - support logging: 0 = the old lines only, 1 = state trace + events "

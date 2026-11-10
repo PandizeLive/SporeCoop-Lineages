@@ -182,16 +182,17 @@ RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* pla
                               OPEN_EXISTING,0,nullptr);
     if (file == INVALID_HANDLE_VALUE)
         return GetLastError() == ERROR_FILE_NOT_FOUND ? RulesFile::Missing : RulesFile::Unreadable;
-    std::array<uint8_t,24> data{}; // largest format plus one byte to detect overlong files
+    std::array<uint8_t,25> data{}; // largest format plus one byte to detect overlong files
     DWORD count = 0;
-    bool ok = ReadFile(file,data.data(),DWORD(data.size()),&count,nullptr) && (count == 7 || count == 11 || count == 14 || count == 16 || count == 21 || count == 23);
+    bool ok = ReadFile(file,data.data(),DWORD(data.size()),&count,nullptr) && (count == 7 || count == 11 || count == 14 || count == 16 || count == 21 || count == 23 || count == 24);
     CloseHandle(file);
     if (!ok) return RulesFile::Unreadable;
     net::Reader r(data.data(),count);
     uint32_t format = r.u32();
     if (!((format == 0x31545346u && count == 7) || (format == 0x32545346u && count == 11) ||
           (format == 0x33545346u && count == 14) || (format == 0x34545346u && count == 16) ||
-          (format == 0x35545346u && count == 21) || (format == 0x36545346u && count == 23)))
+          (format == 0x35545346u && count == 21) || (format == 0x36545346u && count == 23) ||
+          (format == 0x37545346u && count == 24)))
         return RulesFile::Unreadable;
     CampaignRules saved{r.u8(),r.u16()};
     // FST1 campaigns used fixed combat bonuses before the fields were persisted.
@@ -220,7 +221,12 @@ RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* pla
             if (seats > 4) return RulesFile::Unreadable;
         }
     }
-    if (count == 23) saved.extra_takeover_percent = r.u16();
+    if (count >= 23) saved.extra_takeover_percent = r.u16();
+    // FST7 (41-dev) records whether the difficulty scales every extra (BUG-9100).
+    if (count == 24) {
+        saved.model = r.u8();
+        if (saved.model > 1) return RulesFile::Unreadable;
+    }
     if (!r.ok() || r.left()) return RulesFile::Unreadable;
     if (plan) *plan = saved_plan;
     value = saved;
@@ -250,7 +256,7 @@ public:
 static bool write_rules(const std::wstring& path, const CampaignRules& rules, const SeatPlan& plan, bool replace)
 {
     net::Writer w;
-    w.u32(0x36545346u); // FST6
+    w.u32(0x37545346u); // FST7
     w.u8(rules.seats);
     w.u16(rules.difficulty_percent);
     w.u16(rules.extra_health_percent);
@@ -261,6 +267,7 @@ static bool write_rules(const std::wstring& path, const CampaignRules& rules, co
     w.u16(rules.extra_hunger_basis_points);
     for (auto seats : plan.previous_stage_seats) w.u8(seats);
     w.u16(rules.extra_takeover_percent);
+    w.u8(rules.model);
     return publish(path,w.data,replace);
 }
 

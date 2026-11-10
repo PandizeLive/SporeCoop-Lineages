@@ -345,6 +345,12 @@ static bool g_saved_box_visible;
 static bool g_saved_box_fix = true;
 COOP_FIX("world.saved_box", "BUG-9057", g_saved_box_fix,
          "world: confirm a visible saved box before posting another save");
+// BUG-9101: the confirming click left SporeKit's virtual cursor on the OK button for 5 s, so the
+// game read that point as the mouse (a cell steered there, the camera and hover ignored the
+// player); and the box was looked for only every 200 ms while the simulation was paused.
+static bool g_saved_box_cursor_fix = true;
+COOP_FIX("world.saved_box_cursor", "BUG-9101", g_saved_box_cursor_fix,
+         "world: the saved box confirmation gives the mouse back at once and is looked for every 50 ms");
 
 static sui::Win first_visible(sui::Win w, uint32_t id, int depth = 0)
 {
@@ -402,7 +408,8 @@ static void box_task(void*)
                 snprintf(cmd, sizeof cmd, "move %d %d", (int)x, (int)y);
                 H->command_exec(cmd, nullptr);
             }
-            snprintf(cmd, sizeof cmd, "click %d %d", (int)x, (int)y);
+            snprintf(cmd, sizeof cmd, g_saved_box_cursor_fix ? "click %d %d left release" : "click %d %d",
+                     (int)x, (int)y);
             if (H->command_exec(cmd, nullptr) == 0) return;
         } else {
             H->log(M, SK_INFO, "world: saved box OK is outside the client bounds; confirming with Enter");
@@ -421,7 +428,7 @@ static void box_tick()
     uint64_t now = GetTickCount64();
     if (now >= g_box_watch_until || g_box_task || now < g_box_next_check)
         return;
-    g_box_next_check = now + 200;
+    g_box_next_check = now + (g_saved_box_cursor_fix && !g_box_seen_at ? 50 : 200);
     g_box_task = true;
     H->run_outside_frame(box_task, nullptr);
 }
@@ -1465,8 +1472,9 @@ void receive_campaign_rules(const net::Session& session, uint8_t from, net::Read
     next.world = r.u32();
     next.mode = r.u32();
     next.rules = {r.u8(),r.u16(),r.u16(),r.u16(),r.u16(),r.u16()};
+    next.rules.model = r.u8(); // BUG-9100
     if (!r.ok() || r.left() || !next.world || !in_stage(next.mode) ||
-        !next.rules.seats || next.rules.seats > 4) return;
+        !next.rules.seats || next.rules.seats > 4 || next.rules.model > 1) return;
     g_remote_rules = next;
 }
 
@@ -1482,6 +1490,7 @@ static void send_campaign_rules(net::Session& session, const founders::CampaignR
     w.u16(rules.extra_damage_percent);
     w.u16(rules.extra_hunger_basis_points);
     w.u16(rules.extra_takeover_percent);
+    w.u8(rules.model);
     session.broadcast_reliable(net::MSG_CAMPAIGN_RULES,w);
 }
 

@@ -274,6 +274,20 @@ void vcursor_hold(bool on)
     g_vcursor_last = GetTickCount();
 }
 
+void vcursor_release()
+{
+    if (!g_vcursor_held)
+        g_vcursor_active = false;
+}
+
+bool vcursor_state(int& x, int& y, unsigned& age_ms)
+{
+    x = g_vcursor_x;
+    y = g_vcursor_y;
+    age_ms = GetTickCount() - g_vcursor_last;
+    return g_vcursor_active;
+}
+
 void vcursor_set(int x, int y)
 {
     g_vcursor_x = x;

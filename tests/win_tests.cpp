@@ -132,6 +132,26 @@ static void test_founders()
     CHECK(disabled.civ_military_limit(7) == 7 && disabled.civ_military_interval_ms() == 40000);
     CHECK(high.civ_military_limit(7) == 47 && high.civ_military_interval_ms() == 1);
     CHECK(disabled.civ_overflow_slots(7,36,6) == 0 && high.civ_overflow_slots(7,46,6) == 1);
+    // BUG-9100: new campaigns scale every per-seat extra with the difficulty; progress adds 60% per seat.
+    auto scaled = [](uint8_t seats, uint16_t difficulty) {
+        founders::CampaignRules r{seats,difficulty};
+        r.model = 1;
+        return r;
+    };
+    const auto s4 = scaled(4,100), s4_double = scaled(4,200), s4_half = scaled(4,50), s1 = scaled(1,300);
+    CHECK(s4.workload_percent() == 280 && s4.rival_target(5) == 14);
+    CHECK(s4.enemy_health_percent() == 145 && s4.enemy_damage_percent() == 115);
+    CHECK(s4.hunger_factor() == 1.075f && s4.takeover_percent() == 115 && s4.extra_total(1) == 3);
+    CHECK(s4_double.workload_percent() == 460 && s4_double.rival_target(5) == 23);
+    CHECK(s4_double.enemy_health_percent() == 190 && s4_double.enemy_damage_percent() == 130);
+    CHECK(s4_double.hunger_factor() == 1.15f && s4_double.takeover_percent() == 130 && s4_double.extra_total(1) == 6);
+    CHECK(s4_half.workload_percent() == 190 && s4_half.enemy_health_percent() == 123);
+    CHECK(s4_half.enemy_damage_percent() == 108 && s4_half.takeover_percent() == 108 && s4_half.extra_total(1) == 2);
+    CHECK(scaled(2,100).workload_percent() == 160 && scaled(4,0).workload_percent() == 100);
+    CHECK(scaled(4,0).enemy_health_percent() == 100 && scaled(4,0).civ_military_interval_ms() == 40000);
+    CHECK(s1.workload_percent() == 100 && s1.enemy_health_percent() == 100 && s1.extra_total(1) == 0);
+    CHECK(s4.civ_military_interval_ms() == 32800 && s4.civ_military_limit(10) == 12);
+    CHECK(!(s4 == quartet));
     CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{5,100},err));
     CHECK(founders::reserve(key,quartet,err) && founders::reserve(key,quartet,err));
     CHECK(!founders::reserve(key,partial,err));
@@ -148,6 +168,20 @@ static void test_founders()
     put(planet + L".duo-seats",saved_rules + "x");
     CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
     put(planet + L".duo-seats",saved_rules.substr(0,16));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    put(planet + L".duo-seats",saved_rules);
+    // FST6 (40-dev and older) keeps the old rules; FST7 round-trips the scaled model.
+    CHECK(saved_rules.size() == 24 && saved_rules.compare(0,4,"FST7") == 0 && saved_rules[23] == 0);
+    auto fst6 = saved_rules.substr(0,23);
+    fst6.replace(0,4,"FST6");
+    put(planet + L".duo-seats",fst6);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == quartet && settings.model == 0);
+    auto scaled_file = saved_rules;
+    scaled_file[23] = 1;
+    put(planet + L".duo-seats",scaled_file);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == s4);
+    scaled_file[23] = 2;
+    put(planet + L".duo-seats",scaled_file);
     CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
     put(planet + L".duo-seats",saved_rules);
     founders::SeatPlan plan;

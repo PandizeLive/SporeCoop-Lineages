@@ -1124,6 +1124,7 @@ static void refresh_connect()
     show_eye("hidehostaddresses", !D.show_host_addresses);
     founders::CampaignRules rules{(uint8_t)D.seats,
         (uint16_t)std::clamp(atoi(sui::edit_text(D.scaling_edit).c_str()), 0, 65535)};
+    rules.model = 1; // the preview shows a new campaign (BUG-9100)
     auto setting = [](const char* key, uint16_t value) {
         return (uint16_t)std::clamp(H->config_int(M, "campaign", key, value), 0, 65535);
     };
@@ -1138,7 +1139,7 @@ static void refresh_connect()
     text(D.difficulty_value[0], bonus(rules.workload_percent()));
     text(D.difficulty_value[1], bonus(rules.enemy_health_percent()) + " / " + bonus(rules.enemy_damage_percent()));
     char hunger[80];
-    const double hunger_bonus = (D.seats - 1) * rules.extra_hunger_basis_points / 100.0;
+    const double hunger_bonus = rules.extra_total(rules.extra_hunger_basis_points) / 100.0;
     snprintf(hunger, sizeof hunger, "%s%.2f%%", hunger_bonus ? "+" : "", hunger_bonus);
     text(D.difficulty_value[2], hunger);
     text(D.difficulty_value[3], bonus(rules.takeover_percent()));

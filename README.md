@@ -49,7 +49,7 @@ A first-use Civilization tutorial also reached two native species capitals throu
 
 Next, with the campaign work:
 
-- **Lower progress requirement: 75% per extra seat.** Each reserved seat adds 75% of the solo requirement instead of 100%.
+- **Lower progress requirement: 60% per extra seat.** Each reserved seat adds 60% of the solo requirement instead of 100%.
 - **One difficulty slider for everything.** Difficulty Scaling currently changes only the progress requirement and Civilization military pressure. Enemy health and damage, hunger and city takeover effort use fixed per-seat values. The slider should scale all of them. Saved campaigns keep their current rules.
 
 Later, after the campaign is playable through Space:

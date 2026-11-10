@@ -161,7 +161,9 @@ extern SkHost g_host;
 // input.cpp
 bool input_key(int vk, const char* mode);
 bool input_text(const std::string& utf8);
-bool input_click(int x, int y, int button);
+// release_cursor: hand GetCursorPos back to the real mouse right after the button-up
+// (the mod's own confirmations during play, BUG-9101); tests keep the virtual cursor.
+bool input_click(int x, int y, int button, bool release_cursor = false);
 bool input_drag(int x1, int y1, int x2, int y2, int button);
 bool input_move(int x, int y);
 // press or release a mouse button and keep it held (steering by holding the button: cell stage)
@@ -244,6 +246,8 @@ void set_background_mode(bool on);
 void vcursor_set(int x, int y); // client coords, activates the virtual cursor
 void vcursor_tick();            // auto-release after inactivity
 void vcursor_hold(bool on);     // a held button keeps the virtual cursor active
+void vcursor_release();         // back to the real mouse now
+bool vcursor_state(int& x, int& y, unsigned& age_ms); // true while GetCursorPos answers the virtual cursor
 void place_test_window();
 void apply_frame_limit();
 void set_frame_target(int fps);
