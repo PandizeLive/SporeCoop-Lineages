@@ -1740,7 +1740,7 @@ static const char* tip_for(const std::string& name)
     struct Tip { const char* name; const char* en; const char* ru; };
     static const Tip kTips[] = {
         {"report", "Send a bug report", "Отправить отчёт"},
-        {"refreshlan", "Find LAN games", "Найти игры в сети"},
+        {"refreshlan", "Refresh the server list", "Обновить список серверов"},
         {"join", "Join this server", "Подключиться"},
         {"saveserver", "Save to Server List", "Сохранить сервер"},
         {"deleteserver", "Remove from Server List", "Удалить сервер"},
@@ -1789,6 +1789,7 @@ static const char* tip_for(const std::string& name)
 // box (dark navy, thin light edge, rounded) and a label in the font of Spore's tooltips
 // (025A6D0F, about 7 px a character at 800x600), placed just above the button like the game's.
 constexpr uint32_t kTipFont = 0x025A6D0F;
+constexpr double kTipDelay = 0.8; // seconds the mouse rests on a button before its tooltip shows
 static bool g_tip_pill = true; // tests: off = the stock button look
 COOP_FIX("ui.tooltip_pill", "BUG-9107", g_tip_pill, "tests: tooltips use the native-style pill background");
 static Rect g_tip_area;
@@ -1861,7 +1862,8 @@ void draw_tooltip()
         s_over = over;
         s_since = now;
     }
-    std::string want = over && tip && now - s_since >= 0.5 ? tip : "";
+    // a short rest first, like Spore's own tooltips: no flicker while the mouse passes over
+    std::string want = over && tip && now - s_since >= kTipDelay ? tip : "";
     if (!want.empty()) {
         // positions are relative to the dialog root
         const Rect root = sui::screen_rect(D.root);
