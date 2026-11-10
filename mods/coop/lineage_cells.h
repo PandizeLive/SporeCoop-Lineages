@@ -1,7 +1,7 @@
 // BUG-9111 (roadmap 43): Lineages cells. Player cells appear in the Cell stage as NPC species, about one
 // in four spawns of a native creature species takes a player cell's model (docs/re/cell.md#cell-lineage-cells).
 //  - which cells: the host's own My Creations and Lineages Cache cells authored by a player in this
-//    session or by an author who allows passing on (Share Onward); never a player's current cell
+//    session, and with Foreign Creations on (BUG-9112) any other Cache cell; never a player's current cell
 //  - the native species keeps its behaviour (.cell AI): a cell goes only onto a native species with the
 //    same diet (its mouth), so a carnivore hunts and a herbivore grazes
 //  - the host decides; every guest gets the cell's records before the host uses it (creations::host_cell_out)

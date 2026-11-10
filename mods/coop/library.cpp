@@ -533,94 +533,95 @@ static void refresh_received() {
     ReleaseSRWLockExclusive(&g_received_lock);
 }
 
-// BUG-9105 (roadmap 42, 5B): passing creations on. A host relays a creation to the people in the
-// session it arrived in (g_relay); beyond that only when its author opted in (coop.ini [library]
-// share_onward=1, or `coop.library onward on`). Each player tells the host their choice in a
-// MSG_LIBRARY kind 5 message (u8 5, str8 source identity, u8 allow); older builds drop it (their
-// receive() reads a hash and finds none). The host keeps the opted-in sources in relay.bin and, as
-// host of a later session, offers those authors' received creations too.
-static constexpr uint8_t kOnwardMsg = 5;
-static bool g_onward = false;               // this player's own choice
-static std::set<std::string> g_onward_ok;   // authors (source identities) who allow passing on
-static std::set<uint8_t> g_onward_told;     // peers told our choice this session
-static unsigned g_onward_offered = 0;
-static void save_onward() {
-    net::Writer w;
-    w.u32(0x31524C4C); // "LLR1"
-    w.u32(uint32_t(g_onward_ok.size()));
-    for (auto &s : g_onward_ok)
-        w.str8(s);
-    atomic_file(g_dir + L"\\relay.bin", w.data);
-}
-static void load_onward() {
-    std::vector<uint8_t> bytes;
-    if (!read_file(g_dir + L"\\relay.bin", bytes, 4u << 20))
-        return;
-    net::Reader r(bytes.data(), bytes.size());
-    if (r.u32() != 0x31524C4C)
-        return;
-    uint32_t n = r.u32();
-    std::set<std::string> out;
-    for (uint32_t i = 0; i < n && i < kMaxEntries && r.ok(); ++i) {
-        std::string s = r.str8();
-        if (r.ok() && library_sync::valid_hash(s))
-            out.insert(s);
-    }
-    if (r.ok())
-        g_onward_ok = std::move(out);
-}
-static void tell_onward(uint8_t peer) {
+// BUG-9112 (43-dev, player decision; replaces BUG-9105's Share Onward): the receiver decides. Every
+// player always gets the connected players' own creations. "Foreign Creations" (coop.ini [library]
+// foreign_creations=1, `coop.library foreign on`, default off) also brings everything else in the
+// connected players' Lineages Caches (creations they got from other people), and those count for Player
+// Cells in the player's worlds. The library exchange runs through the host, so the host offers each
+// peer by that peer's choice, and a guest offers its received creations to the host only when the host
+// wants them. Each player tells the others its identity and choice: MSG_LIBRARY kind 5 (u8 5, str8
+// source identity, u8 foreign); the same layout Share Onward used (same Lineages build required).
+static constexpr uint8_t kChoiceMsg = 5;
+static bool g_foreign = false;                   // this player's own choice
+static std::set<uint8_t> g_choice_told;          // peers told our choice this session
+static std::map<uint8_t, std::string> g_peer_identity; // peer -> its source identity (its own creations)
+static std::map<uint8_t, bool> g_peer_foreign;   // peer -> it wants foreign creations
+static std::set<std::pair<uint8_t, std::string>> g_peer_sources; // creations a peer offered this session
+static unsigned g_foreign_offered = 0, g_foreign_refused = 0;
+static void load_onward() {} // relay.bin (Share Onward's opted-in authors) is no longer read
+static void tell_choice(uint8_t peer) {
     if (g_identity.empty())
         return;
     net::Writer w;
-    w.u8(kOnwardMsg);
+    w.u8(kChoiceMsg);
     w.str8(g_identity);
-    w.u8(g_onward);
+    w.u8(g_foreign);
     if (S->send_reliable_to(peer, net::MSG_LIBRARY, w))
-        g_onward_told.insert(peer);
+        g_choice_told.insert(peer);
 }
-// A player's claim is applied once that player sends a creation under the same identity (a guest
-// offers only its own creations), so nobody can opt in someone else; opting out applies at once.
-static std::map<uint8_t, std::string> g_onward_claim; // peer -> source it opted in this session
-static std::set<std::pair<uint8_t, std::string>> g_peer_sources; // creations a peer offered this session
-static void onward_message(uint8_t peer, net::Reader &r) {
+static void choice_message(uint8_t peer, net::Reader &r) {
     std::string source = r.str8();
-    uint8_t allow = r.u8();
-    if (!r.ok() || r.left() || allow > 1 || !library_sync::valid_hash(source))
+    uint8_t foreign = r.u8();
+    if (!r.ok() || r.left() || foreign > 1 || !library_sync::valid_hash(source))
         return;
-    if (!allow) {
-        g_onward_claim.erase(peer);
-        if (g_onward_ok.erase(source))
-            save_onward();
-    } else {
-        g_onward_claim[peer] = source;
-        // switched on during a session: the peer's creations may have come already
-        if (g_peer_sources.count({peer, source}) && g_onward_ok.insert(source).second)
-            save_onward();
+    g_peer_identity[peer] = source;
+    const bool was = g_peer_foreign.count(peer) && g_peer_foreign[peer];
+    g_peer_foreign[peer] = foreign != 0;
+    if (foreign && !was && g_peers.count(peer)) { // switched on: what was skipped for it is offered again
+        g_exchange.leave(peer);
+        g_exchange.join(peer);
     }
 }
 static void onward_seen(uint8_t peer, const library_sync::Item &item) {
     if (!item.source.empty() && g_peer_sources.size() < kMaxEntries)
         g_peer_sources.emplace(peer, item.source);
-    auto c = g_onward_claim.find(peer);
-    if (c != g_onward_claim.end() && c->second == item.source && g_onward_ok.insert(item.source).second)
-        save_onward();
 }
-// A received creation the host may offer in any session: its author opted in.
-static bool onward_ok(const Entry &e) {
-    return !e.local && !e.failed && !e.item.source.empty() && g_onward_ok.count(e.item.source);
+// the identities of the players connected now (their own creations), ours included
+static std::set<std::string> connected_sources() {
+    std::set<std::string> out;
+    if (!g_identity.empty())
+        out.insert(g_identity);
+    if (S && S->connected())
+        for (auto &p : S->players()) {
+            auto it = g_peer_identity.find(p.id);
+            if (it != g_peer_identity.end())
+                out.insert(it->second);
+        }
+    return out;
 }
-static void offer_onward() {
-    if (S->role() != net::Role::Host)
-        return;
+static bool wants_foreign(uint8_t peer) {
+    auto it = g_peer_foreign.find(peer);
+    return it != g_peer_foreign.end() && it->second;
+}
+// may this creation go to that peer
+static bool eligible_to(uint8_t peer, const Entry &e) {
+    if (e.local)
+        return g_active_local.count(e.item.hash) > 0;
+    if (e.failed)
+        return false;
+    if (S->role() != net::Role::Host) // a guest talks only to the host: its received ones if the host wants them
+        return peer == 0 && wants_foreign(0);
+    if (!e.item.source.empty() && connected_sources().count(e.item.source))
+        return true; // a connected player's own creation
+    return wants_foreign(peer);
+}
+static void offer_all() {
     for (auto &[hash, e] : g_entries)
-        if (onward_ok(e) && !g_offered.count(hash)) {
+        if (!e.local && !e.failed && !g_offered.count(hash)) {
             offer(e);
-            ++g_onward_offered;
+            ++g_foreign_offered;
         }
 }
 
 static bool store_item(uint8_t peer, const library_sync::Item &item, const std::vector<uint8_t> &png) {
+    // BUG-9112: the host keeps a guest's received (foreign) creation only when it wants foreign ones
+    if (S->role() == net::Role::Host && !g_foreign && peer != S->my_id() && item.source != "manual-test") {
+        auto id = g_peer_identity.find(peer);
+        if (id == g_peer_identity.end() || id->second != item.source) {
+            ++g_foreign_refused;
+            return true; // taken and dropped: the sender moves on
+        }
+    }
     if (!paths() || (g_entries.size() >= kMaxEntries && !g_entries.count(item.hash))) {
         g_error = "Library index unavailable or full.";
         return false;
@@ -655,11 +656,9 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
     if (feed && a_Reserve && a_GetKeys && a_GetProps)
         H->hook_create(mod, (void *)feed, (void *)h_FeedKeys, (void **)&o_FeedKeys);
     g_exchange.inventory = []() -> const std::vector<library_sync::Item> & { return g_offers; };
-    g_exchange.eligible = [](const library_sync::Item &i) {
+    g_exchange.eligible_to = [](uint8_t peer, const library_sync::Item &i) { // BUG-9112: by the peer's choice
         auto e = g_entries.find(i.hash);
-        return e != g_entries.end() &&
-               ((e->second.local && g_active_local.count(i.hash)) ||
-                (!e->second.local && S->role() == net::Role::Host && (g_relay.count(i.hash) || onward_ok(e->second))));
+        return e != g_entries.end() && eligible_to(peer, e->second);
     };
     g_exchange.have = [](const library_sync::Item &item) {
         auto it = g_entries.find(item.hash);
@@ -683,7 +682,7 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
         }
     };
     g_exchange.send = [](uint8_t peer, const net::Writer &w) { return S->send_reliable_to(peer, net::MSG_LIBRARY, w); };
-    g_onward = H->config_int(mod, "library", "share_onward", 0) != 0;
+    g_foreign = H->config_int(mod, "library", "foreign_creations", 0) != 0; // BUG-9112
 }
 void on_session_end() {
     g_exchange.reset();
@@ -692,8 +691,9 @@ void on_session_end() {
     g_incoming.clear();
     g_offers.clear();
     g_offered.clear();
-    g_onward_told.clear();
-    g_onward_claim.clear();
+    g_choice_told.clear();
+    g_peer_identity.clear();
+    g_peer_foreign.clear();
     g_peer_sources.clear();
     g_editor_stamp = 0;
     g_scan_at = -100;
@@ -701,8 +701,9 @@ void on_session_end() {
 void on_player_leave(uint8_t id) {
     g_exchange.leave(id);
     g_peers.erase(id);
-    g_onward_told.erase(id);
-    g_onward_claim.erase(id);
+    g_choice_told.erase(id);
+    g_peer_identity.erase(id);
+    g_peer_foreign.erase(id);
     std::erase_if(g_peer_sources, [&](const auto &p) { return p.first == id; });
     std::erase_if(g_incoming, [&](const Incoming &m) { return m.peer == id; });
 }
@@ -727,23 +728,23 @@ static void work(void *) {
                 if (e != g_entries.end())
                     offer(e->second);
             }
-            offer_onward(); // BUG-9105: opted-in authors' creations, after our own
+            offer_all(); // BUG-9112: received creations too; eligible_to picks per peer
         }
         for (auto &player : S->players())
             if (peer_ready(player.id)) {
                 if (g_peers.insert(player.id).second)
                     g_exchange.join(player.id);
-                if (!g_onward_told.count(player.id))
-                    tell_onward(player.id);
+                if (!g_choice_told.count(player.id))
+                    tell_choice(player.id);
             }
     } else if (!g_peers.empty())
         on_session_end();
     for (unsigned n = 0; n < 32 && !g_incoming.empty(); ++n) {
         auto m = std::move(g_incoming.front());
         g_incoming.pop_front();
-        if (peer_ready(m.peer) && !m.data.empty() && m.data[0] == kOnwardMsg) {
+        if (peer_ready(m.peer) && !m.data.empty() && m.data[0] == kChoiceMsg) {
             net::Reader r(m.data.data() + 1, m.data.size() - 1);
-            onward_message(m.peer, r);
+            choice_message(m.peer, r);
         } else if (peer_ready(m.peer)) {
             net::Reader r(m.data.data(), m.data.size());
             g_exchange.receive(m.peer, r);
@@ -793,22 +794,16 @@ void tick(double now, bool safe) {
     g_pending = true;
     H->run_outside_frame(work, nullptr);
 }
-bool share_onward() { return g_onward; }
-// BUG-9111: Lineages cells for the host's Cell pool (player decision, 43-dev): our own, those authored
-// by a player in this session, and those whose author allows passing on (Share Onward). A cell received
-// in an earlier session from an author who did not opt in is not used.
+bool foreign_creations() { return g_foreign; }
+// BUG-9111 / BUG-9112: Lineages cells for the host's Cell pool: our own, those authored by a player in
+// this session, and, with Foreign Creations on, every other cell of the Cache.
 std::vector<CacheCell> pool_cells() {
     std::vector<CacheCell> out;
-    std::set<std::string> lobby;
-    if (S && S->connected())
-        for (auto &[peer, source] : g_peer_sources)
-            for (auto &p : S->players())
-                if (p.id == peer)
-                    lobby.insert(source);
+    const std::set<std::string> lobby = connected_sources();
     for (auto &[hash, e] : g_entries) {
         if (e.failed || !e.key.instance || e.key.type != 0x3D97A8E4u)
             continue;
-        const bool ok = e.local || lobby.count(e.item.source) || g_onward_ok.count(e.item.source);
+        const bool ok = e.local || lobby.count(e.item.source) || g_foreign;
         if (!ok || !creations::key_known(e.key))
             continue;
         out.push_back({e.key, e.item.source, e.item.name, e.item.author, e.local});
@@ -817,16 +812,16 @@ std::vector<CacheCell> pool_cells() {
     }
     return out;
 }
-void set_share_onward(bool on) {
-    g_onward = on;
-    H->config_set_str(M, "library", "share_onward", on ? "1" : "0");
-    g_onward_told.clear(); // the next work tick tells the session
+void set_foreign_creations(bool on) {
+    g_foreign = on;
+    H->config_set_str(M, "library", "foreign_creations", on ? "1" : "0");
+    g_choice_told.clear(); // the next work tick tells the session
 }
 std::string debug(const std::vector<std::string> &args) {
     if (!paths())
         return g_error.empty() ? "Native library database unavailable." : g_error;
-    if (args.size() == 2 && args[0] == "onward") // BUG-9105: may hosts pass my creations on?
-        set_share_onward(args[1] == "on" || args[1] == "1");
+    if (args.size() == 2 && args[0] == "foreign") // BUG-9112: receive the partners' foreign creations?
+        set_foreign_creations(args[1] == "on" || args[1] == "1");
     if (!args.empty() && args[0] == "scan") {
         g_editor_stamp = 0;
         g_scan.clear();
@@ -875,8 +870,9 @@ std::string debug(const std::vector<std::string> &args) {
            " pending=" + std::to_string(pending) + " failed=" + std::to_string(failed) +
            " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
            " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) +
-           " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " onward=" + (g_onward ? "on" : "off") +
-           " onward_authors=" + std::to_string(g_onward_ok.size()) + " onward_offered=" + std::to_string(g_onward_offered) + " retried=" + std::to_string(g_retried) +
+           " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " foreign=" + (g_foreign ? "on" : "off") + " foreign_offered=" + std::to_string(g_foreign_offered) +
+           " foreign_refused=" + std::to_string(g_foreign_refused) + " peers_foreign=" +
+           std::to_string(std::count_if(g_peer_foreign.begin(), g_peer_foreign.end(), [](auto &p) { return p.second; })) + " retried=" + std::to_string(g_retried) +
            (g_error.empty() ? "" : " error=" + g_error) + list;
 }
 } // namespace library

@@ -182,7 +182,7 @@ void Exchange::tick(uint8_t id) {
         const auto &items = inventory();
         while (p.cursor < items.size()) {
             const auto &i = items[p.cursor];
-            if (p.offered.count(i.hash) || (eligible && !eligible(i))) {
+            if (p.offered.count(i.hash) || (eligible && !eligible(i)) || (eligible_to && !eligible_to(id, i))) {
                 ++p.cursor;
                 continue;
             }

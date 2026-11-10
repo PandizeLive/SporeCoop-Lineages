@@ -13,12 +13,12 @@ void on_session_end();
 void on_player_leave(uint8_t peer);
 std::string debug(const std::vector<std::string> &args); // outside Present
 // BUG-9105: this player's choice to let hosts pass their creations on (coop.ini [library])
-bool share_onward();
+bool foreign_creations(); // BUG-9112: receive the partners' foreign creations (replaces Share Onward)
 struct CacheCell {
     dbpf::Key key;
     std::string source, name, author;
     bool local = false;
 };
 std::vector<CacheCell> pool_cells(); // BUG-9111: cells the host may use as Cell NPC species
-void set_share_onward(bool on);
+void set_foreign_creations(bool on);
 } // namespace library

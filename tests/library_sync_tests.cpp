@@ -192,6 +192,50 @@ int main() {
     for (int i = 0; i < 4; ++i)
         assert(nodes[i]->files.at(item.hash) == png);
     assert(host.writes == 1 && guest1.writes == 0 && guest2.writes == 1 && guest3.writes == 1);
+    // BUG-9112: the host offers each guest by its choice: a foreign creation reaches only the guest
+    // that wants foreign creations (eligible_to), the connected player's own goes to everyone
+    {
+        std::vector<uint8_t> chunk2{'t', 'E', 'X', 't', 'n', 0};
+        chunk2.resize(64, 'b');
+        uint32_t c2 = ~0u;
+        for (uint8_t v : chunk2) {
+            c2 ^= v;
+            for (int bit = 0; bit < 8; ++bit)
+                c2 = (c2 >> 1) ^ (0xEDB88320u & (0u - (c2 & 1)));
+        }
+        c2 = ~c2;
+        const uint32_t n2 = uint32_t(chunk2.size() - 4);
+        std::vector<uint8_t> png2(std::begin(png_bytes), std::end(png_bytes));
+        std::vector<uint8_t> f2{uint8_t(n2 >> 24), uint8_t(n2 >> 16), uint8_t(n2 >> 8), uint8_t(n2)};
+        f2.insert(f2.end(), chunk2.begin(), chunk2.end());
+        for (int shift = 24; shift >= 0; shift -= 8)
+            f2.push_back(uint8_t(c2 >> shift));
+        png2.insert(png2.end() - 12, f2.begin(), f2.end());
+        assert(valid_png(png2));
+        Item foreign{upd::sha256_hex(png2), "Stranger", "Cell", "foreign-source", "Host", uint32_t(png2.size())};
+        host.files[foreign.hash] = png2;
+        host.items[foreign.hash] = foreign;
+        host.offers.push_back(foreign);
+        host.exchange.eligible_to = [&](uint8_t peer, const Item &i) { return i.source != "foreign-source" || peer == 2; };
+        for (int i = 1; i < 4; ++i) {
+            host.exchange.leave(uint8_t(i));
+            host.exchange.join(uint8_t(i));
+        }
+        for (int frame = 0; frame < 300; ++frame) {
+            for (int i = 1; i < 4; ++i) {
+                host.exchange.tick(uint8_t(i));
+                nodes[i]->exchange.tick(0);
+            }
+            while (!relays.empty()) {
+                auto p = std::move(relays.front());
+                relays.pop_front();
+                net::Reader payload(p.bytes.data(), p.bytes.size());
+                nodes[p.to]->exchange.receive(uint8_t(p.from), payload);
+            }
+        }
+        assert(guest2.files.count(foreign.hash) && !guest3.files.count(foreign.hash) && !guest1.files.count(foreign.hash));
+        std::cout << "PASS foreign creations only to the guest that wants them (BUG-9112)\n";
+    }
     std::cout << "PASS library integrity, truncation, authorship, transfer, dedup, disconnect/reconnect\n";
     std::cout << "PASS four-seat host relay without echo imports\n";
 }

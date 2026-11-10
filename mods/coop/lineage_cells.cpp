@@ -19,7 +19,7 @@ static net::Session* S;
 static bool g_on = true;
 static bool g_fix = true;
 COOP_FIX("cell.lineage_cells", "BUG-9111", g_fix,
-         "cell: player cells (own, lobby players', Share Onward authors') appear as about one in four native creature spawns");
+         "cell: player cells (own, lobby players', with Foreign Creations on any Cache cell) appear as about one in four native creature spawns");
 
 struct Cand {
     creations::Key key;      // as this game builds it (ensure_model's key)

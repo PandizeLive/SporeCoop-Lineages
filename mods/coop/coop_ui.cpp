@@ -1048,14 +1048,14 @@ static void build_dialog()
         set_status(T("Sending the world to everyone...", "Мир отправляется всем..."), kYellow, g_status_fix ? 5 : 0);
     });
     // BUG-9105: the player's own choice; placed by refresh_lobby (under Send World for the host)
-    D.onward_btn = add_button(L, "shareonward", {445, 249, 706, 285}, "", [] {
-        if (!A.share_onward || !A.set_share_onward) return;
-        const bool on = !A.share_onward();
-        A.set_share_onward(on);
-        set_status(on ? T("Hosts may now pass your creations on to players you haven't met",
-                          "Хозяева могут передавать ваши создания другим игрокам")
-                      : T("Your creations stay with the people you play with",
-                          "Ваши создания остаются у тех, с кем вы играете"),
+    D.onward_btn = add_button(L, "foreigncreations", {445, 249, 706, 285}, "", [] {
+        if (!A.foreign_creations || !A.set_foreign_creations) return;
+        const bool on = !A.foreign_creations();
+        A.set_foreign_creations(on);
+        set_status(on ? T("You'll also get creations your partners received from others",
+                          "Вы получите и создания, которые партнёры получили от других")
+                      : T("You only get your partners' own creations",
+                          "Вы получаете только собственные создания партнёров"),
                    on ? kGreen : kYellow, 8);
         g_dirty = true;
     });
@@ -1384,7 +1384,7 @@ static void refresh_lobby()
     show(D.ready_btn, vote);
     text(D.ready_btn, A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
     show(D.share_btn, host);
-    // BUG-9111: the host's rows: Send World, Player Cells, Share Onward (or the vote's Ready)
+    // BUG-9111: the host's rows: Send World, Player Cells, Foreign Creations (or the vote's Ready)
     const bool cells = host && A.lineage_cells;
     sui::set_area(D.share_btn, host ? Rect{445, 190, 706, 222} : Rect{445, 212, 706, 248});
     sui::set_area(D.ready_btn, host ? Rect{445, 258, 706, 290} : Rect{445, 249, 706, 285});
@@ -1396,9 +1396,9 @@ static void refresh_lobby()
     // BUG-9105: hosts under Send World, guests in its place; the vote's Ready button takes the row
     if (D.onward_btn) {
         sui::set_area(D.onward_btn, host ? Rect{445, 258, 706, 290} : Rect{445, 212, 706, 248});
-        show(D.onward_btn, A.share_onward && !(host && vote));
-        text(D.onward_btn, A.share_onward && A.share_onward() ? T("Share Onward: On", "Передавать дальше: Вкл")
-                                                              : T("Share Onward: Off", "Передавать дальше: Выкл"));
+        show(D.onward_btn, A.foreign_creations && !(host && vote));
+        text(D.onward_btn, A.foreign_creations && A.foreign_creations() ? T("Foreign Creations: On", "Чужие создания: Вкл")
+                                                                        : T("Foreign Creations: Off", "Чужие создания: Выкл"));
     }
     enable(D.share_btn, !share_why || !g_share_explain_fix);
     text(D.share_btn, A.vote_active && A.vote_active() ? T("Start Now", "Начать сейчас") : T("Send World", "Отправить мир"));
@@ -1795,7 +1795,7 @@ static const char* tip_for(const std::string& name)
         {"send", "Send chat message", "Отправить сообщение"},
         {"ready", "Vote ready", "Готовность"},
         {"share", "Send your world to everyone", "Отправить мир всем"},
-        {"shareonward", "Let hosts pass your creations on", "Разрешить передачу ваших созданий"},
+        {"foreigncreations", "Also get creations your partners received", "Получать и чужие создания партнёров"},
         {"playercells", "Your group's cells in the tide pool", "Клетки группы в водоёме"},
         {"leave", "Leave the session", "Выйти из игры"},
         {"sback", "Back to the Lobby", "Назад в лобби"},

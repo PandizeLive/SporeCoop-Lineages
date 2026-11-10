@@ -52,9 +52,9 @@ struct Api {
     std::function<int()> share_state;
     std::function<bool()> paced_transfer;
     std::function<void(bool)> set_paced_transfer;
-    // BUG-9105: may hosts pass this player's creations on to people they have not played with
-    std::function<bool()> share_onward;
-    std::function<void(bool)> set_share_onward;
+    // BUG-9112: does this player receive its partners' foreign creations (replaces BUG-9105's Share Onward)
+    std::function<bool()> foreign_creations;
+    std::function<void(bool)> set_foreign_creations;
     // BUG-9111: the host's Player Cells setting (Lineages cells in the Cell stage)
     std::function<bool()> lineage_cells;
     std::function<void(bool)> set_lineage_cells;

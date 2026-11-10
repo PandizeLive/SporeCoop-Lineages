@@ -23,6 +23,8 @@ class Exchange {
     // Append-only during a session. Reset the exchange before replacing it.
     std::function<const std::vector<Item> &()> inventory;
     std::function<bool(const Item &)> eligible;
+    // BUG-9112: per receiving peer (the host offers by each peer's Foreign Creations choice)
+    std::function<bool(uint8_t, const Item &)> eligible_to;
     std::function<bool(const Item &)> have;
     std::function<bool(const std::string &, std::vector<uint8_t> &)> load;
     std::function<bool(uint8_t, const Item &, const std::vector<uint8_t> &)> store;

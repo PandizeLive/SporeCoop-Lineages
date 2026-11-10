@@ -5094,8 +5094,8 @@ void init_ui()
     a.vote_active = [] { return g_vote.active; };
     a.paced_transfer = [] { return g_sess.paced_world_transfer; };
     a.set_paced_transfer = [](bool on) { g_sess.paced_world_transfer = on; };
-    a.share_onward = [] { return library::share_onward(); };
-    a.set_share_onward = [](bool on) { library::set_share_onward(on); };
+    a.foreign_creations = [] { return library::foreign_creations(); }; // BUG-9112
+    a.set_foreign_creations = [](bool on) { library::set_foreign_creations(on); };
     a.lineage_cells = [] { return lineage_cells::enabled(); }; // BUG-9111
     a.set_lineage_cells = [](bool on) { lineage_cells::set_enabled(on); };
     a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
