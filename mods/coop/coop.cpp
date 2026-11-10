@@ -5369,7 +5369,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         fov::init(H, M, [] {
             // Creature can pause its simulation without taking away the follow camera.
             return (game_busy() & ~busy::kPaused) == 0 && !coop_ui::is_open();
-        });
+        }, feed);
     g_mate_classify = H->sym("SporeCoop::CreatureClickAction");
     g_get_animal_target = reinterpret_cast<decltype(g_get_animal_target)>(
         H->sym("Simulator::cCreatureBase::GetAnimalTarget"));

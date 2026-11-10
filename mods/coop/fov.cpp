@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <windows.h>
 
 #include "game.h"
@@ -13,7 +16,10 @@
 namespace fov {
 
 static const SkHost* H;
+static SkMod* M;
 static bool (*g_input_allowed)();
+static void (*g_notify)(const std::string&);
+static uint32_t g_mode;
 static uintptr_t g_mode_manager, g_camera_manager, g_active_camera, g_perspective, g_view_window;
 static bool (__thiscall* original_begin)(void*);
 static void* (__thiscall* original_end)(void*);
@@ -67,9 +73,39 @@ static bool third_person(void* manager)
     return (mode == modes::kCreature || mode == modes::kScenario) && id == follow_camera;
 }
 
+static void set_steps(int steps, bool announce)
+{
+    steps = std::clamp(steps, 0, 6);
+    if (steps == g_steps) return;
+    g_steps = steps;
+    g_wheel_delta = 0;
+    H->log(M, SK_INFO, "fov: steps=%d (+%d degrees)", g_steps, 3 * g_steps);
+    if (!announce || !g_notify) return;
+    g_notify(g_steps ? "Field of view +" + std::to_string(3 * g_steps) + " degrees (Ctrl+Scroll up to restore)"
+                     : std::string("Field of view: normal"));
+}
+
+// BUG-9099: the wide lens lasted the whole session and nothing showed it. It now ends
+// when the player leaves Creature or Adventure play, except for an editor visit.
+static void track_mode()
+{
+    const auto mode = game::mode_id();
+    if (mode == g_mode) return;
+    g_mode = mode;
+    const bool keep = mode == modes::kCreature || mode == modes::kScenario ||
+                      mode == modes::kEditor || mode == modes::kEdit;
+    if (!keep && g_steps) {
+        H->log(M, SK_INFO, "fov: mode %08X resets the field of view", mode);
+        set_steps(0, false);
+    }
+}
+
 static bool __fastcall begin_view(void* viewer, void*)
 {
+    track_mode();
     void* manager = active_manager();
+    // A draw whose EndUpdate never reached us must not leave the wide lens behind.
+    if (g_projection.viewer && viewer == g_projection.viewer) restore(viewer);
     if (!manager || viewer != viewer_of(manager) || g_projection.viewer)
         return original_begin(viewer);
     // Scope the projection to drawing. Native zoom, camera switches and
@@ -135,18 +171,23 @@ static bool __fastcall camera_to_point(void* viewer, void*, float x, float y, vo
 
 static bool fov_wheel(int delta)
 {
+    track_mode();
     void* manager = active_manager();
     if (!g_eligible || !manager || !third_person(manager) || !g_input_allowed()) return false;
     g_wheel_delta -= delta;
-    g_steps = std::clamp(g_steps + g_wheel_delta / WHEEL_DELTA, 0, 6);
-    g_wheel_delta %= WHEEL_DELTA;
+    const int steps = g_steps + g_wheel_delta / WHEEL_DELTA;
+    const int rest = g_wheel_delta % WHEEL_DELTA;
+    set_steps(steps, true);
+    g_wheel_delta = rest;
     return true;
 }
 
-bool init(const SkHost* host, SkMod* mod, bool (*input_allowed)())
+bool init(const SkHost* host, SkMod* mod, bool (*input_allowed)(), void (*notify)(const std::string&))
 {
     H = host;
+    M = mod;
     g_input_allowed = input_allowed;
+    g_notify = notify;
     g_mode_manager = H->sym("App::IGameModeManager::Get");
     g_camera_manager = H->sym("App::cGameModeManager::GetCameraManager");
     g_active_camera = H->sym("App::cCameraManager::GetActiveCameraID");
@@ -165,7 +206,17 @@ bool init(const SkHost* host, SkMod* mod, bool (*input_allowed)())
                        reinterpret_cast<void**>(&original_begin)) != 0)
         return false;
     mouse::set_fov_wheel(fov_wheel);
-    H->command_add(mod, "coop.fov", "coop.fov - show the local third-person FOV", [](void*, int, const char* const*, SkOut* out) {
+    H->command_add(mod, "coop.fov", "coop.fov [reset|0-6] - show or set the local third-person FOV steps (3 degrees each)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+        if (argc > 1) {
+            char* end = nullptr;
+            const long steps = std::strcmp(argv[1], "reset") ? std::strtol(argv[1], &end, 10) : 0;
+            if (end && (*end || steps < 0 || steps > 6)) {
+                H->out_printf(out, "usage: coop.fov [reset|0-6]");
+                return 1;
+            }
+            set_steps((int)steps, true);
+        }
         void* manager = active_manager();
         const auto id = manager ? skg::thiscall<uint32_t>(g_active_camera, manager) : 0u;
         H->out_printf(out, "camera=%08X eligible=%d allowed=%d steps=%d vanilla=%.2f effective=%.2f",

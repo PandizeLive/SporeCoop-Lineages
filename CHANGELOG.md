@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Return the third-person field of view to normal when you leave Creature or
+  Adventure play, show a message when it changes, and only react to Ctrl+Scroll
+  while Ctrl is really held (BUG-9099).
+
 ## [0.7.3.6-lineages40-dev] - 2026-11-09
 
 - Use Ctrl+Scroll for third-person field of view. Scroll down to widen and up to return to the native field of view.

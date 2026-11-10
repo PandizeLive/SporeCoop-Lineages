@@ -39,8 +39,11 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
         if (g_graphics_input && ours(m->hwnd) &&
             g_graphics_input(m->message, m->wParam, (short)LOWORD(m->lParam), (short)HIWORD(m->lParam)))
             m->message = WM_NULL;
+        // BUG-9099: the key must be physically down now. The queue's key state (MK_CONTROL,
+        // GetKeyState) stays "down" when Ctrl was released in another window, and then every
+        // plain scroll widened the lens instead of zooming.
         if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_fov_wheel &&
-            ((LOWORD(m->wParam) & MK_CONTROL) || (GetKeyState(VK_CONTROL) & 0x8000)) &&
+            (LOWORD(m->wParam) & MK_CONTROL) && (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
             g_fov_wheel((short)HIWORD(m->wParam)))
             m->message = WM_NULL;
         if ((m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONDBLCLK) && ours(m->hwnd)) {
