@@ -27,6 +27,8 @@ using namespace skg;
 static const SkHost* H;
 bool g_fix = true;
 COOP_FIX("editor.depth", "BUG-9103", g_fix, "editor: creature details and weapons get a depth square that pushes them in or out");
+static bool g_cube = true;
+COOP_FIX("editor.depth_cube", "BUG-9103", g_cube, "editor: the depth handle is a lit 3D cube like Spore's handles (off: a flat square)");
 
 struct Vec3 {
     float x, y, z;
@@ -42,7 +44,7 @@ struct Vec3 {
 // Model: +0x0C drawn offset (the same point as the rigblock position), +0x18 scale.
 // A part is moved by writing both positions; CommitEditHistory makes it an edit (undo, save).
 constexpr uint32_t kCreatureModel = 0x9EA3031A; // Creature Editor Setup editorModelTypes
-static uintptr_t a_EditorPtr, a_GetBool, a_GetInt, a_Commit, a_GetProps;
+static uintptr_t a_EditorPtr, a_GetBool, a_GetInt, a_Commit, a_GetProps, a_GetWM;
 static void* g_list_vtable; // App::PropertyList's vtable (from a list we know)
 
 static bool list_ok(void* list)
@@ -181,13 +183,120 @@ static float part_scale(void* rb)
 }
 
 // Where the square is for the selected part, or false.
-static bool square_for(void* em, void* rb, float out[2], Vec3* dir_out = nullptr)
+static bool square_for(void* em, void* rb, float out[2], Vec3* dir_out = nullptr, Vec3* at_out = nullptr)
 {
     if (!rb || !readable(rb, 0x50) || why_not(rb)) return false;
     const Vec3 dir = outward(em, rb);
     const Vec3 at = position(rb) + dir * (kOffset * part_scale(rb));
     if (!H->world_to_screen(&at.x, out) || !std::isfinite(out[0]) || !std::isfinite(out[1])) return false;
     if (dir_out) *dir_out = dir;
+    if (at_out) *at_out = at;
+    return true;
+}
+
+static Vec3 cross(const Vec3& a, const Vec3& b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+static float dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+static DWORD shade(DWORD argb, float k)
+{
+    auto c = [&](int s) { return DWORD(std::clamp(float((argb >> s) & 0xFF) * k, 0.f, 255.f)) << s; };
+    return 0xFF000000u | c(16) | c(8) | c(0);
+}
+
+// The handle as a small lit cube like Spore's own handles: one face points along the part's
+// outward line, its corners are projected with the game camera, the faces turned to the camera
+// are drawn (darker the further they turn from the light), with a dark outline.
+static bool draw_cube(IDirect3DDevice9* device, const Vec3& at, const Vec3& dir, DWORD color)
+{
+    // basis: u along the outward line, v and w across it
+    const Vec3 up = std::fabs(dir.z) < 0.9f ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+    Vec3 v = cross(dir, up);
+    v = v * (1.f / v.len());
+    const Vec3 w = cross(dir, v);
+    // world half size giving about kHalf pixels on screen at this distance
+    float c0[2];
+    if (!H->world_to_screen(&at.x, c0)) return false;
+    float ppu = 0;
+    for (const Vec3& axis : {dir, v, w}) {
+        const Vec3 p = at + axis * 0.05f;
+        float s[2];
+        if (H->world_to_screen(&p.x, s)) ppu = std::max(ppu, std::hypot(s[0] - c0[0], s[1] - c0[1]) / 0.05f);
+    }
+    if (!(ppu > 1.f) || !std::isfinite(ppu)) return false;
+    const float h = kHalf / ppu;
+    // corners: bit 0 = +u, bit 1 = +v, bit 2 = +w
+    float sc[8][2];
+    for (int i = 0; i < 8; ++i) {
+        const Vec3 p = at + dir * ((i & 1) ? h : -h) + v * ((i & 2) ? h : -h) + w * ((i & 4) ? h : -h);
+        if (!H->world_to_screen(&p.x, sc[i]) || !std::isfinite(sc[i][0]) || !std::isfinite(sc[i][1])) return false;
+    }
+    struct Face { int a, b, c, d; Vec3 n; };
+    const Face faces[6] = {
+        {1, 3, 7, 5, dir}, {0, 4, 6, 2, dir * -1.f}, {2, 6, 7, 3, v},
+        {0, 1, 5, 4, v * -1.f}, {4, 5, 7, 6, w}, {0, 2, 3, 1, w * -1.f},
+    };
+    // faces wound the same way seen from outside: the camera sees those with one sign of area
+    auto area = [&](const Face& f) {
+        const int q[4] = {f.a, f.b, f.c, f.d};
+        float s = 0;
+        for (int i = 0; i < 4; ++i) s += sc[q[i]][0] * sc[q[(i + 1) % 4]][1] - sc[q[(i + 1) % 4]][0] * sc[q[i]][1];
+        return s;
+    };
+    // All faces are wound the same way seen from outside, so the three facing the camera share one
+    // sign of screen area and their opposites have the other. Perspective makes the near (front)
+    // faces larger, so the sum of all six signed areas has the front sign. It is a property of the
+    // camera's handedness: kept from the last clear frame.
+    static float front_sign = -1.f;
+    float sum = 0, total = 0;
+    for (const Face& f : faces) { const float a = area(f); sum += a; total += std::fabs(a); }
+    if (total > 0 && std::fabs(sum) > 0.02f * total) front_sign = sum > 0 ? 1.f : -1.f;
+    const float sign = front_sign;
+
+    IDirect3DStateBlock9* saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved))) return false;
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 15);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    device->SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
+    struct Vertex { float x, y, z, rhw; DWORD color; };
+    const Vec3 light = Vec3{0.35f, -0.45f, 0.82f} * (1.f / Vec3{0.35f, -0.45f, 0.82f}.len());
+    // Like Spore's glossy handle balls: no outline, soft shading that runs across each face (the
+    // corner normals are bent towards the corner, so edges read as rounded), a white sheen where
+    // the light hits, slightly see-through
+    auto lit = [&](const Face& f, int corner) {
+        const Vec3 cn = dir * ((corner & 1) ? 1.f : -1.f) + v * ((corner & 2) ? 1.f : -1.f) + w * ((corner & 4) ? 1.f : -1.f);
+        Vec3 n = f.n * 0.65f + cn * (0.35f / 1.7320508f);
+        n = n * (1.f / n.len());
+        const float d = std::max(0.f, dot(n, light));
+        const float k = 0.64f + 0.4f * d + 0.25f * std::pow(d, 12.f);
+        return shade(color, k);
+    };
+    for (const Face& f : faces) {
+        if (area(f) * sign <= 0) continue; // the three faces turned to the camera
+        Vertex q[4] = {
+            {sc[f.a][0], sc[f.a][1], 0, 1, lit(f, f.a)}, {sc[f.b][0], sc[f.b][1], 0, 1, lit(f, f.b)},
+            {sc[f.d][0], sc[f.d][1], 0, 1, lit(f, f.d)}, {sc[f.c][0], sc[f.c][1], 0, 1, lit(f, f.c)},
+        };
+        device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vertex));
+    }
+    saved->Apply();
+    saved->Release();
     return true;
 }
 
@@ -223,7 +332,7 @@ static bool input(unsigned message, uintptr_t, int x, int y)
         }
         return message == WM_LBUTTONDOWN;
     }
-    const bool over = g_square_rb && std::abs(x - g_square[0]) <= kHalf + 2 && std::abs(y - g_square[1]) <= kHalf + 2;
+    const bool over = g_square_rb && std::abs(x - g_square[0]) <= kHalf + 5 && std::abs(y - g_square[1]) <= kHalf + 5;
     if (message == WM_MOUSEMOVE) { g_hover = over; return false; }
     if (message != WM_LBUTTONDOWN || !over) return false;
     void* em = editor_model();
@@ -260,15 +369,23 @@ void draw()
     void* em = editor_model(&ed);
     void* rb = em ? field<void*>(ed, 0xD4) : nullptr;
     if (!em || !rb) { g_dragging = false; return; }
+    // a dialog (the exit box "Save New / Replace") is the window manager's modal window (+0x82C,
+    // gamefixes.cpp BUG-0270): no square over it, and its clicks stay the dialog's
+    void* wm = a_GetWM ? cdecl_call<void*>(a_GetWM) : nullptr;
+    if (wm && readable(wm, 0x830) && field<void*>(wm, 0x82C)) { g_hover = false; return; }
     float sq[2];
-    if (!square_for(em, rb, sq)) return;
+    Vec3 dir{}, at{};
+    if (!square_for(em, rb, sq, &dir, &at)) return;
     g_square[0] = sq[0];
     g_square[1] = sq[1];
     g_square_rb = rb;
     auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
     if (!device) return;
-    // Spore's editor handle colours: pale blue, green on rollover; orange while held
-    const DWORD fill = g_dragging ? 0xFFF07A29 : g_hover ? 0xFF8AD08A : 0xFFAABFFF;
+    // Spore's editor handle colours: pale blue, green on rollover; orange while held (the cube's
+    // base tones match the lit handle balls next to it: 868FD5 in shade to B5C5D8 lit)
+    const DWORD fill = g_cube ? (g_dragging ? 0xFFF5802E : g_hover ? 0xFF92DC8E : 0xFFA9B4F0)
+                              : (g_dragging ? 0xFFF07A29 : g_hover ? 0xFF8AD08A : 0xFFAABFFF);
+    if (g_cube && draw_cube(device, at, dir, fill)) return;
     D3DRECT rects[2] = {
         {LONG(sq[0]) - kHalf - 2, LONG(sq[1]) - kHalf - 2, LONG(sq[0]) + kHalf + 2, LONG(sq[1]) + kHalf + 2},
         {LONG(sq[0]) - kHalf, LONG(sq[1]) - kHalf, LONG(sq[0]) + kHalf, LONG(sq[1]) + kHalf},
@@ -331,6 +448,7 @@ bool init(const SkHost* host, SkMod* mod)
     a_GetInt = H->sym("App::Property::GetInt32");
     a_Commit = H->sym("Editors::cEditor::CommitEditHistory");
     a_GetProps = H->sym("App::IPropManager::Get");
+    a_GetWM = H->sym("UTFWin::IWindowManager::Get"); // optional: without it the square also shows under dialogs
     H->command_add(mod, "coop.depth", "coop.depth [parts] - the creature editor depth square (tests, BUG-9103)", command,
                    nullptr, SK_CMD_MAIN_THREAD);
     const bool ok = a_EditorPtr && a_GetBool && a_GetInt && a_Commit && a_GetProps;
