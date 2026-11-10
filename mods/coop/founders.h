@@ -9,6 +9,10 @@
 
 namespace founders {
 
+// The highest Difficulty Scaling a new campaign accepts (player decision, 41-dev).
+// Saved campaigns keep whatever they were created with.
+constexpr unsigned kMaxDifficultyPercent = 400;
+
 // A new campaign reserves its capacity before the first founder starts.
 // The persistent roster binds individual species separately.
 struct CampaignRules {

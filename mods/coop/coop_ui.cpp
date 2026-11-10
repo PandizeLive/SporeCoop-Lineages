@@ -631,8 +631,8 @@ static void do_host()
     auto scaling = sui::edit_text(D.scaling_edit);
     if (seats.size() != 1 || seats[0] < '1' || seats[0] > '4' ||
         scaling.empty() || scaling.find_first_not_of("0123456789") != std::string::npos ||
-        scaling.size() > 5 || strtoul(scaling.c_str(),nullptr,10) > UINT16_MAX) {
-        set_status(T("Use 1-4 founders and a whole scaling percentage.", "Укажите 1–4 основателей и целый процент."),kRed);
+        scaling.size() > 3 || strtoul(scaling.c_str(),nullptr,10) > founders::kMaxDifficultyPercent) {
+        set_status(T("Use 1-4 founders and a difficulty from 0 to 400%.", "Укажите 1–4 основателей и сложность от 0 до 400%."),kRed);
         return;
     }
     if (!A.host((uint16_t)port,D.seats,unsigned(strtoul(scaling.c_str(),nullptr,10)),err,
@@ -907,7 +907,7 @@ static void build_dialog()
     });
 
     add_label(P, {393, 372, 531, 398}, "Difficulty", kGold);
-    D.scaling_edit = add_edit(P, "founderscaling", {540, 372, 595, 398}, load_str("ui", "new_scaling", "100"), 5);
+    D.scaling_edit = add_edit(P, "founderscaling", {540, 372, 595, 398}, load_str("ui", "new_scaling", "100"), 3);
     if (Win unit = add_label(P, {604, 373, 718, 397}, "% per extra seat", kDim))
         sui::set_font(unit, D.font_button);
     constexpr const char* labels[] = {"Objective effort", "Enemy HP / damage", "Creature hunger drain",
@@ -1123,7 +1123,7 @@ static void refresh_connect()
     }
     show_eye("hidehostaddresses", !D.show_host_addresses);
     founders::CampaignRules rules{(uint8_t)D.seats,
-        (uint16_t)std::clamp(atoi(sui::edit_text(D.scaling_edit).c_str()), 0, 65535)};
+        (uint16_t)std::clamp(atoi(sui::edit_text(D.scaling_edit).c_str()), 0, int(founders::kMaxDifficultyPercent))};
     rules.model = 1; // the preview shows a new campaign (BUG-9100)
     auto setting = [](const char* key, uint16_t value) {
         return (uint16_t)std::clamp(H->config_int(M, "campaign", key, value), 0, 65535);

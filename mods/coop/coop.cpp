@@ -3946,6 +3946,10 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, 
         return false;
     end_open_session();
     reset_lobby();
+    if (scaling > founders::kMaxDifficultyPercent) {
+        err = "Difficulty Scaling must be between 0 and 400%.";
+        return false;
+    }
     founders::CampaignRules requested{uint8_t(seats),uint16_t(scaling)};
     requested.model = 1; // BUG-9100: new campaigns scale every extra with the difficulty
     int health = H->config_int(M,"campaign","enemy_health_per_extra_founder",requested.extra_health_percent);
@@ -4085,7 +4089,7 @@ int c_host(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 4) {
         char* end = nullptr;
         unsigned long n = strtoul(argv[4],&end,10);
-        if (!*argv[4] || *end || n > UINT16_MAX) { SAY("Use a nonnegative integer scaling percentage."); return 1; }
+        if (!*argv[4] || *end || n > founders::kMaxDifficultyPercent) { SAY("Use a whole scaling percentage from 0 to 400."); return 1; }
         scaling = unsigned(n);
     }
     if (!do_host(port,seats,scaling,err)) {
