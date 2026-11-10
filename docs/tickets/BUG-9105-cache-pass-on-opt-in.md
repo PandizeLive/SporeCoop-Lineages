@@ -63,3 +63,4 @@ See History.
 - 2026-11-10: lobby toggle (screenshots: host shows it under Send World, guest in its place).
   A guest switched it on mid-session: the host's onward_authors went 0 -> 1 at once. 0 faults.
 - 2026-11-10: released in 0.7.3.6-lineages42-dev.
+- 2026-11-10: superseded in 43-dev by BUG-9112 (Foreign Creations: the receiver decides, player decision).

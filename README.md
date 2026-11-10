@@ -51,7 +51,7 @@ Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (
 
 Done in 42-dev: a depth cube in the Creature editor pushes details and weapons into the body or pulls them out; received creations have their own Lineages Cache tab; Share Onward lets you allow hosts to pass your creations on; and the co-op window's buttons have short tooltips.
 
-Done in 43-dev: player cells (the host's older ones, the lobby's, and Share Onward authors') swim in the Cell stage as native creatures, about one in four spawns, and follow their mouth's diet; part-dropping species keep their look; the host switches it in the lobby (Player Cells). Cell crowding: one extra predator per group from three seats on, placed clear of other cells, and plant food is worth 25% more meanwhile.
+Done in 43-dev: Foreign Creations (receive what partners got from others, off by default) replaces Share Onward; player cells (the host's older ones, the lobby's, and with Foreign Creations the rest of the host's Cache) swim in the Cell stage as native creatures, about one in four spawns, and follow their mouth's diet; part-dropping species keep their look; the host switches it in the lobby (Player Cells). Cell crowding: one extra predator per group from three seats on, placed clear of other cells, and plant food is worth 25% more meanwhile.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

@@ -594,3 +594,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9109](BUG-9109-cell-extra-predators-crowd-and-fly.md) | fixed | bug | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Cell: extra predators per reserved seat crowd the pool and some fly off (spawned overlapping) |
 | [BUG-9110](BUG-9110-cell-omnivore-out-of-reach.md) | fixed | bug | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Cell: with extra predators an omnivore is almost out of reach (many bodies, little plant food) |
 | [BUG-9111](BUG-9111-player-cells-in-cell-stage.md) | fixed | feature | Cell | 2026-11-10 | 0.7.3.6-lineages43-dev | Player cells (Lineages cells) appear in the Cell stage as native NPC species |
+| [BUG-9112](BUG-9112-foreign-creations-replaces-share-onward.md) | fixed | feature | All | 2026-11-10 | 0.7.3.6-lineages43-dev | Foreign Creations (the receiver's choice) replaces Share Onward (the author's choice) |

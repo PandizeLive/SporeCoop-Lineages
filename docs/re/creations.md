@@ -1203,3 +1203,14 @@ Decision 5B implemented (BUG-9105): `[library] share_onward`, MSG_LIBRARY kind 5
 source identity, u8 allow; ignored by older builds), applied by the host only when the same peer
 offers a creation under that identity, kept in LineagesCache\relay.bin, offered by that host in
 later sessions after its own creations.
+
+## Foreign Creations replaces Share Onward (2026-11-10, feat/lineages-43)
+<a id="creations-foreign-creations"></a>
+
+BUG-9112. ~ superseded (2026-11-10): the author opt-in of
+[creations-pass-on](#creations-cache-pass-on). CORRECTION (2026-11-10, feat/lineages-43, player
+decision): the receiver decides. A player always gets the connected players' own creations; with
+Foreign Creations on also the rest of their Caches. The host filters per peer
+(`Exchange::eligible_to`), guests send their received creations to the host only when the host wants
+them, and a host that does not drops them on arrival. MSG_LIBRARY kind 5 keeps its layout; its flag
+now means "wants foreign creations". Verified with a host and a local guest (BUG-9112).

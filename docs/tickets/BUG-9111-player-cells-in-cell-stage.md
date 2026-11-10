@@ -14,7 +14,7 @@ commits: 0221025e
 tests: QA solo host + local guest (coop.pool lineage, coop.lineagecells, screenshots), see Verification
 signature: -
 docs: docs/re/cell.md#cell-lineage-cells
-related: BUG-9104 BUG-9105 BUG-9109 BUG-9110
+related: BUG-9104 BUG-9105 BUG-9109 BUG-9110 BUG-9112
 ---
 
 ## Request
@@ -81,3 +81,5 @@ no-fail-run: a new feature.
 
 ## History
 - 2026-11-10: built and tested on feat/lineages-43.
+- 2026-11-10: the Share Onward rule became BUG-9112's Foreign Creations: Cache cells of authors not in
+  the session count only when the host's Foreign Creations is on.

@@ -6,8 +6,8 @@
 
 - Player Cells: cells from your group now swim in the Cell stage as native
   creatures, about one in four spawns of a species. They come from the host's
-  older cells, the cells of everyone in the lobby, and Lineages Cache cells
-  whose authors turned on Share Onward. Nobody's current cell is used, and
+  older cells, the cells of everyone in the lobby, and, when the host turns on
+  Foreign Creations, the other cells in its Lineages Cache. Nobody's current cell is used, and
   Spore's own spread of your species is untouched. A carnivore mouth hunts and
   a herbivore mouth grazes. Species that drop cell parts keep their own look.
   The host can switch it off in the lobby (Player Cells: On/Off) (BUG-9111).
@@ -16,6 +16,10 @@
   overlapping other cells, which could fling them across the pool (BUG-9109).
 - Cell food: plant food is worth 25% more while those extra predators spawn,
   so finishing the stage as an omnivore stays within reach (BUG-9110).
+- Foreign Creations replaces Share Onward: you always get your partners' own
+  creations, and only with Foreign Creations on also the creations they got
+  from other people. Off by default; the lobby button sits where Share Onward
+  was (BUG-9112).
 
 ## [0.7.3.6-lineages42-dev] - 2026-11-10
 
