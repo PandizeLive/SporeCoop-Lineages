@@ -1,16 +1,16 @@
 ---
 id: BUG-9099
 title: Creature: the third-person FOV widening stays on silently and shifts the zoom range outward
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-09
 source: player report on the personal Steam install (40-dev)
 role: local (host)
 versions: 0.7.3.6-lineages30-dev to 0.7.3.6-lineages40-dev
-fixed_in:
+fixed_in: 0.7.3.6-lineages41-dev
 branch: fix/fov-stuck-wide-lens
-commits:
+commits: 04ad56ba 83c0a710
 tests: live console check (coop.fov) on the personal Steam game, see Verification
 signature: coop.fov reports steps=6 while the player believes the camera is vanilla
 docs: CHANGELOG.md
@@ -71,3 +71,4 @@ keeping the steps. Player confirmation on the personal install is pending.
 ## History
 - 2026-11-09: reported by the player; live state read through the console.
 - 2026-11-09: fixed on fix/fov-stuck-wide-lens (04ad56ba); QA results above.
+- 2026-11-09: released in 0.7.3.6-lineages41-dev.

@@ -581,3 +581,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9096](BUG-9096-lineages-session-transfer-backlog.md) | open | bug | Cell | 2026-11-07 |  | Lineages internet session stalls and repeatedly transfers the world |
 | [BUG-9097](BUG-9097-healthy-partner-direction-indicator.md) | fixed | bug | All | 2026-11-07 | unreleased | Healthy partners have no visible off-screen direction indicator |
 | [BUG-9098](BUG-9098-world-transfers-stall-on-constrained-udp-links.md) | open | bug | Cell | 2026-11-08 |  | World transfers stall on constrained UDP links while Cell snapshots fill the path |
+| [BUG-9099](BUG-9099-third-person-fov-stays-wide-silently.md) | fixed | bug | Creature | 2026-11-09 | 0.7.3.6-lineages41-dev | Creature: the third-person FOV widening stays on silently and shifts the zoom range outward |
+| [BUG-9100](BUG-9100-difficulty-scaling-ignores-combat-and-hunger.md) | fixed | bug | all | 2026-11-09 | 0.7.3.6-lineages41-dev | Campaign: Difficulty Scaling changes only progress; enemy health, damage, hunger, takeover and raids ignore it |
+| [BUG-9101](BUG-9101-autosave-confirm-holds-virtual-cursor.md) | fixed | bug | all | 2026-11-09 | 0.7.3.6-lineages41-dev | Autosave: confirming the saved box leaves the virtual cursor on its OK button, and the player loses mouse control |
+| [BUG-9102](BUG-9102-frame-rate-cap-cannot-be-changed.md) | fixed | bug | all | 2026-11-09 | 0.7.3.6-lineages41-dev | Graphic Settings: the Frame Rate Cap cannot be changed, and after a change Settings no longer opens |

@@ -1522,6 +1522,13 @@ static void refresh()
 
 static Win g_graphics_fps;
 static bool g_graphics_typing;
+// BUG-9102: a full field ("144") ignored every digit, and a real Backspace can reach Spore's menu
+// navigation, so the player could not change the cap. The first digit after a click into the
+// field now replaces the value; Delete clears it.
+static bool g_graphics_replace;
+static bool g_graphics_replace_fix = true;
+COOP_FIX("ui.fps_replace", "BUG-9102", g_graphics_replace_fix,
+         "ui: the first digit typed after clicking the frame rate cap replaces it; Delete clears it");
 
 static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
 {
@@ -1531,7 +1538,8 @@ static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
         return false;
     }
     const bool backspace = value == VK_BACK && (message == WM_KEYDOWN || message == WM_KEYUP);
-    if (message != WM_LBUTTONDOWN && !(g_graphics_typing && (message == WM_CHAR || backspace)))
+    const bool del = g_graphics_replace_fix && value == VK_DELETE && (message == WM_KEYDOWN || message == WM_KEYUP);
+    if (message != WM_LBUTTONDOWN && !(g_graphics_typing && (message == WM_CHAR || backspace || del)))
         return false;
     if (sui::find(sui::main_window(), 0xC00F0111) != g_graphics_fps) {
         g_graphics_typing = false;
@@ -1540,6 +1548,7 @@ static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
     if (message == WM_LBUTTONDOWN) {
         const auto area = sui::screen_rect(g_graphics_fps);
         g_graphics_typing = x >= area.x1 && x < area.x2 && y >= area.y1 && y < area.y2;
+        g_graphics_replace = g_graphics_replace_fix && g_graphics_typing;
         return false;
     }
     if (value == VK_ESCAPE || value == VK_RETURN)
@@ -1548,10 +1557,15 @@ static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
     if (message == WM_KEYUP || (message == WM_CHAR && value == VK_BACK))
         return true;
     auto text = sui::edit_text(g_graphics_fps);
-    if (backspace && !text.empty())
+    if (del)
+        text.clear();
+    else if (backspace && !text.empty())
         text.pop_back();
-    else if (message == WM_CHAR && value >= '0' && value <= '9' && text.size() < 3)
-        text += (char)value;
+    else if (message == WM_CHAR && value >= '0' && value <= '9') {
+        if (g_graphics_replace) text.clear();
+        if (text.size() < 3) text += (char)value;
+    }
+    if (message == WM_CHAR || backspace || del) g_graphics_replace = false;
     sui::set_edit_text(g_graphics_fps, text);
     return true;
 }
@@ -1622,18 +1636,25 @@ static void refresh_graphics_options()
                 MessageBoxW((HWND)H->game_window(), L"Could not save the graphics settings.", L"Lineages", MB_OK | MB_ICONWARNING);
                 return true;
             }
+            // BUG-9102: re-applying an unchanged borderless window on every accept left Spore's
+            // Settings button dead until a restart. Apply only what changed.
+            struct Change { lineages_graphics::Settings value; bool fps, window; };
+            const bool all = !g_graphics_replace_fix;
             H->run_outside_frame([](void* data) {
-                auto* settings = static_cast<lineages_graphics::Settings*>(data);
-                const auto cap = std::string("frame.target ") + (settings->fps ? std::to_string(settings->fps) : "auto");
-                const int fps = H->command_exec(cap.c_str(), nullptr);
-                const int window = H->command_exec(settings->borderless ? "window.borderless on" : "window.borderless off", nullptr);
+                auto* change = static_cast<Change*>(data);
+                const auto& settings = change->value;
+                const auto cap = std::string("frame.target ") + (settings.fps ? std::to_string(settings.fps) : "auto");
+                const int fps = change->fps ? H->command_exec(cap.c_str(), nullptr) : 0;
+                const int window = change->window
+                    ? H->command_exec(settings.borderless ? "window.borderless on" : "window.borderless off", nullptr) : 0;
                 if (fps || window)
                     MessageBoxW((HWND)H->game_window(),
                         window ? L"Turn off Full Screen Mode to use borderless. Restart Spore if its settings prompt you."
                                : L"Restart Spore to apply the new frame rate cap.",
                         L"Lineages Graphics", MB_OK | MB_ICONINFORMATION);
-                delete settings;
-            }, new lineages_graphics::Settings(value_to_save));
+                delete change;
+            }, new Change{value_to_save, all || previous.fps != value_to_save.fps,
+                          all || previous.borderless != value_to_save.borderless});
             return false; // let the native confirmation save its own settings
         });
         last_open = nullptr;

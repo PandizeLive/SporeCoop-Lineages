@@ -1,16 +1,16 @@
 ---
 id: BUG-9100
 title: Campaign: Difficulty Scaling changes only progress; enemy health, damage, hunger, takeover and raids ignore it
-status: open
+status: fixed
 kind: bug
 stage: all
 reported: 2026-11-09
 source: player report (Lineages 40-dev)
 role: host
 versions: 0.7.3.6-lineages36-dev to 0.7.3.6-lineages40-dev
-fixed_in:
+fixed_in: 0.7.3.6-lineages41-dev
 branch: fix/fov-stuck-wide-lens
-commits:
+commits: 39cdca69 f733c8b1
 tests: win_tests (founders block), QA coop.rules and coop.hp on two instances, see Verification
 signature: coop.rules model=0 on a new campaign; enemy_hp the same at every Difficulty Scaling
 docs: data/config/coop.ini, README.md roadmap
@@ -62,3 +62,4 @@ space_allies.cpp) used fixed per-seat values from coop.ini.
 
 ## History
 - 2026-11-09: reported by the player; fixed on fix/fov-stuck-wide-lens.
+- 2026-11-09: released in 0.7.3.6-lineages41-dev.

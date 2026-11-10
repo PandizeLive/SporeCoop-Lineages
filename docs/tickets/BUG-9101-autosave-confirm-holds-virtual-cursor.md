@@ -1,16 +1,16 @@
 ---
 id: BUG-9101
 title: Autosave: confirming the saved box leaves the virtual cursor on its OK button, and the player loses mouse control
-status: open
+status: fixed
 kind: bug
 stage: all
 reported: 2026-11-09
 source: player report (Lineages 40-dev, Cell, host)
 role: host
 versions: 0.7.3.6-lineages36-dev to 0.7.3.6-lineages40-dev
-fixed_in:
+fixed_in: 0.7.3.6-lineages41-dev
 branch: fix/fov-stuck-wide-lens
-commits:
+commits: 39cdca69
 tests: QA `cursor` after `coop.save`, fix on and off (coop.fix world.saved_box_cursor)
 signature: `cursor` answers virtual=1 for about 5 s after "the game saved box is up"
 docs: docs/06-testing.md
@@ -57,3 +57,4 @@ Not covered: a real Cell session with a moving mouse; Tribe/Civ/Space saves.
 
 ## History
 - 2026-11-09: reported by the player; fixed on fix/fov-stuck-wide-lens.
+- 2026-11-09: released in 0.7.3.6-lineages41-dev.

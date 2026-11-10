@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages41-dev] - 2026-11-09
+
 - Return the third-person field of view to normal when you leave Creature or
   Adventure play, show a message when it changes, and only react to Ctrl+Scroll
   while Ctrl is really held (BUG-9099).
@@ -11,6 +13,8 @@
   Saved campaigns keep their rules (BUG-9100).
 - Give the mouse back right after an autosave instead of about 5 seconds later,
   and confirm Spore's "game saved" box sooner (BUG-9101).
+- Frame Rate Cap: click the field and type to replace the value (Delete clears
+  it), and Settings opens again after you change it (BUG-9102).
 
 ## [0.7.3.6-lineages40-dev] - 2026-11-09
 
