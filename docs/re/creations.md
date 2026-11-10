@@ -1143,3 +1143,24 @@ Roadmap 42: the vehicle/outfitter depth square in the Creature editor, for non-l
   condition (outfitter-only flag, rigblock prop, or editor mode). ModAPI EditorRigblock has
   `mAxisHandles[3]` at +0x154; the ModAPI sub_ addresses are a different build (none matched here).
 - Tools: `coop.editorcfg show|manips|copy` (mods/coop/editor_cfg.cpp).
+- ✔ (later the same day) The handle-tuning block is `Editors::cTuningSpine` (Get 0x401070,
+  global 0x1C10C1C at runtime). Loader 0x5DBD60 (called once from cEditor::OnEnter 0x58EB4B):
+  +0x60 spine 0x50FC283, +0x90 ball connector 0x50FC284, +0x9C rotation ball 0x50FC285,
+  +0xA8 rotation ring 0x50FC286, +0x6C deform 0x50FC287, +0x78 nudge 0xB8E88BEC, +0x84 power 0x3042E156.
+- ✔ Handle vtables (runtime): ball connector 0x1A2F1A0, deform-style 0x1A2F250, rotation ball
+  0x1A2F308, rotation ring 0x1A2F3A8, spine 0x1A36EA0. Deform-style GetTuningFile 0x480780
+  switches on handle+0x8C: 0x503283AA = fnv("nudge") -> nudge tuning, 0xE20E2032 -> power,
+  else deform. That switch is the only use of the nudge constant in the code.
+- ✔ Deform-style handles are built per rigblock in 0x441910 (around 0x446B9D, ctor 0x47FF30,
+  object 0x1D8 bytes) from up to 32 handle definitions (0x5C bytes each) returned by
+  IModelWorld vt 0xE8 for the part's model; init 0x480530 copies the definition to handle+0x50,
+  so the kind is definition+0x3C. **The nudge handle is a model-defined deformation of outfitter
+  accessory models**, not a part translation: creature part models have none, and no code
+  moves a part for a nudge handle. Turning tools or tuning on (above) cannot add it.
+- ✔ cEditor singleton: runtime 0x1C24EF0 (ModAPI March2017 `cEditor::ptr` 0x15E4EF0);
+  editor+0xD4 selected rigblock, rigblock+0x1C/+0x20 part instance/group, +0x48 position.
+  Writing +0x48 alone does not move the part (the model transform is applied elsewhere).
+- Plan for 42: a mod-made depth control (for example a key or modifier that moves the selected
+  non-limb part along its attach normal) needs the rigblock transform/pin update function and
+  the edit-history commit (cEditor::CommitEditHistory 0x586410); then a save/reload test,
+  partners loading the creation, and vanilla Spore loading it.
