@@ -191,3 +191,4 @@ SporeCoop::Thumbnail_EncodeCreation ; Native library export repair unavailable o
 SporeCoop::PngEncoder_WriteImage ; Native library export repair unavailable on frozen build (BUG-9093)
 SporeCoop::EditorBudgetMsg_vtable ; Deferred Cell allowance replay unavailable on frozen build (BUG-0560)
 SporeCoop::BT_AttackTick ; Creature lost-target guard unavailable on frozen build (BUG-0453)
+Editors::cEditor::ptr ; Creature part depth handle unavailable on frozen build (BUG-9103)

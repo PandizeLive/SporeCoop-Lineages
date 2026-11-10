@@ -1164,3 +1164,12 @@ Roadmap 42: the vehicle/outfitter depth square in the Creature editor, for non-l
   non-limb part along its attach normal) needs the rigblock transform/pin update function and
   the edit-history commit (cEditor::CommitEditHistory 0x586410); then a save/reload test,
   partners loading the creation, and vanilla Spore loading it.
+- ✔ (2026-11-10, feat/lineages-42) The nudge tuning file the outfitter names, 0x10CB4B28!0x3C3BA77F,
+  is in no game package (Data, DataEP1): the native depth handle is effectively unused. Appending a
+  nudge MorphHandleInfo in GetDeformationHandles (0x745000) crashed the handle build (vector fill
+  0x42F0A0 / def copy 0x4802A0; per-handle arrays at rigblock +0x704 and +0x73C come from the model).
+  Native handle colours (prop 10CB4FA8!DB33584A): default (0.67, 0.75, 1.2), rollover (0.54, 0.81,
+  0.54), active (1.0, 1.2, 0.42); 10CB4FA8!900A4DB5 (power) default orange (0.93, 0.48, 0.16).
+- ✔ Moving a part works: EditorRigblock +0x48 and model +0x0C, EditorModel +0x51 = 1,
+  cEditor::CommitEditHistory(true, 0). Save keeps it in the bem, reopening keeps it, Undo restores it.
+  Implemented as the mod's own depth square: mods/coop/editor_depth.cpp (BUG-9103).

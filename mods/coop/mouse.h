@@ -18,6 +18,8 @@ extern bool g_fix;
 void install(const void* game_window);
 // Return true to consume the Ctrl+Scroll event instead of native zoom.
 void set_fov_wheel(bool (*handler)(int delta));
+// The creature editor depth square (BUG-9103): client coordinates; true consumes the message.
+void set_depth_input(bool (*handler)(unsigned message, uintptr_t wparam, int x, int y));
 void set_graphics_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
 void set_list_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
 // remove it (on_unload: the hook procedure lives in this DLL)

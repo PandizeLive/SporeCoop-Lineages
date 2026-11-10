@@ -1,0 +1,341 @@
+// Depth square for creature parts (roadmap 42, BUG-9103). Spore's own "nudge" handle (the
+// outfitter's depth square) is a deformation of accessory models whose tuning file never shipped,
+// and creature part models have none. So the mod draws its own square next to the selected detail,
+// weapon or other surface part in the creature editors and moves the part in or out with it:
+// docs/re/creations.md#creations-editor-depth-handle
+#include "editor_depth.h"
+
+#include <d3d9.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "fixes.h"
+#include "game.h"
+#include "modes.h"
+#include "mouse.h"
+#include "sporekit_game.hpp"
+
+namespace editor_depth {
+using namespace skg;
+
+static const SkHost* H;
+bool g_fix = true;
+COOP_FIX("editor.depth", "BUG-9103", g_fix, "editor: creature details and weapons get a depth square that pushes them in or out");
+
+struct Vec3 {
+    float x, y, z;
+    Vec3 operator+(const Vec3& o) const { return {x + o.x, y + o.y, z + o.z}; }
+    Vec3 operator-(const Vec3& o) const { return {x - o.x, y - o.y, z - o.z}; }
+    Vec3 operator*(float k) const { return {x * k, y * k, z * k}; }
+    float len() const { return std::sqrt(x * x + y * y + z * z); }
+};
+
+// Editor (cEditor, Editors::cEditor::ptr): +0x98 EditorModel, +0xD4 selected rigblock.
+// EditorModel: +0x18/+0x1C rigblocks (EditorRigblock*), +0x51 changed, +0x58 model type.
+// EditorRigblock: +0x0C part properties, +0x10 model, +0x1C part instance, +0x48 position.
+// Model: +0x0C drawn offset (the same point as the rigblock position), +0x18 scale.
+// A part is moved by writing both positions; CommitEditHistory makes it an edit (undo, save).
+constexpr uint32_t kCreatureModel = 0x9EA3031A; // Creature Editor Setup editorModelTypes
+static uintptr_t a_EditorPtr, a_GetBool, a_GetInt, a_Commit, a_GetProps;
+static void* g_list_vtable; // App::PropertyList's vtable (from a list we know)
+
+static bool list_ok(void* list)
+{
+    if (!g_list_vtable && a_GetProps) {
+        void* pm = cdecl_call<void*>(a_GetProps);
+        void* known = nullptr;
+        if (pm && vcall<bool>(pm, 0x2C / 4, uint32_t(0xCF2DC8D0), uint32_t(0x40600100), &known) && known) {
+            g_list_vtable = field<void*>(known, 0);
+            vcall<int>(known, 0x04 / 4);
+        }
+    }
+    return list && g_list_vtable && readable(list, 0x38) && field<void*>(list, 0) == g_list_vtable;
+}
+
+static bool prop_bool(void* list, uint32_t id)
+{
+    bool v = false;
+    return list_ok(list) && cdecl_call<bool>(a_GetBool, list, id, &v) && v;
+}
+
+static int prop_int(void* list, uint32_t id)
+{
+    int v = 0;
+    return list_ok(list) && cdecl_call<bool>(a_GetInt, list, id, &v) ? v : 0;
+}
+
+// The open creature-family editor and its model (the pointer stays set outside the editor).
+static void* editor_model(void** editor_out = nullptr)
+{
+    if (game::mode_id() != modes::kEditor || !a_EditorPtr) return nullptr;
+    void* ed = *reinterpret_cast<void**>(a_EditorPtr);
+    if (!ed || !readable(ed, 0x2B4)) return nullptr;
+    void* em = field<void*>(ed, 0x98);
+    if (!em || !readable(em, 0x5C) || field<uint32_t>(em, 0x58) != kCreatureModel) return nullptr;
+    if (editor_out) *editor_out = ed;
+    return em;
+}
+
+static std::vector<void*> rigblocks(void* em)
+{
+    std::vector<void*> out;
+    void** b = field<void**>(em, 0x18);
+    void** e = field<void**>(em, 0x1C);
+    if (!b || e < b || e - b > 512 || !readable(b, (e - b) * 4)) return out;
+    for (void** p = b; p < e; ++p)
+        if (*p && readable(*p, 0x50)) out.push_back(*p);
+    return out;
+}
+
+static bool is_vertebra(void* rb) { return prop_bool(field<void*>(rb, 0x0C), 0xAFFF3A14); } // modelIsVertebra
+
+// Details, weapons, mouths, eyes and other surface parts. Limbs, hands, feet and the spine keep
+// their placement (the player's rule).
+static const char* why_not(void* rb)
+{
+    void* parts = field<void*>(rb, 0x0C);
+    if (!list_ok(parts)) return "no part properties";
+    struct Flag { uint32_t id; const char* name; };
+    static const Flag kBools[] = {
+        {0xAFFF3A14, "spine"}, {0x4FF31EEC, "limb (ball connector)"}, {0x6FF31F12, "limb (socket connector)"},
+        {0x04A3386D, "hand"}, {0x04A33896, "foot"},
+    };
+    for (const auto& f : kBools)
+        if (prop_bool(parts, f.id)) return f.name;
+    static const Flag kInts[] = {{0xB00F0FDF, "limb"}, {0xB00F0FE2, "hand"}, {0xB00F0FEF, "foot"}};
+    for (const auto& f : kInts)
+        if (prop_int(parts, f.id) > 0) return f.name;
+    return nullptr;
+}
+
+static Vec3 position(void* rb) { return field<Vec3>(rb, 0x48); }
+
+static void set_position(void* rb, const Vec3& p)
+{
+    field<Vec3>(rb, 0x48) = p;
+    void* model = field<void*>(rb, 0x10);
+    if (model && readable(model, 0x18)) field<Vec3>(model, 0x0C) = p;
+}
+
+// "Out of the body": from the nearest spine segment through the part.
+static Vec3 outward(void* em, void* rb)
+{
+    const Vec3 p = position(rb);
+    float best = 1e9f;
+    Vec3 dir{0, 0, 1};
+    for (void* other : rigblocks(em)) {
+        if (other == rb || !is_vertebra(other)) continue;
+        const Vec3 d = p - position(other);
+        const float l = d.len();
+        if (l > 1e-4f && l < best) { best = l; dir = d * (1.f / l); }
+    }
+    return dir;
+}
+
+// The mirrored twin of a symmetric part: x mirrored (left and right pieces can be different
+// part ids, like a pair of ears).
+static void* twin(void* em, void* rb)
+{
+    const Vec3 p = position(rb);
+    if (std::fabs(p.x) < 1e-3f) return nullptr;
+    void* best = nullptr;
+    float bd = 0.02f;
+    for (void* other : rigblocks(em)) {
+        if (other == rb || is_vertebra(other)) continue;
+        const Vec3 q = position(other);
+        const float d = Vec3{p.x + q.x, p.y - q.y, p.z - q.z}.len();
+        if (d < bd) { bd = d; best = other; }
+    }
+    return best;
+}
+
+// ---- the square ----
+constexpr float kOffset = 0.18f;   // world units outside the part's anchor, times the part scale
+constexpr float kRange = 0.6f;     // the farthest a part moves either way, times the part scale
+constexpr int kHalf = 9;           // square half size in pixels
+struct Drag {
+    void* rb = nullptr;
+    void* twin = nullptr;
+    Vec3 start{}, twin_start{}, dir{};
+    float px_per_unit = 0, sx = 0, sy = 0; // screen direction of +dir per world unit, unit vector
+    int x0 = 0, y0 = 0;
+    float depth = 0, limit = 0;
+};
+static Drag g_drag;
+static bool g_dragging, g_hover;
+static float g_square[2] = {-1, -1};
+static void* g_square_rb;
+static unsigned g_moves, g_commits;
+
+static float part_scale(void* rb)
+{
+    void* model = field<void*>(rb, 0x10);
+    const float s = model && readable(model, 0x1C) ? field<float>(model, 0x18) : 1.f;
+    return std::isfinite(s) && s > 0.05f && s < 20.f ? s : 1.f;
+}
+
+// Where the square is for the selected part, or false.
+static bool square_for(void* em, void* rb, float out[2], Vec3* dir_out = nullptr)
+{
+    if (!rb || !readable(rb, 0x50) || why_not(rb)) return false;
+    const Vec3 dir = outward(em, rb);
+    const Vec3 at = position(rb) + dir * (kOffset * part_scale(rb));
+    if (!H->world_to_screen(&at.x, out) || !std::isfinite(out[0]) || !std::isfinite(out[1])) return false;
+    if (dir_out) *dir_out = dir;
+    return true;
+}
+
+static void commit(void*)
+{
+    void* ed = nullptr;
+    void* em = editor_model(&ed);
+    if (!em) return;
+    field<uint8_t>(em, 0x51) = 1;                       // EditorModel changed: Save/Replace on exit
+    thiscall<void>(a_Commit, ed, true, (void*)nullptr); // an undo step like a native edit
+    ++g_commits;
+}
+
+static bool input(unsigned message, uintptr_t, int x, int y)
+{
+    if (!g_fix) return false;
+    if (g_dragging) {
+        if (message == WM_MOUSEMOVE) {
+            const float along = ((x - g_drag.x0) * g_drag.sx + (y - g_drag.y0) * g_drag.sy) / g_drag.px_per_unit;
+            g_drag.depth = std::clamp(along, -g_drag.limit, g_drag.limit);
+            set_position(g_drag.rb, g_drag.start + g_drag.dir * g_drag.depth);
+            if (g_drag.twin) {
+                const Vec3 mirrored{-g_drag.dir.x, g_drag.dir.y, g_drag.dir.z};
+                set_position(g_drag.twin, g_drag.twin_start + mirrored * g_drag.depth);
+            }
+            ++g_moves;
+            return true;
+        }
+        if (message == WM_LBUTTONUP) {
+            g_dragging = false;
+            if (std::fabs(g_drag.depth) > 1e-4f) H->run_outside_frame(commit, nullptr);
+            return true;
+        }
+        return message == WM_LBUTTONDOWN;
+    }
+    const bool over = g_square_rb && std::abs(x - g_square[0]) <= kHalf + 2 && std::abs(y - g_square[1]) <= kHalf + 2;
+    if (message == WM_MOUSEMOVE) { g_hover = over; return false; }
+    if (message != WM_LBUTTONDOWN || !over) return false;
+    void* em = editor_model();
+    if (!em || field<void*>(*reinterpret_cast<void**>(a_EditorPtr), 0xD4) != g_square_rb) return false;
+    Drag d;
+    d.rb = g_square_rb;
+    float sq[2];
+    if (!square_for(em, d.rb, sq, &d.dir)) return false;
+    d.start = position(d.rb);
+    // screen direction and pixels per world unit along the part's outward line
+    const Vec3 a = d.start, b = d.start + d.dir;
+    float pa[2], pb[2];
+    if (!H->world_to_screen(&a.x, pa) || !H->world_to_screen(&b.x, pb)) return false;
+    const float dx = pb[0] - pa[0], dy = pb[1] - pa[1], l = std::hypot(dx, dy);
+    if (!(l > 1.f)) return false; // the line points at the camera: rotate the view
+    d.px_per_unit = l;
+    d.sx = dx / l;
+    d.sy = dy / l;
+    d.x0 = x;
+    d.y0 = y;
+    d.limit = kRange * part_scale(d.rb);
+    d.twin = twin(em, d.rb);
+    if (d.twin) d.twin_start = position(d.twin);
+    g_drag = d;
+    g_dragging = true;
+    return true; // the editor does not see the press: the part stays selected and is not dragged
+}
+
+void draw()
+{
+    g_square_rb = nullptr;
+    if (!g_fix) { g_dragging = false; return; }
+    void* ed = nullptr;
+    void* em = editor_model(&ed);
+    void* rb = em ? field<void*>(ed, 0xD4) : nullptr;
+    if (!em || !rb) { g_dragging = false; return; }
+    float sq[2];
+    if (!square_for(em, rb, sq)) return;
+    g_square[0] = sq[0];
+    g_square[1] = sq[1];
+    g_square_rb = rb;
+    auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
+    if (!device) return;
+    // Spore's editor handle colours: pale blue, green on rollover; orange while held
+    const DWORD fill = g_dragging ? 0xFFF07A29 : g_hover ? 0xFF8AD08A : 0xFFAABFFF;
+    D3DRECT rects[2] = {
+        {LONG(sq[0]) - kHalf - 2, LONG(sq[1]) - kHalf - 2, LONG(sq[0]) + kHalf + 2, LONG(sq[1]) + kHalf + 2},
+        {LONG(sq[0]) - kHalf, LONG(sq[1]) - kHalf, LONG(sq[0]) + kHalf, LONG(sq[1]) + kHalf},
+    };
+    device->Clear(1, &rects[0], D3DCLEAR_TARGET, 0xFF1A2236, 1.f, 0);
+    device->Clear(1, &rects[1], D3DCLEAR_TARGET, fill, 1.f, 0);
+}
+
+void tick()
+{
+    // the hook lives in mouse.cpp; keep it pointing here after hot reloads
+    mouse::set_depth_input(input);
+}
+
+static int command(void*, int argc, const char* const* argv, SkOut* out)
+{
+    auto say = [&](const char* fmt, auto... a) { H->out_printf(out, fmt, a...); };
+    if (argc >= 3 && !strcmp(argv[1], "open")) { // tests: open a saved creature in the stage editor
+        uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
+        uintptr_t alloc = H->sym("GeneralAllocator::new_");
+        if (!ctor || !submit || !alloc) { say("not possible\n"); return 1; }
+        void* req = cdecl_call<void*>(alloc, (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+        thiscall<void*>(ctor, req);
+        field<uint32_t>(req, 0xC) = 0x465C50BAu;                 // CreatureEditorExtraLarge
+        field<uint32_t>(req, 0x10) = (uint32_t)strtoul(argv[2], nullptr, 16);
+        field<uint32_t>(req, 0x14) = 0x2B978C46u;                // creature
+        field<uint32_t>(req, 0x18) = 0x40626200u;                // My Creations
+        say("submitted %d\n", (int)cdecl_call<bool>(submit, req));
+        return 0;
+    }
+    void* ed = nullptr;
+    void* em = editor_model(&ed);
+    say("fix=%d editor=%p dragging=%d moves=%u commits=%u square=%.0f %.0f\n", g_fix, em ? ed : nullptr, g_dragging, g_moves,
+        g_commits, g_square_rb ? g_square[0] : -1.f, g_square_rb ? g_square[1] : -1.f);
+    if (!em) return 0;
+    void* sel = field<void*>(ed, 0xD4);
+    if (argc >= 2 && !strcmp(argv[1], "parts")) {
+        for (void* rb : rigblocks(em)) {
+            const char* no = why_not(rb);
+            const Vec3 p = position(rb);
+            say("  %p part %08X %s pos %.3f %.3f %.3f%s\n", rb, field<uint32_t>(rb, 0x1C), no ? no : "depth", p.x, p.y, p.z,
+                rb == sel ? "  (selected)" : "");
+        }
+        return 0;
+    }
+    if (sel) {
+        const char* no = why_not(sel);
+        const Vec3 p = position(sel), d = outward(em, sel);
+        say("selected %p part %08X %s pos %.3f %.3f %.3f out %.3f %.3f %.3f twin %p\n", sel, field<uint32_t>(sel, 0x1C),
+            no ? no : "depth", p.x, p.y, p.z, d.x, d.y, d.z, twin(em, sel));
+    }
+    return 0;
+}
+
+bool init(const SkHost* host, SkMod* mod)
+{
+    H = host;
+    a_EditorPtr = H->sym("Editors::cEditor::ptr");
+    a_GetBool = H->sym("App::Property::GetBool");
+    a_GetInt = H->sym("App::Property::GetInt32");
+    a_Commit = H->sym("Editors::cEditor::CommitEditHistory");
+    a_GetProps = H->sym("App::IPropManager::Get");
+    H->command_add(mod, "coop.depth", "coop.depth [parts] - the creature editor depth square (tests, BUG-9103)", command,
+                   nullptr, SK_CMD_MAIN_THREAD);
+    const bool ok = a_EditorPtr && a_GetBool && a_GetInt && a_Commit && a_GetProps;
+    if (!ok) g_fix = false;
+    return ok;
+}
+
+} // namespace editor_depth

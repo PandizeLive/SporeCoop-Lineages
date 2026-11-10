@@ -585,3 +585,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9100](BUG-9100-difficulty-scaling-ignores-combat-and-hunger.md) | fixed | bug | all | 2026-11-09 | 0.7.3.6-lineages41-dev | Campaign: Difficulty Scaling changes only progress; enemy health, damage, hunger, takeover and raids ignore it |
 | [BUG-9101](BUG-9101-autosave-confirm-holds-virtual-cursor.md) | fixed | bug | all | 2026-11-09 | 0.7.3.6-lineages41-dev | Autosave: confirming the saved box leaves the virtual cursor on its OK button, and the player loses mouse control |
 | [BUG-9102](BUG-9102-frame-rate-cap-cannot-be-changed.md) | fixed | bug | all | 2026-11-09 | 0.7.3.6-lineages41-dev | Graphic Settings: the Frame Rate Cap cannot be changed, and after a change Settings no longer opens |
+| [BUG-9103](BUG-9103-creature-part-depth-square.md) | open | feature | Creature | 2026-11-09 |  | Creature editor: a depth square pushes details and weapons into the body or pulls them out |
