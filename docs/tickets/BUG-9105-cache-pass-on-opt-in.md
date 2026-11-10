@@ -8,7 +8,7 @@ reported: 2026-11-09
 source: player request (roadmap 42, cache decision 5B)
 role: host guest
 versions: 0.7.3.6-lineages41-dev
-fixed_in: unreleased
+fixed_in: 0.7.3.6-lineages42-dev
 branch: feat/lineages-42
 commits: 63abe7bf
 tests: three-player QA (TITAN, second TITAN instance as host, MSI), see Verification
@@ -62,3 +62,4 @@ See History.
       291D2627) within 20 s, "shared by TitanQA". 0 faults on all three games.
 - 2026-11-10: lobby toggle (screenshots: host shows it under Send World, guest in its place).
   A guest switched it on mid-session: the host's onward_authors went 0 -> 1 at once. 0 faults.
+- 2026-11-10: released in 0.7.3.6-lineages42-dev.

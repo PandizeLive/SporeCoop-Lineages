@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.3.6-lineages42-dev] - 2026-11-10
+
 - Creature editor: select a detail or weapon and drag the new depth cube to
   push it into the body or pull it out. Limbs, hands and feet keep their
   placement, mirrored parts move together, and Undo and saving work as usual

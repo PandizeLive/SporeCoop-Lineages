@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: player request (roadmap 42)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in: unreleased
+fixed_in: 0.7.3.6-lineages42-dev
 branch: feat/lineages-42
 commits: 63abe7bf 08b969f4 91b64154
 tests: QA hover screenshots, see Verification
@@ -54,3 +54,4 @@ games", eye "Show or hide", Fast "Fastest world transfer", Start Server "Host a 
   with the native tooltip (screenshot), 0 faults. Test pitfall: the QA copy loads SporeCoop.package
   from the registered Steam Data folder, so new images need `coop.creations mount <package>`
   before the first use (the game remembers a missing image).
+- 2026-11-10: released in 0.7.3.6-lineages42-dev.

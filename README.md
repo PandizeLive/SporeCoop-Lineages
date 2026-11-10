@@ -6,7 +6,7 @@ Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](h
 
 ## Playable today
 
-**Development build** `0.7.3.6-lineages25-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
+**Development build** `0.7.3.6-lineages42-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
 
 | Stage | What players have done together |
 | --- | --- |
@@ -49,11 +49,11 @@ A first-use Civilization tutorial also reached two native species capitals throu
 
 Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
-Planned for 42:
+Done in 42-dev: a depth cube in the Creature editor pushes details and weapons into the body or pulls them out; received creations have their own Lineages Cache tab; Share Onward lets you allow hosts to pass your creations on; and the co-op window's buttons have short tooltips.
+
+Planned for 43:
 
 - **Cell creations in Cell stage.** Cells made in the Cell editor, including partners' cells, spawn natively as their own species with Maxis AI behaviour, alongside Maxis species. Species that carry cell parts stay Maxis so part unlocks keep working. Cell population is reviewed at the same time: it currently feels crowded.
-- **Depth control for creature parts.** Add the depth square from the vehicle and building editors to the Creature editor for weapons, details and other non-limb parts. Limbs, hands and feet keep their current placement.
-- **Lineages Cache in its own tab.** Received creations leave My Creations but still appear in worlds. Everyone keeps sharing their whole library with partners, received creations are kept, and a player can allow their creations to be passed on further. Design notes: [creations.md](docs/re/creations.md#creations-cache-scope-roadmap).
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

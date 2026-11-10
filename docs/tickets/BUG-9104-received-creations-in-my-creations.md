@@ -8,7 +8,7 @@ reported: 2026-11-09
 source: player request (roadmap 42, cache decision 3B)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in: unreleased
+fixed_in: 0.7.3.6-lineages42-dev
 branch: feat/lineages-42
 commits: 63abe7bf
 tests: QA Sporepedia counts (single PC), see Verification
@@ -58,3 +58,4 @@ condition). The change is in the Sporepedia list only; pollination reads its own
 
 ## History
 - 2026-11-10: built on feat/lineages-42; single-PC QA above.
+- 2026-11-10: released in 0.7.3.6-lineages42-dev.

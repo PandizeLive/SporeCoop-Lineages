@@ -8,7 +8,7 @@ reported: 2026-11-09
 source: player request (roadmap 42)
 role: all
 versions: 0.7.3.6-lineages41-dev
-fixed_in: unreleased
+fixed_in: 0.7.3.6-lineages42-dev
 branch: feat/lineages-42
 commits: 10c433b9 820f896b 513e0983
 tests: QA coop.depth (single PC: drag, save, reload, undo); two-PC TITAN host + MSI guest, see Verification
@@ -103,3 +103,4 @@ Single PC (QA copy, profile LineagesDepthQA, Creature save Samuth, 640x480, mute
   log line: the abandoned GetDeformationHandles append (Findings), whose code is gone. The other QA
   crash of the day (12:57) was a console command, not this feature: BUG-9108.
 - 2026-11-10: closed for roadmap 42 (status fixed; version set at release).
+- 2026-11-10: released in 0.7.3.6-lineages42-dev.
