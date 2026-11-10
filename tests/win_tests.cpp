@@ -219,6 +219,19 @@ static void test_founders()
     CHECK(founders::CellCredit::bonus(1,105,recovered.damage_carry) == 1 && recovered.damage_carry == 0);
     CHECK(founders::CellCredit::bonus(1,115,recovered.health_carry) == 1 && recovered.health_carry == 5);
     CHECK(recovered.award(1,true,quartet) == 1 && recovered.award(2,false,quartet) == 0);
+    // BUG-9110: plant food worth 125% at three seats or more, meat unchanged, remainders kept per kind
+    {
+        CHECK(quartet.cell_extra_predators() == 1 && quartet.cell_plant_percent() == 125);
+        CHECK(pair.cell_extra_predators() == 0 && pair.cell_plant_percent() == 100);
+        const auto divisor = int(quartet.workload_percent());
+        founders::CellCredit a, b;
+        int plant = 0, meat = 0;
+        for (int i = 0; i < 100; ++i) {
+            plant += a.award(4, true, quartet, 125);
+            meat += b.award(4, false, quartet, 125);
+        }
+        CHECK(plant == 400 * 125 / divisor && meat == 400 * 100 / divisor);
+    }
     CHECK(!founders::read_cell_credit(key,partial,recovered));
     auto current_credit = get(planet + L".duo-food");
     auto legacy_credit = current_credit.substr(0,16) + current_credit.substr(26);

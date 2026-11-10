@@ -40,6 +40,13 @@ struct CampaignRules {
     uint32_t workload_percent() const {
         return 100u + (model ? extra_total(kProgressPerSeat) : (seats - 1u) * difficulty_percent);
     }
+    // 43-dev (player decision): a Cell predator group gets one extra member from three reserved
+    // seats on (before: one per extra seat, three at four seats). Seats still raise difficulty.
+    unsigned cell_extra_predators() const { return seats >= 3 ? 1u : 0u; }
+    // The extra predators' bodies add meat; plant food is worth this much more while they spawn, so
+    // an omnivore stays reachable (BUG-9110).
+    static constexpr uint32_t kCellPlantBonusPercent = 25;
+    uint32_t cell_plant_percent() const { return cell_extra_predators() ? 100u + kCellPlantBonusPercent : 100u; }
     static constexpr unsigned native_fleet_limit = 36;
     static constexpr unsigned native_military_interval_ms = 40000;
     static constexpr unsigned max_fleet_overflow = 11; // ceil(36 * 30%) at four seats
@@ -77,11 +84,12 @@ struct CellCredit {
         carry = uint8_t(total % 100);
         return uint32_t(total / 100);
     }
-    int award(int raw, bool plant, const CampaignRules& rules) {
+    // plant_percent: plant food's worth (BUG-9110), 100 = as the native game gives it
+    int award(int raw, bool plant, const CampaignRules& rules, uint32_t plant_percent = 100) {
         if (raw <= 0) return raw;
         const auto divisor = rules.workload_percent();
         auto& carry = remainder[plant ? 1 : 0];
-        const uint64_t earned = uint64_t(raw) * 100u + carry;
+        const uint64_t earned = uint64_t(raw) * (plant ? plant_percent : 100u) + carry;
         carry = uint32_t(earned % divisor);
         return int(earned / divisor);
     }

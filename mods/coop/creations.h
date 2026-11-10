@@ -92,7 +92,11 @@ void confirm_tribal_outfit(); // host accepted the saved model and founder linea
 // under both keys (docs/re/creature.md 15).
 void host_species_out(uint8_t peer, const Key& k); // host: before an NPC of species k goes to peer
 void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files); // host: before a world share
-Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here
+// BUG-9111: a player cell of the host's Cell pool to a guest (false: no records found here)
+bool host_cell_out(uint8_t peer, const Key& k);
+// the FNV-1 of a model's own record (0: not found) and its name: one cell under two keys
+uint32_t model_signature(const Key& k, std::string* name = nullptr, std::string* author = nullptr);
+Key local_species(const Key& k); // guest: the host's key of a species (creature or BUG-9111 cell) -> the key its NPCs use here
 Key host_species(const Key& k);  // guest: ours -> the host's
 
 // BUG-0469: the model a caller may build from `model` (docs/re/creations.md#creations-content-all-kinds):

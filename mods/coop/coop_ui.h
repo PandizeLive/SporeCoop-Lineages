@@ -55,6 +55,9 @@ struct Api {
     // BUG-9105: may hosts pass this player's creations on to people they have not played with
     std::function<bool()> share_onward;
     std::function<void(bool)> set_share_onward;
+    // BUG-9111: the host's Player Cells setting (Lineages cells in the Cell stage)
+    std::function<bool()> lineage_cells;
+    std::function<void(bool)> set_lineage_cells;
     // own creation of the current stage: kind 0 creature / 1 cell / 2 ship, its name ("" = the
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;

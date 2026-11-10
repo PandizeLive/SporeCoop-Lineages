@@ -45,6 +45,10 @@ struct Ctx {
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
+// BUG-9111 (lineage_cells): the local player's cell model (S+0x10); a cell model's diet (GetCellModelData)
+bool own_cell_model(uint32_t key[3]);
+bool model_diet(const uint32_t key[3], bool& carnivore, bool& herbivore);
+void preload_model(const uint32_t key[3]); // the cell graphics load a player cell's model (once per Cell stage)
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();

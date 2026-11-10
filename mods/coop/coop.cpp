@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages42-dev"
+#define COOP_VERSION "0.7.3.6-lineages43-dev"
 #endif
 
 #include <winsock2.h>
@@ -66,6 +66,7 @@
 #include "net/session.h"
 #include "net/utf8.h"
 #include "creations.h"
+#include "lineage_cells.h"
 #include "library.h"
 #include "partner_marker.h"
 #include "notify.h"
@@ -2709,6 +2710,7 @@ void on_frame(void*, int, void*)
     civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
     creations::tick(now);
     library::tick(now, !(game_busy() & (busy::kEditor | busy::kLoading | busy::kCinematic)));
+    lineage_cells::tick(now, game::mode_id() == modes::kCell && !(game_busy() & (busy::kEditor | busy::kLoading))); // BUG-9111
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
@@ -5094,6 +5096,8 @@ void init_ui()
     a.set_paced_transfer = [](bool on) { g_sess.paced_world_transfer = on; };
     a.share_onward = [] { return library::share_onward(); };
     a.set_share_onward = [](bool on) { library::set_share_onward(on); };
+    a.lineage_cells = [] { return lineage_cells::enabled(); }; // BUG-9111
+    a.set_lineage_cells = [](bool on) { lineage_cells::set_enabled(on); };
     a.share_state = [] { return !(g_adapter && g_local) ? 1 : g_sess.players().size() > 1 ? 0 : 2; };
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
@@ -5790,6 +5794,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     };
     creations::init(H, M, std::move(crc));
     library::init(H, M, &g_sess);
+    lineage_cells::init(H, M, &g_sess); // BUG-9111
+    H->command_add(M, "coop.lineagecells", "coop.lineagecells [on|off] - Lineages cells: player cells as Cell NPC species (host setting)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::vector<std::string> a(argv + 1, argv + argc);
+                       H->out_printf(out, "%s", lineage_cells::debug(a).c_str());
+                       return 0;
+                   },
+                   nullptr, SK_CMD_OUTSIDE_FRAME);
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
     modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {
         creations::Key k = creations::player_key(id, (creations::Kind)kind);

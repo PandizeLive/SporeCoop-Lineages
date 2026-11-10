@@ -794,6 +794,29 @@ void tick(double now, bool safe) {
     H->run_outside_frame(work, nullptr);
 }
 bool share_onward() { return g_onward; }
+// BUG-9111: Lineages cells for the host's Cell pool (player decision, 43-dev): our own, those authored
+// by a player in this session, and those whose author allows passing on (Share Onward). A cell received
+// in an earlier session from an author who did not opt in is not used.
+std::vector<CacheCell> pool_cells() {
+    std::vector<CacheCell> out;
+    std::set<std::string> lobby;
+    if (S && S->connected())
+        for (auto &[peer, source] : g_peer_sources)
+            for (auto &p : S->players())
+                if (p.id == peer)
+                    lobby.insert(source);
+    for (auto &[hash, e] : g_entries) {
+        if (e.failed || !e.key.instance || e.key.type != 0x3D97A8E4u)
+            continue;
+        const bool ok = e.local || lobby.count(e.item.source) || g_onward_ok.count(e.item.source);
+        if (!ok || !creations::key_known(e.key))
+            continue;
+        out.push_back({e.key, e.item.source, e.item.name, e.item.author, e.local});
+        if (out.size() >= 512)
+            break;
+    }
+    return out;
+}
 void set_share_onward(bool on) {
     g_onward = on;
     H->config_set_str(M, "library", "share_onward", on ? "1" : "0");

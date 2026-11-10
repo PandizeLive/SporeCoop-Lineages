@@ -283,7 +283,7 @@ struct Dialog {
     std::vector<Win> page_lobby;
     Win session = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
     Win invite_btn = nullptr, rules = nullptr, transfer_mode = nullptr, preview_status = nullptr;
-    Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, leave_caption = nullptr, onward_btn = nullptr;
+    Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, leave_caption = nullptr, onward_btn = nullptr, cells_btn = nullptr;
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
@@ -1059,6 +1059,16 @@ static void build_dialog()
                    on ? kGreen : kYellow, 8);
         g_dirty = true;
     });
+    // BUG-9111: the host's Player Cells setting, beside Send World (placed by refresh_lobby)
+    D.cells_btn = add_button(L, "playercells", {445, 224, 706, 256}, "", [] {
+        if (!A.lineage_cells || !A.set_lineage_cells) return;
+        const bool on = !A.lineage_cells();
+        A.set_lineage_cells(on);
+        set_status(on ? T("Your group's cells now appear in the tide pool", "Клетки вашей группы появятся в водоёме")
+                      : T("Only the game's own cells appear in the tide pool", "В водоёме только клетки игры"),
+                   on ? kGreen : kYellow, 8);
+        g_dirty = true;
+    });
     D.leave_btn = add_button(L, "leave", {500, 488, 720, 528}, "", [] {
         A.leave();
         set_status(T("Left the session", "Вы вышли из игры"), kYellow, g_status_fix ? 5 : 0);
@@ -1250,10 +1260,15 @@ static void refresh_lobby()
     const auto rules = world::rules_for_current();
     const unsigned seats = host && A.seat_limit ? A.seat_limit() : rules.seats;
     show(D.invite_btn, host);
+    // BUG-9111: the host's line also names the world transfer (its own row went to the Player Cells setting)
+    const bool paced = A.paced_transfer && A.paced_transfer();
+    const std::string transfer = paced ? T("Optimal transfer", "Обычная передача") : T("Fast transfer", "Быстрая передача");
+    const std::string difficulty = std::to_string(rules.difficulty_percent) + "%";
     text(D.rules, A.mode && A.mode() != modes::kMenu
-         ? std::string(T("Difficulty Scaling: ", "Сложность: ")) + std::to_string(rules.difficulty_percent) + "%"
-         : T("Load a campaign to see its rules", "Загрузите кампанию для просмотра правил"));
-    show(D.transfer_mode, host);
+         ? (host ? std::string(T("Difficulty ", "Сложность ")) + difficulty + ", " + transfer
+                 : std::string(T("Difficulty Scaling: ", "Сложность: ")) + difficulty)
+         : host ? transfer : T("Load a campaign to see its rules", "Загрузите кампанию для просмотра правил"));
+    show(D.transfer_mode, false);
     text(D.transfer_mode, std::string(T("World Transfer: ", "Передача мира: ")) +
          (A.paced_transfer && A.paced_transfer() ? "Optimal" : "Fast"));
     std::string preview, update_button;
@@ -1369,9 +1384,18 @@ static void refresh_lobby()
     show(D.ready_btn, vote);
     text(D.ready_btn, A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
     show(D.share_btn, host);
+    // BUG-9111: the host's rows: Send World, Player Cells, Share Onward (or the vote's Ready)
+    const bool cells = host && A.lineage_cells;
+    sui::set_area(D.share_btn, host ? Rect{445, 190, 706, 222} : Rect{445, 212, 706, 248});
+    sui::set_area(D.ready_btn, host ? Rect{445, 258, 706, 290} : Rect{445, 249, 706, 285});
+    if (D.cells_btn) {
+        show(D.cells_btn, cells);
+        text(D.cells_btn, A.lineage_cells && A.lineage_cells() ? T("Player Cells: On", "Клетки игроков: Вкл")
+                                                               : T("Player Cells: Off", "Клетки игроков: Выкл"));
+    }
     // BUG-9105: hosts under Send World, guests in its place; the vote's Ready button takes the row
     if (D.onward_btn) {
-        sui::set_area(D.onward_btn, host ? Rect{445, 249, 706, 285} : Rect{445, 212, 706, 248});
+        sui::set_area(D.onward_btn, host ? Rect{445, 258, 706, 290} : Rect{445, 212, 706, 248});
         show(D.onward_btn, A.share_onward && !(host && vote));
         text(D.onward_btn, A.share_onward && A.share_onward() ? T("Share Onward: On", "Передавать дальше: Вкл")
                                                               : T("Share Onward: Off", "Передавать дальше: Выкл"));
@@ -1772,6 +1796,7 @@ static const char* tip_for(const std::string& name)
         {"ready", "Vote ready", "Готовность"},
         {"share", "Send your world to everyone", "Отправить мир всем"},
         {"shareonward", "Let hosts pass your creations on", "Разрешить передачу ваших созданий"},
+        {"playercells", "Your group's cells in the tide pool", "Клетки группы в водоёме"},
         {"leave", "Leave the session", "Выйти из игры"},
         {"sback", "Back to the Lobby", "Назад в лобби"},
         {"sprev", "Previous page", "Предыдущая страница"},

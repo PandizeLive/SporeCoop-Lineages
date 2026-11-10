@@ -49,6 +49,8 @@ uint8_t* adventure_play();
 extern void* (*g_species_for_player)(uint8_t player);
 // the model a remote player's cell (kind 1) / spaceship (kind 2) puppet uses; false = the local one
 extern bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
+// BUG-9111: asked for every native cell's model key (true: use out instead of native)
+void set_cell_model_chooser(bool (*f)(void* res, const uint32_t native[3], uint32_t out[3]));
 const char* mode_name(uint32_t mode);
 uint32_t current_world(); // crc32 of the current save name, 0 if none
 // tests (BUG-0223): Tribe's and Civ's local entity is null for the next `frames` frames

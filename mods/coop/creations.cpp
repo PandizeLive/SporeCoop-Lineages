@@ -1800,6 +1800,7 @@ void want_species(const Key& k)
 // ---- the host's own creations among its world's species (creations.h) ----
 static bool in_my_creations(const Key& k);
 static bool is_crt(const Key& k) { return k.type == kInfo[kCreature].type && k.group == kInfo[kCreature].group; }
+static bool is_cll(const Key& k) { return k.type == kInfo[kCell].type && k.group == kInfo[kCell].group; }
 
 void host_species_out(uint8_t peer, const Key& k)
 {
@@ -1842,6 +1843,55 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
         host_species_out(peer, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
 }
 
+// BUG-9111: a player cell the host's Cell pool uses as an NPC species (its My Creations or the Lineages
+// Cache): the guest gets its records like an own creature species (kOwnSpecies) and registers them under
+// a key of its own; its mirrors of that species are built from that key (local_species). Sent once per
+// peer, whatever its source: a Cache creation's key differs on every machine.
+bool host_cell_out(uint8_t peer, const Key& k)
+{
+    if (!is_host() || peer == 0 || !k.instance || !is_cll(k))
+        return false;
+    auto& sent = g_own_sent[peer];
+    if (sent.count(k.instance))
+        return true;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs)) {
+        g_species_missing++;
+        return false;
+    }
+    sent.insert(k.instance);
+    std::vector<uint8_t> data = pack(b);
+    send_bundle(peer, 0, (Kind)kOwnSpecies, k.instance, data);
+    g_own_out++;
+    H->log(M, SK_INFO, "creations: Lineages cell %08X (%u records) to player %u", k.instance, (unsigned)b.recs.size(), peer);
+    return true;
+}
+
+// a cell model's own bytes (FNV-1 of its model records, not the metadata), 0 = not found: the same cell under two keys
+// (the creations stream and the Lineages Cache) has the same signature
+uint32_t model_signature(const Key& k, std::string* name, std::string* author)
+{
+    std::vector<dbpf::Record> recs;
+    if (!records_from_game(k, recs))
+        return 0;
+    uint32_t h = 0;
+    for (auto& r : recs) {
+        // the model itself (a cell's is its bem record), not its metadata (names, dates) nor a cache
+        if (r.key.type != kMeta && r.key.type != kCreatureData && r.key.instance == k.instance)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h ? h : 0x811C9DC5));
+        if ((name || author) && r.key.type == kMeta) {
+            std::string a, n;
+            dbpf::metadata_names(r.data, a, n);
+            if (name)
+                *name = n;
+            if (author)
+                *author = a;
+        }
+    }
+    return h;
+}
+
 // guest: a creation of the host's own My Creations that its world uses: registered under a key of
 // our own (from its content: the same creation gets the same key in every session, which keeps the
 // game's caches by key right), not only under the host's key (our creation of that key would
@@ -1851,9 +1901,10 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
-    if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
+    if (!unpack(data, b) || b.recs.empty() || !(is_crt(b.key) || is_cll(b.key)) || !find_paths())
         return;
-    unsigned miss = ensure_content(b.recs, kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
+    const bool cell = is_cll(b.key); // BUG-9111: a Lineages cell of the host's pool
+    unsigned miss = ensure_content(b.recs, cell ? kMkCell : kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
     if (miss) { // BUG-0452: not registered, the world is not loaded
         std::string name, author;
         for (auto& r : b.recs)
@@ -1902,6 +1953,10 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     g_remap[b.key.instance] = ours;
     g_unmap[ours] = b.key.instance;
     g_own_in++;
+    if (cell) {
+        H->log(M, SK_INFO, "creations: the host's Lineages cell %08X is %08X here", b.key.instance, ours);
+        return;
+    }
     // the species profile now (the game keeps profiles for the whole process): the first proxy of
     // it does not wait for its creaturedata
     void* prof = game::species_by_key({ours, b.key.type, b.key.group});
@@ -1915,13 +1970,13 @@ static void apply_own_species(const std::vector<uint8_t>& data)
 
 Key local_species(const Key& k)
 {
-    auto it = is_crt(k) ? g_remap.find(k.instance) : g_remap.end();
+    auto it = is_crt(k) || is_cll(k) ? g_remap.find(k.instance) : g_remap.end();
     return it == g_remap.end() ? k : Key{it->second, k.type, k.group};
 }
 
 Key host_species(const Key& k)
 {
-    auto it = is_crt(k) ? g_unmap.find(k.instance) : g_unmap.end();
+    auto it = is_crt(k) || is_cll(k) ? g_unmap.find(k.instance) : g_unmap.end();
     return it == g_unmap.end() ? k : Key{it->second, k.type, k.group};
 }
 
@@ -3385,6 +3440,17 @@ std::string debug(const std::vector<std::string>& a)
         return result;
     }
     // Read-only native resource provenance, useful when package overrides lose precedence.
+    if (a.size() == 4 && a[0] == "sig") { // BUG-9111: a model's records as records_from_game reads them
+        Key k{(uint32_t)strtoul(a[1].c_str(), nullptr, 16), (uint32_t)strtoul(a[2].c_str(), nullptr, 16),
+              (uint32_t)strtoul(a[3].c_str(), nullptr, 16)};
+        std::vector<dbpf::Record> recs;
+        bool ok = records_from_game(k, recs);
+        std::string out = std::string("records ") + (ok ? "ok" : "failed") + " n=" + std::to_string(recs.size());
+        for (auto& r : recs)
+            out += " " + trace::hex(r.key.type) + ":" + std::to_string(r.data.size());
+        std::string name;
+        return out + " sig=" + trace::hex(model_signature(k, &name)) + " '" + name + "'";
+    }
     if (a.size() == 4 && a[0] == "resource") {
         uint32_t key[3] = {}, real[3] = {};
         for (int i = 0; i < 3; ++i) {
