@@ -52,7 +52,22 @@ believed Spore's camera was broken in general.
 
 ## Verification
 
-See History.
+QA copy `out/release36/native` (Steam 3010a413), profile LineagesFov41QA (copy
+of LineagesFoVZoomQA, save Samuth.spo, Creature), instance 8, 640x480 on the
+secondary monitor, 5 FPS (`frame.limit 200`), muted. The old and new DLL were
+swapped with `mod.reload coop` in the same session.
+
+| Check | 40-dev (adcacb0f) | fix (04ad56ba) |
+| --- | --- | --- |
+| Posted WM_MOUSEWHEEL -240 with MK_CONTROL, Ctrl key up | steps 0 -> 2, lens 50.56 | steps stay 0, lens 44.56 |
+| Reload the save (Creature -> menu -> Creature) | steps stay 2 | steps 3 -> 0, log "mode 02CCD1D2 resets" |
+| `coop.fov 3` | (no argument support) | steps 3, lens 53.56, feed line "Field of view +9 degrees (Ctrl+Scroll up to restore)" (out/fov41-notice.png) |
+| `coop.fov 9` | | usage message, rc 1 |
+
+`exc`: 0 faults. Not covered: a real physical Ctrl+Scroll (injecting a global
+Ctrl press would reach the player's foreground window), and an editor visit
+keeping the steps. Player confirmation on the personal install is pending.
 
 ## History
 - 2026-11-09: reported by the player; live state read through the console.
+- 2026-11-09: fixed on fix/fov-stuck-wide-lens (04ad56ba); QA results above.

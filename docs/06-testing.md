@@ -4209,3 +4209,22 @@ Ready hidden outside a vote. A two-client check at the native 1176×664 QA
 window size opened the Ready button for a test vote, clicked it as the guest,
 and verified that the host completed the vote and the button hid again.
 Both consoles recorded zero native faults. Audio stayed muted at 20 FPS.
+
+## Windows QA instances from a copied Steam game (2026-11-09, fix/fov-stuck-wide-lens)
+<a id="test-windows-qa-copied-steam"></a>
+
+- A copied Steam `SporeApp.exe` (for example `out/release36/native`) exits at
+  once with TerminateProcess 53 (SteamStub restarts through Steam) unless the
+  environment has `SteamAppId=24720` and `SteamGameId=24720`. Steam must run.
+- Launch: `SporeApp.exe -w -r:640x480 -sporekit-profile:<QA profile>
+  -sporekit-instance:<N>`; console on 127.0.0.1:47800+N-1. SporeKit moves the
+  test window to the secondary monitor and turns background mode on.
+- Then `frame.limit 200` (5 FPS) and `coop.load Game0 <save>`.
+- Mute: the game has no mute command. Set `AudioMuteAll true` in the QA
+  profile's `Spore/Preferences/Preferences.prop` before launch, and for a
+  running instance mute that PID's audio sessions through the Windows audio
+  session API (ISimpleAudioVolume::SetMute), which leaves other Spore processes alone.
+- A posted WM_MOUSEWHEEL with MK_CONTROL simulates a stale Ctrl key state
+  without pressing a real key in the player's foreground window.
+- `tools/tickets.py new` needs fcntl (Linux only); on Windows write the ticket
+  file by hand with the next free number.
