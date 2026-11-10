@@ -1065,3 +1065,33 @@ Primary references, checked against live supported-build call sites:
 - https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/PropertyList.h
 
 See [targeted validation](../06-testing.md#test-lineages-cache-native).
+
+## Lineages Cache scope and My Creations separation (roadmap, 2026-11-09, fix/fov-stuck-wide-lens)
+<a id="creations-cache-scope-roadmap"></a>
+
+Roadmap item from the player, design notes only, nothing tested. Current
+behaviour (library.cpp): received PNGs are imported natively
+(`creations::import_library_png`) and listed in a Lineages Cache feed, but they
+also show in My Creations. A host keeps every library it received and passes it
+on, so a new partner gets the creations of everyone the host ever played with.
+
+Questions to answer first (each needs a runtime probe):
+- ? Does Spore pick world NPCs only from My Creations, or also from creations
+  it treats as downloaded (Sporepedia content with another author)? If
+  downloaded content still populates worlds, importing with the original
+  author's metadata (never a fake EA account, see the feasibility notes
+  above) may move the items out of My Creations without losing them in worlds.
+- ? Does the My Creations filter key on the author ID, the database it lives in
+  (EditorSaves vs Pollination), or the import path?
+- ? Can a creation that a save references be hidden from every browser tab
+  and still load in that save (save dependency vs library entry)?
+
+Options for whose creations a player receives (a per-player setting):
+1. Only the people in this campaign (recommended default). The host relays
+   only creations authored by the current seat holders, never its own cache of
+   earlier partners.
+2. Everyone my partners have played with (today's behaviour, opt-in).
+3. Nothing beyond what the save needs (partners' species stay mandatory).
+Plus: senders choose whether their creations may be passed on beyond the
+people they played with, a size cap, and a "remove cached creations no save
+uses" cleanup.

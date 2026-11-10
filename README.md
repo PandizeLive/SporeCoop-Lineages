@@ -47,6 +47,12 @@ A first-use Civilization tutorial also reached two native species capitals throu
 2. **Test three founders, then four.** Verify that every player keeps their species and settlements, and that larger rival counts remain playable from founding through victory.
 3. **Complete shared Adventures and cross-PC testing.** Synchronize the remaining objectives and rewards, verify the return to the campaign, and run the supported setup on separate PCs.
 
+Later, after the campaign is playable through Space:
+
+- **Cell creations in Cell stage.** Let cells made in the Cell editor, including partners' cells, appear as other species in Cell stage.
+- **Depth control for creature parts.** Add the depth square from the vehicle and building editors to the Creature editor, so parts can be pushed in or pulled out.
+- **Separate Lineages Cache from My Creations.** Keep received creations out of My Creations while they still appear in worlds, and let each player choose whose creations they receive. Design notes: [creations.md](docs/re/creations.md#creations-cache-scope-roadmap).
+
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 
 <details><summary>Original SporeCoop project README</summary>
