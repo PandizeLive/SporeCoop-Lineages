@@ -539,6 +539,31 @@ void remove_handler(Win w, void* h)
 
 // ---------------- devkit ----------------
 namespace {
+// BUG-9108: a hex argument is a live window (its address, as `tree` prints it) or a control id; anything
+// else is refused. Before, the value was used as an address as is: `coop.ui show C00F0100` (the co-op
+// dialog's id) crashed the game at sui::set_flag.
+Win arg_win(const char* s, SkOut* out)
+{
+    const uintptr_t v = (uintptr_t)strtoul(s, nullptr, 16);
+    Win by_id = nullptr;
+    std::vector<Win> stack{main_window()};
+    while (!stack.empty()) {
+        Win w = stack.back();
+        stack.pop_back();
+        if (!w)
+            continue;
+        if ((uintptr_t)w == v)
+            return w;
+        if (!by_id && control_id(w) == (uint32_t)v)
+            by_id = w;
+        for (Win c : children(w))
+            stack.push_back(c);
+    }
+    if (!by_id)
+        H->out_printf(out, "no window %s (give its address from `coop.ui tree` or its control id)\n", s);
+    return by_id;
+}
+
 int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string sub = argc > 1 ? argv[1] : "tree";
@@ -610,8 +635,8 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         return w ? 0 : 1;
     }
     if (sub == "btn" && argc > 2) { // button properties
-        Win w = (Win)strtoul(argv[2], nullptr, 16);
-        void* b = as_button(w);
+        Win w = arg_win(argv[2], out);
+        void* b = w ? as_button(w) : nullptr;
         if (!b) {
             H->out_printf(out, "not a button");
             return 1;
@@ -627,16 +652,24 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (sub == "font" && argc > 3) {
-        set_font((Win)strtoul(argv[2], nullptr, 16), (uint32_t)strtoul(argv[3], nullptr, 16));
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_font(w, (uint32_t)strtoul(argv[3], nullptr, 16));
         return 0;
     }
     if (sub == "show" && argc > 2) {
-        set_visible((Win)strtoul(argv[2], nullptr, 16), argc < 4 || atoi(argv[3]));
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        set_visible(w, argc < 4 || atoi(argv[3]));
         return 0;
     }
     int depth = argc > 2 ? atoi(argv[2]) : 4;
     bool all = argc > 3 && !strcmp(argv[3], "all");
-    Win root = argc > 4 ? (Win)strtoul(argv[4], nullptr, 16) : main_window();
+    Win root = argc > 4 ? arg_win(argv[4], out) : main_window();
+    if (!root)
+        return 1;
     std::string s = dump(root, depth, !all);
     if (s.size() > 60000)
         s.resize(60000);
