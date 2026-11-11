@@ -2157,3 +2157,6 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   reproduced on Samuth.spo's bones (no model list); needs the save where it was seen.
 - BUG-9125 (Cell): meat a partner ate stays on the other screen at a huge size. Not reproduced with ambient meat;
   likely loot from a kill or a chunk bitten off a big cell.
+- BUG-9129 (Creature): the guest has no pack: its Summon Flock makes nothing and it cannot recruit the host's
+  creatures (the host's game runs only the host's pack).
+- BUG-9130 (Creature): Ctrl+Scroll's wider field of view is computed but not drawn.
