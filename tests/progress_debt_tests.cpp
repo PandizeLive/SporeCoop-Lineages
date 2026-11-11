@@ -6,19 +6,13 @@ static int failures;
 using namespace progress_debt;
 int main()
 {
-    // Creature: 10% of the DNA, whole points (the old loss, now owed)
-    CHECK(creature_cost(29) == 3);
-    CHECK(creature_cost(100) == 10);
-    CHECK(creature_cost(1) == 1);
-    CHECK(creature_cost(0.5f) == 0);
-    CHECK(creature_cost(0) == 0);
-    CHECK(creature_cost(-5) == 0);
-    // Cell: 10% of the editor's DNA, in food at the average rate
-    CHECK(cell_cost(204, 40, 0) == 21);  // 4 DNA of 40 -> 4 * 204 / 40 = 20.4 -> 21 food
-    CHECK(cell_cost(204, 40, 40) == 0);  // everything spent: nothing owed
-    CHECK(cell_cost(204, 40, 35) == 6);  // 5 left -> 1 DNA -> 5.1 -> 6 food
-    CHECK(cell_cost(0, 0, 0) == 0);
-    CHECK(cell_cost(10, 1, 0) == 10);    // never more than the bar holds
+    // a death: 10% of the stage's progress so far, whole points, at least 1 (never DNA)
+    CHECK(progress_cost(321) == 32);
+    CHECK(progress_cost(204) == 20);
+    CHECK(progress_cost(5) == 1);
+    CHECK(progress_cost(0.5f) == 0);
+    CHECK(progress_cost(0) == 0);
+    CHECK(progress_cost(-5) == 0);
     // the ledger: gains repay first, nothing earned is taken away
     Ledger l;
     CHECK(l.place(1, 7));

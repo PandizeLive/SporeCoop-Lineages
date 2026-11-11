@@ -12,6 +12,11 @@
 #include "net/interp.h"
 
 namespace creature_rescue {
+// BUG-9127: the knockout was invisible (its text only in a console report). Off: as before.
+static bool g_rescue_ui_fix = true;
+COOP_FIX("creature.rescue_ui", "BUG-9127", g_rescue_ui_fix,
+         "creature / adventure: a knockout shows its countdown on screen, tells everybody, and a downed partner's arrow is red");
+bool ui_shown() { return g_rescue_ui_fix; }
 namespace {
 // BUG-9118: 30 s for a partner to come (10 before); the downed player can give up (hold G 1 s): the
 // same as the timer running out, at once. `coop.fix creature.down_30 off`: 10 s.
@@ -65,8 +70,11 @@ void send(uint8_t to, Event event, uint32_t id)
 void begin(uint8_t player, uint32_t id, double now)
 {
     auto& w = watches[player];
-    if (!w.active && (!w.id || int32_t(id - w.id) > 0))
+    if (!w.active && (!w.id || int32_t(id - w.id) > 0)) {
         w = {id, true, now, -1, S->name_of(player)};
+        if (g_rescue_ui_fix) // BUG-9127: everybody hears it (the host's notice is relayed)
+            notice(w.name + " is down! Stand next to them within " + std::to_string((int)window_s()) + " s.", -1);
+    }
 }
 
 void charge(const std::string& name, bool gave_up = false)
@@ -77,10 +85,10 @@ void charge(const std::string& name, bool gave_up = false)
     }
     if (progress_debt::enabled()) {
         // BUG-9119: nothing is taken away: the pack owes the progress instead (new DNA repays it first)
-        float debt = progress_debt::add(progress_debt::creature_cost(game::dna()));
+        float debt = progress_debt::add_death(); // 10% of the progress bar so far; DNA untouched
         char text[120];
         if (debt > 0)
-            std::snprintf(text, sizeof text, " %s. Progress debt: %.0f DNA (new DNA repays it first).", gave_up ? "gave up" : "fell", debt);
+            std::snprintf(text, sizeof text, " %s. Progress debt: %.0f (new progress refills it first).", gave_up ? "gave up" : "fell", debt);
         else
             std::snprintf(text, sizeof text, " %s.", gave_up ? "gave up" : "fell");
         notice(name + text, -1);

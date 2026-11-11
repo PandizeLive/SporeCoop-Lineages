@@ -86,3 +86,4 @@ Cell, QA host 9 + guest 8 (Cellfive.spo), the guest 20 m away:
 
 ## History
 - 2026-11-11: implemented on feat/lineages-47.
+- 2026-11-11: owner: progression debt, not DNA. A death now owes 10% of the stage's progress so far (progress_cost: Creature cPlayer +0x10F0, Cell food), at least 1; QA Samuth.spo: 321 progress -> debt 32, DNA 33 unchanged on both games. Before (48-49): 10% of the unspent DNA, 0 once it was spent ("not stacking").

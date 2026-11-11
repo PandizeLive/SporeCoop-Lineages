@@ -15,5 +15,6 @@ bool pending();
 bool protect(void* avatar, float& damage);
 void message(uint8_t from, net::Reader& r);
 std::string status();
+bool ui_shown(); // BUG-9127: the on-screen knockout (coop.fix creature.rescue_ui)
 void give_up_now(); // BUG-9118: the downed player gives up (the timer's result at once)
 }

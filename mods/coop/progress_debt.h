@@ -22,6 +22,7 @@ void reset();                                          // the session ended
 
 bool enabled();                 // `coop.fix core.progress_debt` (off: the old loss)
 float add(float amount);        // host: a new debt in this stage (returns it, 0 when off / not host)
+float add_death();              // host: a death's debt, 10% of this stage's progress so far (progress_cost)
 float absorb(float gain);       // host: a gain into the party's progress; returns what is left of it
 int absorb_food(int gain);      // the same for whole food points
 bool owing(uint32_t mode);      // this stage has a debt now (host: its ledger; guest: the host's word)

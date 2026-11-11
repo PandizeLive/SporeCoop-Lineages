@@ -161,7 +161,7 @@ void tick(uint32_t mode, uint32_t world, double now)
         if (g_repaid) {
             g_repaid = false;
             if (g_notice && g_ledger.owed <= 0)
-                g_notice(g_mode == modes::kCell ? "Progress debt repaid: food counts again." : "Progress debt repaid: DNA counts again.", -1);
+                g_notice("Progress debt refilled: progress counts again.", -1);
         }
     }
     if (g_fix && here(g_mode) && current().owed > 0 && !g_bar_busy && now - g_bar_asked > 0.25) {
@@ -185,6 +185,12 @@ float add(float amount)
         return 0;
     g_ledger.add(amount);
     return amount;
+}
+
+float add_death()
+{
+    float done = 0, total = 0;
+    return progress(g_mode, done, total) ? add(progress_cost(done)) : 0.f;
 }
 
 float absorb(float gain)

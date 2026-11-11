@@ -3819,6 +3819,17 @@ void on_overlay(void*, int, void*)
     bool labels = !g_menu_up && !coop_ui::is_open();
     if (!labels)
         g_menu_hidden++;
+    // BUG-9127: the Creature / Adventure knockout was invisible (its text only in a console report):
+    // the downed player's countdown and the partner's "revive" line, centred under the top bar
+    if (creature_rescue::ui_shown() && labels && (g_mode == modes::kCreature || g_mode == modes::kScenario) && sw > 0) {
+        const std::string line = creature_rescue::status();
+        if (!line.empty()) {
+            const bool own = creature_rescue::down();
+            const int x = sw / 2 - text_width(line) / 2, y = (int)(sh * 0.16f);
+            H->overlay_text(x + 1, y + 1, 0xFF000000, line.c_str());
+            H->overlay_text(x, y, own ? 0xFFFF6060 : 0xFFFFD040, line.c_str());
+        }
+    }
     if (labels) {
         draw_marks();
         cellsync::draw_overlay();
@@ -3884,7 +3895,9 @@ void on_overlay(void*, int, void*)
                 dy = front ? sc[1]-sh*.5f : 1.f;
                 if (!cell_logic::edge_point(sw*.5f,sh*.5f,dx,dy,110,85,1,.5f,x,y)) continue;
             }
-            partner_marker::draw(H,x,y,dx,dy,size,0xFF70FFB0);
+            // BUG-9127: a downed partner's arrow is red (the way to them while the countdown runs)
+            const bool partner_down = creature_rescue::ui_shown() && !r.buf.empty() && (r.buf.latest().flags & net::PF_DOWNED);
+            partner_marker::draw(H,x,y,dx,dy,size,partner_down ? 0xFFFF5050 : 0xFF70FFB0);
             const float distance = net::dist(modes::entity_pos(g_adapter,av),p);
             if (!std::isfinite(distance)) continue;
             std::string tag = r.name.substr(0,utf8::cut_bytes(r.name,32)) + "  " + std::to_string(int(std::min(distance,999999.f))) + " m";

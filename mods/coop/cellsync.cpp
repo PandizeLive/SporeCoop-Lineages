@@ -508,12 +508,10 @@ static std::string cell_debt()
     uint8_t* s = is_host() && in_cell() ? S() : nullptr;
     if (!s || !progress_debt::enabled())
         return {};
-    const int food = F<int32_t>(s, 0x1C);
-    const int cost = progress_debt::cell_cost(food, dna_for_food(food), F<int32_t>(s, 0x2C));
-    const float debt = progress_debt::add((float)cost);
+    const float debt = progress_debt::add_death(); // 10% of the food bar so far; the editor's DNA untouched
     if (debt <= 0)
         return {};
-    return ". Progress debt: " + std::to_string((int)debt) + " food (new food repays it first)";
+    return ". Progress debt: " + std::to_string((int)debt) + " (new food refills it first)";
 }
 
 static void downed_tick(uint8_t* a, double now, double dt)

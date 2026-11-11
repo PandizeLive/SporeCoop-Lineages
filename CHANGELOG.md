@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Progress debt is now progression, not DNA: a death owes 10% of the stage's
+  progress bar so far (Creature and Cell alike), so every death adds to it.
+  Spendable DNA never changes (BUG-9119).
+- Creature: the heal effect no longer loops forever. The pack regen starts
+  below 95% health and stops at full (BUG-9126).
+- Creature: being downed is visible: a red countdown for the downed player, a
+  "Revive" line and a red arrow for the partner, and a "<name> is down!"
+  message for everybody (BUG-9127).
+
 - Cell: a partner's respawn no longer blacks out your screen (BUG-9122).
 - Arrows to an off-screen partner (and map marks) point at them instead of
   straight down (BUG-9121).

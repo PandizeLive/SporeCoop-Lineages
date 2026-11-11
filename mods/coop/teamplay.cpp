@@ -111,14 +111,28 @@ float on_own_damage(void* avatar, float damage)
     return before - keep;
 }
 
+// BUG-9126: hunger drains a few hundredths of a point all the time, and the regen topped every one of
+// them up each second: the game's heal effect played forever on both players ("stuck healing",
+// noticed after fights at a nest). The regen now starts below 95% and heals to full, then waits.
+// Off (`coop.fix creature.regen_hysteresis off`): any missing health, every second.
+static bool g_regen_fix = true;
+COOP_FIX("creature.regen_hysteresis", "BUG-9126", g_regen_fix,
+         "creature: the pack regen starts below 95% health and stops at full (no endless heal effect)");
+static bool g_regen_active;
+
 void tick(void* avatar, double now)
 {
     if (!g_on || !avatar || creature_rescue::down() || now - g_last_regen < 1.0)
         return;
     g_last_regen = now;
     float hp = game::health(avatar), mx = game::max_health(avatar);
-    if (hp <= 0 || hp >= mx || nearest_partner(avatar, kRegenDist).empty())
+    if (hp <= 0 || hp >= mx || nearest_partner(avatar, kRegenDist).empty()) {
+        g_regen_active = false;
         return;
+    }
+    if (g_regen_fix && !g_regen_active && hp >= 0.95f * mx)
+        return; // a scratch (hunger's drip): not worth a heal effect every second
+    g_regen_active = true;
     game::set_health(avatar, std::fmin(mx, hp + kRegenPerSec * mx));
 }
 
