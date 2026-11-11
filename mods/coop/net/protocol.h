@@ -447,6 +447,7 @@ enum NpcFlags : uint8_t {
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
+    NF_ALPHA = 16,    // the nest's alpha (cCreatureAnimal +0xB58 bit 0x1: the "Alpha" card, one more social round; BUG-9115)
 };
 
 struct NpcSpawn {

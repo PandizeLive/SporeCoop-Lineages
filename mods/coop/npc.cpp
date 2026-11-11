@@ -254,6 +254,8 @@ static bool update_filter(void* c)
 // damage filter (MSG_DAMAGE), like any NPC hit on a puppet.
 static bool g_partner_targets = true;
 COOP_FIX("npc.partners", "BUG-0016", g_partner_targets, "creature: the host's NPCs notice, chase and attack a partner's puppet");
+static bool g_alpha_fix = true;
+COOP_FIX("npc.alpha", "BUG-9115", g_alpha_fix, "creature: a guest sees the host's nest alphas as alphas (the card, the extra social round)");
 static constexpr float kPartnerAiRange = 80.f; // m: NPCs farther from a partner than this ignore it
 static std::unordered_map<void*, void*> g_ai_target; // host: NPC -> the puppet it treats as the player
 static uint32_t g_ai_partner_picks = 0;
@@ -340,7 +342,8 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.rot = game::orientation(c);
     s.vel = game::velocity(c);
     s.health = game::health(c);
-    s.flags = (creature_hp::enemy_scaled(c) ? net::NF_SCALED_HP : 0) | (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0);
+    s.flags = (creature_hp::enemy_scaled(c) ? net::NF_SCALED_HP : 0) | (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
+              (game::alpha(c) ? net::NF_ALPHA : 0); // BUG-9115
     return s;
 }
 
@@ -363,6 +366,7 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     sp.health = game::health(c);
     sp.max_health = game::max_health(c);
     if (creature_hp::enemy_scaled(c)) sp.flags |= net::NF_SCALED_HP;
+    if (game::alpha(c)) sp.flags |= net::NF_ALPHA; // BUG-9115
     net::Writer w;
     sp.write(w);
     C.sess->send_reliable_to(guest, net::MSG_NPC_SPAWN, w);
@@ -1237,6 +1241,10 @@ static void guest_tick(double now)
             game::set_health(px.c, s.health);
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(px.c, (s.flags & net::NF_IMPRESSED) != 0);
+        // BUG-9115: the nest's alpha is the host's (+0xB58 bit 0x1): the guest's card read the plain name and
+        // its social game had one round less. `coop.fix npc.alpha off`: proxies keep their own bit (45).
+        if (!px.killed && g_alpha_fix)
+            game::set_alpha(px.c, (s.flags & net::NF_ALPHA) != 0);
         ntrack_row(id, px, s, drawn, px.killed ? 2 : walked ? 3 : placed ? 1 : 0, now, rv_rep);
     }
 }

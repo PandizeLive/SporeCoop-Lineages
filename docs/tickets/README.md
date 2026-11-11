@@ -597,3 +597,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9112](BUG-9112-foreign-creations-replaces-share-onward.md) | fixed | feature | All | 2026-11-10 | 0.7.3.6-lineages43-dev | Foreign Creations (the receiver's choice) replaces Share Onward (the author's choice) |
 | [BUG-9113](BUG-9113-adventure-partner-bodies.md) | fixed | feature | Adventure | 2026-11-10 | 0.7.3.6-lineages44-dev | Adventure partners are captain bodies of the right size, not name tags |
 | [BUG-9114](BUG-9114-adventure-host-creatures.md) | open | feature | Adventure | 2026-11-10 |  | Adventure creatures move differently in each game; the host should simulate them for everyone |
+| [BUG-9115](BUG-9115-guest-alpha-marks.md) | fixed | desync | Creature | 2026-11-10 |  | a guest does not see the host's nest alphas as alphas (and sees other creatures as alphas) |

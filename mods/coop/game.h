@@ -160,6 +160,14 @@ inline void set_impressed(void* c, bool on)
     uint32_t& f = *(uint32_t*)((uint8_t*)c + kFlagsOff);
     f = on ? (f | 0x80) : (f & ~0x80u);
 }
+// the nest's alpha (+0xB58 bit 0x1: its card reads "Alpha <name>", SocialPropose 0xDA43D0 adds a round;
+// docs/re/creature.md 8.3)
+inline bool alpha(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x1) != 0; }
+inline void set_alpha(void* c, bool on)
+{
+    uint32_t& f = *(uint32_t*)((uint8_t*)c + kFlagsOff);
+    f = on ? (f | 0x1) : (f & ~0x1u);
+}
 
 // ---- time of day: orientation of the sky object (see docs/05-re-notes.md) ----
 bool time_of_day(net::Quat& q);
