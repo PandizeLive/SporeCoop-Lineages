@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages48-dev
 role: local
 versions: 0.7.3.6-lineages41-dev to 0.7.8-lineages48-dev
-fixed_in:
+fixed_in: 0.7.8-lineages49-dev
 branch: feat/lineages-47
 commits:
 tests: QA host 9 (DuoQACreatureHost), galaxy menu -> Options -> Settings, every tab, coop.fix ui.settings_tabs on/off, see Verification

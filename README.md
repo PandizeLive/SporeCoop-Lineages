@@ -61,6 +61,7 @@ Done in 46-dev: built on SporeCoop 0.7.8 (upstream fixes for creature relations,
 
 Done in 47-dev: the Creature editor depth cube moves parts straight in and out of the skin and zooms with the other handles.
 Done in 48-dev: a tidier Co-op window, 30 s to be revived with give-up (hold G), and progress debt instead of lost DNA or food.
+Done in 49-dev: Spore's Settings no longer vanishes on the Audio and other tabs.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

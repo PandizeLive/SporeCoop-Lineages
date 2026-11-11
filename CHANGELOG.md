@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages49-dev] - 2026-11-11
+
 - Spore's Settings no longer vanishes when you open Audio Settings (or Game &
   Capture, Online, Credits). The Lineages Frame Rate Cap controls confused
   Spore's tab switching since Lineages 41 (BUG-9120).
