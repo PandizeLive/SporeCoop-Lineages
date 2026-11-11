@@ -5186,5 +5186,11 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   repays the debt first. `coop.dna local <n>` bypasses the hook (and the debt).
 - Cell: the respawn after `coop.giveup` adds 10% of the editor's DNA in food; meals repay it.
 - `coop.fix core.progress_debt off`: the old loss, for a failing run.
+- `coop.debt` shows `tinted=N shader=1` when the strip is the bar's own pixels recoloured (0: the flat
+  fallback strip, no shader compiler).
+- On a PC with Steam running, a QA copy without `SporebinEP1\steam_appid.txt` (24720) is restarted by
+  Steam from the Steam install (with the same -sporekit-instance/-profile switches): the console port
+  then belongs to a game in the player's own install. Keep the file in every QA copy and check the
+  owner of the console port before sending commands.
 - The game's death screen ("You were killed in battle") hides the HUD; a QA save left in it needs
   `click 1411 1049` (the check mark) on each game before a test.

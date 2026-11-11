@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner request on 0.7.8-lineages47-dev
 role: all
 versions: 0.7.8-lineages47-dev
-fixed_in:
+fixed_in: 0.7.8-lineages48-dev
 branch: feat/lineages-47
 commits:
 tests: QA host 9 + guest 8, Samuth.spo (Creature): coop.giveup down, the 30 s countdown, coop.giveup, DNA before/after, see Verification

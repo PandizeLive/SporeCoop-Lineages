@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages48-dev] - 2026-11-11
+
 - The Co-op window is tidier: labels sit beside their fields, rows are evenly
   spaced, the difficulty has a proper field, ping never wraps, the lobby drops
   the extra heading and lines that did not apply, and update messages are short
@@ -12,8 +14,9 @@
 - Progress debt: a downed player who is not revived (or gives up) no longer
   costs the party DNA or food. The party owes the progress instead: a deep red
   stretch at the end of the progress bar that new DNA (Creature) or food (Cell)
-  refills first. Nothing earned is ever taken away. Creature: 10% of the DNA;
-  Cell: 10% of the editor's DNA, as food (BUG-9119).
+  refills first, keeping the bar's tick marks and shine. Nothing earned is ever
+  taken away. Creature: 10% of the DNA; Cell: 10% of the editor's DNA, as food
+  (BUG-9119).
 
 ## [0.7.8-lineages47-dev] - 2026-11-11
 

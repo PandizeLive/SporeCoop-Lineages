@@ -226,6 +226,56 @@ void message(uint8_t from, net::Reader& r)
     g_heard.owed = debt;
 }
 
+// The tint shader (ps_2_0), compiled once with the system's d3dcompiler_47 (Windows 10+, Wine).
+// Brightness from the green fill (green dominant, a little of the highlights' white), then a deep,
+// slightly desaturated red: the bar's bright green 0.75 -> about (139, 44, 48), a tick mark darker,
+// the shine lighter.
+const char kTintHlsl[] =
+    "sampler s0 : register(s0);\n"
+    "float4 main(float2 uv : TEXCOORD0) : COLOR {\n"
+    "  float4 c = tex2D(s0, uv);\n"
+    "  float l = c.g * 1.1 + c.r * 0.3;\n"
+    "  float green = saturate((c.g - max(c.r, c.b)) * 4);\n" // only the fill: a grey clip or the white arrow stay
+    "  return float4(lerp(c.rgb, float3(l * 0.66, l * 0.21, l * 0.23), green), 1);\n"
+    "}\n";
+IDirect3DPixelShader9* g_ps = nullptr;
+IDirect3DDevice9* g_ps_device = nullptr;
+bool g_ps_failed = false;
+uint32_t g_tinted = 0;
+IDirect3DPixelShader9* tint_shader(IDirect3DDevice9* device)
+{
+    if (g_ps && g_ps_device == device)
+        return g_ps;
+    if (g_ps_failed)
+        return nullptr;
+    g_ps_failed = true; // one try (a missing compiler: the flat strip)
+    HMODULE dc = LoadLibraryA("d3dcompiler_47.dll");
+    if (!dc)
+        dc = LoadLibraryA("d3dcompiler_43.dll");
+    using Compile_t = HRESULT(WINAPI*)(const void*, SIZE_T, const char*, const void*, void*, const char*, const char*,
+                                      UINT, UINT, IUnknown**, IUnknown**);
+    auto compile = dc ? (Compile_t)(void*)GetProcAddress(dc, "D3DCompile") : nullptr;
+    if (!compile)
+        return nullptr;
+    IUnknown *code = nullptr, *errors = nullptr;
+    HRESULT hr = compile(kTintHlsl, sizeof kTintHlsl - 1, "debt_tint", nullptr, nullptr, "main", "ps_2_0", 0, 0, &code, &errors);
+    if (errors)
+        errors->Release();
+    if (FAILED(hr) || !code)
+        return nullptr;
+    // ID3DBlob: IUnknown, then GetBufferPointer (slot 3), GetBufferSize (slot 4)
+    void** vt = *(void***)code;
+    auto ptr = ((void*(WINAPI*)(IUnknown*))vt[3])(code);
+    IDirect3DPixelShader9* ps = nullptr;
+    if (ptr && SUCCEEDED(device->CreatePixelShader((const DWORD*)ptr, &ps))) {
+        g_ps = ps;
+        g_ps_device = device;
+        g_ps_failed = false;
+    }
+    code->Release();
+    return g_ps;
+}
+
 void draw()
 {
     if (!g_fix || !g_bar.shown || !here(g_mode))
@@ -244,13 +294,35 @@ void draw()
     const float rate = (end - g_bar.x1) / done; // pixels per point, the bar's average up to here
     // never thinner than 4 px (a few DNA on a 1000-point bar), never past the bar's start
     const float start = std::max(g_bar.x1, end - std::max(4.f, debt * rate));
+    // The bar's own pixels, recoloured: the stretch is copied from the back buffer and drawn again
+    // with a small pixel shader that turns its green into a deep, slightly desaturated red with the
+    // same light and dark (the tick marks and the shine stay). Without a shader: a flat red strip.
+    const int ix1 = (int)std::floor(start), ix2 = (int)std::ceil(end);
+    const int iy1 = (int)std::floor(g_bar.y1), iy2 = (int)std::ceil(g_bar.y2);
+    if (ix2 - ix1 < 1 || iy2 - iy1 < 1)
+        return;
     IDirect3DStateBlock9* saved = nullptr;
     if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved)))
         return;
+    IDirect3DTexture9* copy = nullptr;
+    IDirect3DPixelShader9* ps = tint_shader(device);
+    if (ps) {
+        IDirect3DSurface9* back = nullptr;
+        D3DSURFACE_DESC bd{};
+        if (SUCCEEDED(device->GetRenderTarget(0, &back)) && SUCCEEDED(back->GetDesc(&bd)) && ix2 <= (int)bd.Width &&
+            iy2 <= (int)bd.Height && ix1 >= 0 && iy1 >= 0 &&
+            SUCCEEDED(device->CreateTexture(ix2 - ix1, iy2 - iy1, 1, D3DUSAGE_RENDERTARGET, bd.Format, D3DPOOL_DEFAULT, &copy, nullptr))) {
+            IDirect3DSurface9* dst = nullptr;
+            RECT src{ix1, iy1, ix2, iy2};
+            bool ok = SUCCEEDED(copy->GetSurfaceLevel(0, &dst)) && SUCCEEDED(device->StretchRect(back, &src, dst, nullptr, D3DTEXF_POINT));
+            if (dst) dst->Release();
+            if (!ok) { copy->Release(); copy = nullptr; }
+        }
+        if (back) back->Release();
+    }
     device->SetVertexShader(nullptr);
-    device->SetPixelShader(nullptr);
-    device->SetTexture(0, nullptr);
-    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetPixelShader(copy ? ps : nullptr);
+    device->SetTexture(0, copy);
     device->SetRenderState(D3DRS_ZENABLE, FALSE);
     device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
     device->SetRenderState(D3DRS_LIGHTING, FALSE);
@@ -261,29 +333,35 @@ void draw()
     device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
     device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     device->SetRenderState(D3DRS_COLORWRITEENABLE, 15);
-    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-    struct Vertex { float x, y, z, rhw; DWORD color; };
-    // a deep, slightly desaturated red, shaded like the bar (lighter in the middle, darker at the rims)
-    const DWORD rim = 0xFF4E1A1D, mid = 0xFF8A2E33, top = 0xFF6E2428;
-    const float y0 = g_bar.y1, y3 = g_bar.y2, h = y3 - y0;
-    const float y1 = y0 + h * 0.30f, y2 = y0 + h * 0.62f;
-    auto band = [&](float ya, float yb, DWORD ca, DWORD cb) {
-        Vertex q[] = {{start, ya, 0, 1, ca}, {end, ya, 0, 1, ca}, {start, yb, 0, 1, cb}, {end, yb, 0, 1, cb}};
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    if (copy) {
+        device->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        device->SetSamplerState(0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
+        struct TV { float x, y, z, rhw, u, v; };
+        const float x1 = ix1 - 0.5f, x2 = ix2 - 0.5f, y1 = iy1 - 0.5f, y2 = iy2 - 0.5f; // texel centres on pixel centres
+        TV q[] = {{x1, y1, 0, 1, 0, 0}, {x2, y1, 0, 1, 1, 0}, {x1, y2, 0, 1, 0, 1}, {x2, y2, 0, 1, 1, 1}};
+        device->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
+        device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, q, sizeof(TV));
+        g_tinted++;
+    } else {
+        device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+        device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+        device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+        device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+        device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+        struct Vertex { float x, y, z, rhw; DWORD color; };
+        const DWORD c = 0xFF8A2E33;
+        Vertex q[] = {{start, g_bar.y1, 0, 1, c}, {end, g_bar.y1, 0, 1, c}, {start, g_bar.y2, 0, 1, c}, {end, g_bar.y2, 0, 1, c}};
         device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vertex));
-    };
-    band(y0, y1, top, mid);
-    band(y1, y2, mid, mid);
-    band(y2, y3, mid, rim);
-    // a thin darker line where the debt starts: the green that refills it grows from there
-    Vertex edge[] = {{start, y0, 0, 1, 0xFF2A0E10}, {start + 1.f, y0, 0, 1, 0xFF2A0E10},
-                     {start, y3, 0, 1, 0xFF2A0E10}, {start + 1.f, y3, 0, 1, 0xFF2A0E10}};
-    device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, edge, sizeof(Vertex));
+    }
     saved->Apply();
     saved->Release();
+    if (copy) copy->Release(); // made per frame: nothing of ours in D3DPOOL_DEFAULT when the device resets
     g_draws++;
 }
 
@@ -295,9 +373,9 @@ std::string debug()
     bool p = progress(g_mode, done, total);
     std::snprintf(b, sizeof b,
                   "progress debt: %s owed=%.1f (mode %08X world %08X; stage now %08X world %08X) progress=%s%.1f/%.1f "
-                  "bar=%d [%.0f %.0f %.0f %.0f] edge=%.0f draws=%u fix=%d\n",
+                  "bar=%d [%.0f %.0f %.0f %.0f] edge=%.0f draws=%u tinted=%u shader=%d fix=%d\n",
                   is_host() ? "host" : is_guest() ? "guest" : "offline", l.owed, l.mode, l.world, g_mode, g_world,
-                  p ? "" : "(none) ", done, total, g_bar.shown ? 1 : 0, g_bar.x1, g_bar.y1, g_bar.x2, g_bar.y2, g_bar.edge, g_draws,
+                  p ? "" : "(none) ", done, total, g_bar.shown ? 1 : 0, g_bar.x1, g_bar.y1, g_bar.x2, g_bar.y2, g_bar.edge, g_draws, g_tinted, g_ps ? 1 : 0,
                   g_fix ? 1 : 0);
     return b;
 }

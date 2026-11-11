@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner request on 0.7.8-lineages47-dev (after BUG-9118)
 role: all
 versions: 0.7.8-lineages47-dev
-fixed_in:
+fixed_in: 0.7.8-lineages48-dev
 branch: feat/lineages-47
 commits:
 tests: tests/progress_debt_tests.cpp; QA host 9 + guest 8, Samuth.spo (Creature) and Cellfive.spo (Cell), see Verification
@@ -37,7 +37,12 @@ and Cell." Cell's cost: option 1, 10% of the editor's DNA.
   host) adds 10% of the editor's DNA (DNAForFood(food) - spent), in food at the stage's average rate
   (food x dna / DNAForFood(food)). While the party owes, every meal goes to the host (earned_food: a
   guest reports it raw, as with a campaign workload), which repays the debt first.
-* The overlay (SK_EV_OVERLAY, D3D quads): from the fill's end back by debt x the bar's average
+* The overlay (SK_EV_OVERLAY): the bar's own pixels in the debt's stretch are copied from the back
+  buffer (StretchRect into a per-frame render-target texture, released the same frame, so nothing of
+  ours is in D3DPOOL_DEFAULT at a device reset) and drawn again through a ps_2_0 shader compiled with
+  the system's d3dcompiler_47 (or _43): green pixels become a deep, slightly desaturated red with the
+  same brightness (tick marks and shine stay), grey or white ones (a brain-level clip, the arrow) stay.
+  Without a compiler: a flat red strip. Placement: from the fill's end back by debt x the bar's average
   pixels per point, at least 4 px. The fill's end is the game's own marker window 0x051B5168 (the
   green arrow; the Creature bar is not linear: each brain level has the same width and its own DNA).
   The bar is HUD window 0x051B5478, its fill 0x0652A628 (both stages), found outside the frame every
@@ -75,6 +80,9 @@ Cell, QA host 9 + guest 8 (Cellfive.spo), the guest 20 m away:
   counts again.", the rest (+6) made the food 210 on both; the guest's food never went up and back.
 * No crash files, 0 faults.
 * Host unit test progress_debt_tests: pass.
+
+* Owner review: the first flat strip lost the bar's tick marks and shine; the recoloured stretch keeps
+  them (QA host 9, `coop.debt add 30`: tinted=32 shader=1, the clip at the brain level stays grey).
 
 ## History
 - 2026-11-11: implemented on feat/lineages-47.

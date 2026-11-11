@@ -60,7 +60,7 @@ Done in 45-dev: Cell parts are shared like Creature parts: a part anyone picks u
 Done in 46-dev: built on SporeCoop 0.7.8 (upstream fixes for creature relations, the guest's social meter, roar, bones, NPC animations and crash guards), and alpha creatures are marked for guests.
 
 Done in 47-dev: the Creature editor depth cube moves parts straight in and out of the skin and zooms with the other handles.
-Next (48-dev): a tidier Co-op window, 30 s to be revived with give-up (hold G), and progress debt instead of lost DNA or food.
+Done in 48-dev: a tidier Co-op window, 30 s to be revived with give-up (hold G), and progress debt instead of lost DNA or food.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

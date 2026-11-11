@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner review of 0.7.8-lineages47-dev
 role: all
 versions: 0.7.8-lineages47-dev
-fixed_in:
+fixed_in: 0.7.8-lineages48-dev
 branch: feat/lineages-47
 commits:
 tests: QA host 9 + guest 8 at 1440x1080: connect page, host and guest lobbies at the galaxy menu and in a Creature game, a pretend update (coop.update fake <version>), screenshots
