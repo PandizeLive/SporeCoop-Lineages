@@ -1851,6 +1851,17 @@ static bool graphics_input(unsigned message, uintptr_t value, int x, int y)
     return true;
 }
 
+// BUG-9120: a tab click in Spore's Settings goes through the Settings window's buttons and shows or
+// hides the window whose id is each button's command id (the tab buttons' commands are their pages).
+// Our label / button windows had command 0, which found the dialog's own frame (id 0) and hid it: the
+// whole Settings dialog vanished on Audio, Game & Capture, Online, Credits (bisected: every button-type
+// control of ours does it, the text field does not). Each control's command is now its own id, so
+// that lookup finds the control itself (hidden on the other tabs, as refresh shows it again on Graphic).
+// Old (`coop.fix ui.settings_tabs off`): command 0.
+static bool g_settings_tabs_fix = true;
+COOP_FIX("ui.settings_tabs", "BUG-9120", g_settings_tabs_fix,
+         "ui: the Frame Rate Cap controls in Spore's Settings no longer make the dialog vanish on another tab");
+
 static void refresh_graphics_options()
 {
     constexpr uint32_t kSettings = 0x043DE590;
@@ -1889,7 +1900,7 @@ static void refresh_graphics_options()
                               sui::kAlignLeft);
         Win windows[] = {label, fps, borderless, hint};
         for (int i = 0; i < 4; ++i)
-            if (windows[i]) sui::set_ids(windows[i], kControls[i], 0);
+            if (windows[i]) sui::set_ids(windows[i], kControls[i], g_settings_tabs_fix ? kControls[i] : 0);
         if (!fps || !borderless) return;
         sui::add_handler(fps, [](Win, const sui::Msg& msg) {
             return msg.type == sui::kMsgTextChanged;
@@ -1948,8 +1959,11 @@ static void refresh_graphics_options()
         last_open = settings;
     }
     for (uint32_t id : kControls)
-        if (Win control = sui::find(settings, id))
+        if (Win control = sui::find(settings, id)) {
             sui::set_visible(control, visible(panel));
+            if (g_settings_tabs_fix && visible(panel) && !(sui::flags(control) & sui::kFlagEnabled))
+                sui::set_enabled(control, true); // BUG-9120: the tab switch disabled it with its page
+        }
     g_graphics_fps = visible(panel) ? fps : nullptr;
     if (!g_graphics_fps) g_graphics_typing = false;
     mouse::set_graphics_input(graphics_input);
@@ -2310,3 +2324,4 @@ void set_russian(bool ru)
 }
 
 } // namespace coop_ui
+

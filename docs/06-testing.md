@@ -5194,3 +5194,12 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   owner of the console port before sending commands.
 - The game's death screen ("You were killed in battle") hides the HUD; a QA save left in it needs
   `click 1411 1049` (the check mark) on each game before a test.
+
+## Spore's Settings tabs (2026-11-11, feat/lineages-47)
+<a id="test-settings-tabs"></a>
+
+- Galaxy menu: `click 22 1057` (the Spore button), `click 647 560` (Settings), then the tabs at x 471:
+  Graphic y 383, Audio 426, Game & Capture 469, Online 555, Credits 598; Cancel `click 1008 780`.
+- `coop.ui where 0437A960` (Audio page): a rect when shown, `none` when the dialog vanished (BUG-9120).
+- A control we add to a Spore dialog that switches pages by command id must not keep command 0: the
+  dialog's own frame has id 0.

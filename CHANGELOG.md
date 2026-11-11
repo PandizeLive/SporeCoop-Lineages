@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Spore's Settings no longer vanishes when you open Audio Settings (or Game &
+  Capture, Online, Credits). The Lineages Frame Rate Cap controls confused
+  Spore's tab switching since Lineages 41 (BUG-9120).
+
 ## [0.7.8-lineages48-dev] - 2026-11-11
 
 - The Co-op window is tidier: labels sit beside their fields, rows are evenly
