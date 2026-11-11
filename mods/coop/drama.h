@@ -11,7 +11,9 @@
 
 namespace drama {
 
-void init(const SkHost* host, SkMod* mod, const net::Session* sess);
+void init(const SkHost* host, SkMod* mod, net::Session* sess);
+void on_message(uint8_t from, net::Reader& r); // MSG_DRAMA (BUG-9131)
+bool host_ufo_here(); // guest: a UFO here is the host's, shown only (it takes no creature)
 // coop.drama [start <kind> | mask <hex>]: the events seen, started and refused
 std::string debug(const std::vector<std::string>& args);
 

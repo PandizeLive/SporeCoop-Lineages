@@ -13,6 +13,7 @@
 #include "cellsync.h"
 #include "dna_pace.h"
 #include "game.h"
+#include "npc.h"
 #include "gamefixes.h"
 #include "modes.h"
 #include "world.h"
@@ -150,6 +151,19 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
     if (!av) {
         SAY("no avatar");
         return 1;
+    }
+    if (argc > 2 && !strcmp(argv[1], "target")) { // target <npc id>: the avatar aims at that NPC (guest: its proxy), tests (BUG-9132)
+        uint16_t id = (uint16_t)atoi(argv[2]);
+        void* t = npc::proxy(id);
+        if (!t)
+            t = npc::host_npc(id);
+        if (!t) {
+            SAY("no such npc\n");
+            return 1;
+        }
+        skg::vcall<void>(av, 0x84 / 4, (uint8_t*)t + game::kCombatOff, 1, 0); // SetTarget
+        SAY("target %p\n", t);
+        return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "play")) {
         uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");

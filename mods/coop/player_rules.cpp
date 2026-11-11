@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 
+#include "drama.h"
 #include "fixes.h"
 #include "guest_pack.h"
 #include "game.h"
@@ -412,6 +413,10 @@ static bool pick_epic(void* c)
         return r;
     g_ufo_seen++;
     if (g_ufo_fix && is_host() && puppet_player(c) != 0xFF) {
+        g_ufo_skipped++;
+        return true;
+    }
+    if (drama::host_ufo_here()) { // BUG-9131: a guest's copy of the host's UFO takes nothing (the host's takes them)
         g_ufo_skipped++;
         return true;
     }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Creature: meteors, rain storms and the UFO visit follow the host's world: the
+  host's events show on the guest, and the guest's game no longer starts its
+  own (nor its own night predator) (BUG-9131).
+
 - Creature: the connected player has a pack of their own. Their Summon Flock
   now summons a flock that follows and fights for them, and they can recruit
   allied creatures; the host's game runs that pack (BUG-9129).

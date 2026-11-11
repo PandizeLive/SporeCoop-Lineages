@@ -2176,7 +2176,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_kills_credited++;
             dna_ledger::g_credit.kill(from, H->time_seconds()); // the DNA it pays is that guest's hunt
         }
-        game::apply_damage(npc, dmg, q.type, attacker);
+        {
+            float hp0 = game::health(npc);
+            game::apply_damage(npc, dmg, q.type, attacker);
+            static unsigned logged;
+            if (logged++ < 40) // BUG-9132: what a guest's hit carries and does
+                H->log(M, SK_INFO, "npc: guest %u hit npc %u: reported %.2f type %d applied %.2f, hp %.2f -> %.2f", from, q.net_id,
+                       q.damage, q.type, dmg, hp0, game::health(npc));
+        }
         g_hits_applied++;
         guest_pack::assist(from, npc); // BUG-9129: the guest's pack joins its fight
         break;
@@ -2219,6 +2226,12 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         if (adventure::guest_damage(c, damage, type, attacker))
             return false; // BUG-9114: an Adventure creature the host simulates (the host applies the captain's hits)
         auto it = g_proxy_of.find(c);
+        if (it != g_proxy_of.end()) {
+            static unsigned logged;
+            if (logged++ < 60) // BUG-9132: every hit on a proxy here (who, how much, from where)
+                H->log(M, SK_INFO, "npc: proxy %u hit here: attacker %p (%s) damage %.2f type %d ret %p", it->second, attacker,
+                       attacker == av ? "own avatar" : attacker ? "other" : "none", damage, type, __builtin_return_address(0));
+        }
         if (it != g_proxy_of.end()) { // hit on a host NPC: the host applies it
             if (attacker == av && social::drop_social_hit(it->second))
                 return false; // BUG-0021: the social stance does not attack

@@ -104,6 +104,7 @@ enum MsgType : uint8_t {
     MSG_CIV_TURRETS = 67,  // host -> guest: one city wall layout, occupied slots and turret HP
     MSG_CELL_COMBAT = 66, // guest contact hit; host replies with any whole bonus for the same body
     MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
+    MSG_DRAMA = 82, // reliable host -> guests (BUG-9131): u8 Drama Manager event kind the host started (meteor, rain)
     MSG_PROGRESS_DEBT = 81, // reliable host -> guests (BUG-9119): u32 stage mode, u32 world, f32 the party's progress debt
     MSG_TRIBE_COMBAT = 80, // reliable host snapshot: world, count, {member id, scaled native max HP}
     MSG_SPACE_LAUNCH = 79, // reliable host offer and founder reply for a missed Civilization launch

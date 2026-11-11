@@ -21,7 +21,7 @@ namespace drama {
 
 static const SkHost* H;
 static SkMod* M;
-static const net::Session* S;
+static net::Session* S;
 
 static bool g_guest_events_fix = true;
 COOP_FIX("creature.guest_events", "BUG-0486", g_guest_events_fix,
@@ -32,6 +32,19 @@ COOP_FIX("creature.guest_events", "BUG-0486", g_guest_events_fix,
 static const char* kKind[9] = {"kind0", "night_predator", "ufo", "meteor", "baby_game", "rain",
                                "sea_monster", "creature_attack", "summon"};
 static unsigned g_mask = 1u << 2;
+// BUG-9131: meteors, rain storms and the night predator ran in each game by itself, at different times (the owner saw
+// meteors and the sky out of step between the players). The host's world owns them: a guest's own game starts
+// none of these; the meteor strike and the rain storm the host starts are started on the guests too (MSG_DRAMA);
+// the night predator is a creature the host's NPC sync already shows. Off: each game its own (0.7.8-lineages50).
+static bool g_shared_fix = true;
+COOP_FIX("creature.shared_events", "BUG-9131", g_shared_fix,
+         "creature: meteors and rain storms follow the host's (a guest starts none of its own); no night predator of a guest's own");
+// meteor strike, rain storm, and (owner, 2026-11-11: "the space ship wasn't synced") the UFO visit: on a guest the
+// host's UFO comes as its own game's UFO that takes nothing (player_rules: every creature is "epic" to its pick)
+static constexpr unsigned kRelay = (1u << 2) | (1u << 3) | (1u << 5);
+static constexpr unsigned kHostOnly = 1u << 1;            // night predator (the host's creature is mirrored)
+static bool g_from_host = false;                          // starting a kind the host sent
+static unsigned g_relayed_tx[9], g_relayed_rx[9];
 static unsigned g_started[9], g_refused[9];
 static void* g_last_event[9];
 
@@ -55,10 +68,23 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     unsigned kind = ev ? *(const unsigned*)((const uint8_t*)ev + 0x14) : 99;
     if (kind < 9)
         g_last_event[kind] = ev;
+    if (g_shared_fix && kind < 9 && (kRelay >> kind & 1) && S && S->role() == net::Role::Host && S->connected() &&
+        game::mode_id() == modes::kCreature) { // BUG-9131: the guests start it too
+        net::Writer w;
+        w.u8((uint8_t)kind);
+        S->broadcast_reliable(net::MSG_DRAMA, w);
+        g_relayed_tx[kind]++;
+    }
+    if (g_shared_fix && kind < 9 && ((kRelay | kHostOnly) >> kind & 1) && is_guest() && !g_from_host &&
+        game::mode_id() == modes::kCreature) {
+        if (g_refused[kind]++ < 5)
+            H->log(M, SK_INFO, "drama: %s is the host's world event: not started on its own here (creature.shared_events)", kKind[kind]);
+        return;
+    }
     bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
     // BUG-9129: a guest's summon is the host's (its Summon Flock goes to the host as a request)
     tribe_attack = tribe_attack || (kind == 8 && guest_pack::enabled());
-    if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) {
+    if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest() && !g_from_host) {
         if (g_refused[kind]++ < 5)
             H->log(M, SK_INFO, "drama: this game would start its own %s event: not on a guest, the host's world has "
                                "its own (creature.guest_events)", kKind[kind]);
@@ -73,7 +99,7 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
 
 static uintptr_t a_Get, a_StartKind;
 
-void init(const SkHost* host, SkMod* mod, const net::Session* sess)
+void init(const SkHost* host, SkMod* mod, net::Session* sess)
 {
     H = host;
     M = mod;
@@ -85,6 +111,24 @@ void init(const SkHost* host, SkMod* mod, const net::Session* sess)
         H->hook_create(M, (void*)a, (void*)h_Start, (void**)&o_Start);
     else
         H->log(M, SK_WARN, "drama: SporeCoop::DramaManager_StartEvent missing: a guest's own world events are not held back");
+}
+
+bool host_ufo_here() { return g_shared_fix && is_guest(); }
+
+void on_message(uint8_t from, net::Reader& r)
+{
+    uint8_t kind = r.u8();
+    if (!r.ok() || from != 0 || !is_guest() || kind > 8 || !(kRelay >> kind & 1) || !g_shared_fix ||
+        game::mode_id() != modes::kCreature)
+        return;
+    void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
+    if (!mgr || !a_StartKind)
+        return;
+    g_relayed_rx[kind]++;
+    g_from_host = true;
+    skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
+    g_from_host = false;
+    H->log(M, SK_INFO, "drama: the host's %s starts here too", kKind[kind]);
 }
 
 std::string debug(const std::vector<std::string>& a)
@@ -108,8 +152,8 @@ std::string debug(const std::vector<std::string>& a)
         const uint8_t* ev = (const uint8_t*)g_last_event[k];
         if (!ev && !g_started[k] && !g_refused[k])
             continue;
-        snprintf(b, sizeof b, "  %-16s started=%u refused=%u event=%p active=%d\n", kKind[k], g_started[k], g_refused[k],
-                 (const void*)ev, ev ? (int)ev[0xC] : -1);
+        snprintf(b, sizeof b, "  %-16s started=%u refused=%u relayed_tx=%u relayed_rx=%u event=%p active=%d\n", kKind[k],
+                 g_started[k], g_refused[k], g_relayed_tx[k], g_relayed_rx[k], (const void*)ev, ev ? (int)ev[0xC] : -1);
         out += b;
     }
     return out;

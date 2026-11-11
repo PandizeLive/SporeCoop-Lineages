@@ -4290,6 +4290,10 @@ void setup_callbacks()
             creature_rescue::message(from, r);
             return;
         }
+        if (type == net::MSG_DRAMA) { // BUG-9131
+            drama::on_message(from, r);
+            return;
+        }
         if (type == net::MSG_PROGRESS_DEBT) { // BUG-9119
             progress_debt::message(from, r);
             return;
