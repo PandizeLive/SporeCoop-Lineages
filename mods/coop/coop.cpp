@@ -496,7 +496,7 @@ net::PlayerState local_state()
         g_adapter->fill(local, st);
     if (st.mode == modes::kScenario && (st.flags & net::PF_IN_WORLD))
         st.gate = adventure::outgoing();
-    if (st.mode == modes::kCreature && creature_rescue::down())
+    if ((st.mode == modes::kCreature || st.mode == modes::kScenario) && creature_rescue::down())
         st.flags |= net::PF_DOWNED;
     return st;
 }
@@ -2735,8 +2735,9 @@ void on_frame(void*, int, void*)
         adventure::tick();
     else
         adventure::reset();
-    if (g_local && g_sess.connected() && g_mode == modes::kCreature && (duo || creature_rescue::continuing()))
-        creature_rescue::tick(g_world, g_local, peer, now);
+    if (g_local && g_sess.connected() && (g_mode == modes::kCreature || g_mode == modes::kScenario) &&
+        (duo || creature_rescue::continuing()))
+        creature_rescue::tick(g_world ? g_world : 0xADE47u, g_local, peer, now); // BUG-9089: the captain too
     else
         creature_rescue::reset();
     lobby_tick(now);
@@ -4821,7 +4822,7 @@ int c_team(void*, int argc, const char* const* argv, SkOut* out)
         SAY("lethal hit applied");
         return 0;
     }
-    if (argc > 2 && !strcmp(argv[1], "hit") && local_now() && g_mode == modes::kCreature) { // tests: a hit through
+    if (argc > 2 && !strcmp(argv[1], "hit") && local_now() && (g_mode == modes::kCreature || g_mode == modes::kScenario)) { // tests: a hit through
         game::hit(local_now(), (float)atof(argv[2]), 0, nullptr); // the damage filter (the pack rescue applies)
         SAY("hit applied, hp %.1f", game::health(local_now()));
         return 0;
@@ -5625,6 +5626,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
     adventure::init(H, M, &g_sess);
+    H->command_add(M, "coop.adventure", "coop.adventure - the shared mission's counters (BUG-9089)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 2 && !strcmp(argv[1], "kill")) { // tests: a kill in this game only
+                           H->out_printf(out, "%s", adventure::debug_kill((uint32_t)strtoul(argv[2], nullptr, 10)).c_str());
+                           return 0;
+                       }
+                       H->out_printf(out, "%s\n%s", adventure::status().c_str(), creature_rescue::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     *(int32_t*)(g_blank_e84 + 0x32C) = -1;

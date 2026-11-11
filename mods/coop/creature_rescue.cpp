@@ -24,6 +24,13 @@ double local_start, last_request, protection_until;
 net::PlayerState peer;
 bool has_peer;
 bool g_leave_fix = true;
+// BUG-9089 (44): a captain in an adventure is revived like a Creature-stage avatar (a partner has 10 s);
+// if nobody comes, it gets back up beside a partner who is still standing, and only a captain whose
+// partners are all down dies (the host's mission then fails for everyone, adventure.cpp).
+bool g_adventure_fix = true;
+COOP_FIX("adventure.revive", "BUG-9089", g_adventure_fix,
+         "adventure: a downed captain is revived by a partner within 10 s, or gets back up beside one");
+bool here(uint32_t mode) { return mode == modes::kCreature || (g_adventure_fix && mode == modes::kScenario); }
 COOP_FIX("creature.recovery_leave", "BUG-9010", g_leave_fix,
          "creature: an existing death timer survives a partner leaving");
 
@@ -55,6 +62,10 @@ void begin(uint8_t player, uint32_t id, double now)
 
 void charge(const std::string& name)
 {
+    if (game::mode_id() == modes::kScenario) { // no DNA in an adventure
+        notice(name + " was down too long.", -1);
+        return;
+    }
     float dna = game::dna(), cost = 0;
     if (std::isfinite(dna) && dna >= 1) {
         cost = std::min(std::floor(dna), std::ceil(dna * 0.10f));
@@ -68,8 +79,19 @@ void charge(const std::string& name)
 void resolve(Event result)
 {
     local_id = 0;
-    if (!body || game::mode_id() != modes::kCreature || game::avatar() != body)
+    if (!body || !here(game::mode_id()) || game::avatar() != body)
         return;
+    if (result == Expired && game::mode_id() == modes::kScenario && has_peer && peer.health > 0 &&
+        !(peer.flags & (net::PF_DEAD | net::PF_DOWNED))) {
+        // the adventure goes on: back up beside the partner who is still standing
+        net::Vec3 at = peer.pos;
+        at.x += 2.f;
+        game::teleport(body, at, game::orientation(body));
+        game::set_health(body, std::max(1.f, game::max_health(body) * 0.4f));
+        protection_until = H->time_seconds() + 3;
+        notice("Back on your feet beside " + S->name_of(peer.id) + ".", -1);
+        return;
+    }
     if (result == Revived) {
         game::set_health(body, std::max(1.f, game::max_health(body) * 0.4f));
         protection_until = H->time_seconds() + 2;
@@ -116,7 +138,7 @@ void on_player_leave(uint8_t player)
 
 bool protect(void* avatar, float& damage)
 {
-    if (!S || !S->connected() || game::mode_id() != modes::kCreature || !planet ||
+    if (!S || !S->connected() || !here(game::mode_id()) || !planet ||
         avatar != body || !avatar || damage <= 0) return false;
     double now = H->time_seconds();
     if (down() || now < protection_until) { damage = 0; return true; }
@@ -139,7 +161,7 @@ void message(uint8_t from, net::Reader& r)
     uint32_t world = r.u32(), id = r.u32();
     uint8_t event = r.u8();
     if (!r.ok() || r.left() || !id || !planet || world != planet || !S->connected() ||
-        game::mode_id() != modes::kCreature || !body || game::avatar() != body) return;
+        !here(game::mode_id()) || !body || game::avatar() != body) return;
     if (S->role() == net::Role::Host) {
         if (event == Begin && from < net::kMaxPlayers && from && has_peer && peer.id == from &&
             (peer.flags & net::PF_DOWNED))

@@ -2381,3 +2381,26 @@ then galaxy Options > Quit Spore. Logs record App::cSporeApp::Shutdown and
 ExitProcess 0, faults 0, for both. No new crash dump appeared. Sync diagnostics
 still report missing/extra player objects when marker-only mode is active;
 these runs do not establish a generally desync-free Adventure implementation.
+
+## Combat adventures: objects, credits, the mission's end (2026-11-10, feat/lineages-44)
+<a id="space-duo-adventure-combat"></a>
+
+BUG-9089. GOG 2024 code (Steam copy), two games on one PC, City Assault and Adventure Town.
+* ✔ An adventure object's scenario marker is at object +0x18, its scenario class at +0x1C. The marker
+  holds the spawn type (+0x00), position (+0x04..+0x0C) and orientation (+0x10..+0x1C), byte-identical
+  in every game of the same adventure: FNV(marker[0..0x24) + class) is the object id the mod shares.
+  Markers are separate allocations (no single array to index).
+* ✔ Adventure buildings (noun 0x70703B3) are cBuilding: combatant at +0x120 (vt 0x1AA7A70 runtime,
+  slot 6 = cBuilding::TakeDamage), hit points at combatant +0x38. Creatures: noun 0x18EB45E, combatant
+  +0x5A8 (game::health).
+* ✔ The goal credit (SporeCoop::ScenarioCreditGoal, thiscall(play, goal, spatial, second)) names the
+  defeated object for a defeat goal: spatial = the object's cSpatialObject (building + 0x34, the cast
+  0x1186577). Goal kind 3 = defeat (count up to its required), 11 = defend (done at the mission's end).
+* ✔ The game checks a defeat goal against the targets still alive: a credit held back after its target
+  died failed the mission at once ("You can no longer complete this goal: Destroy Big Evil Keep (0 of
+  5 destroyed)"). Defeat credits are therefore native in every game; the death itself is what is shared.
+* ✔ cScenarioPlayMode::SetState 0xF1A9C0: thiscall(play, int state); play +0x90 = state; 3 playing,
+  5 success, 6 failure (a new state 4 after 5/6 is ignored). Hooked: the host's 5 / 6 goes to the
+  guests; a guest's own 6 is held.
+* An object that leaves the object list unhurt was removed by the adventure (a load, an act): not a
+  death. A run where one game loaded while the other played counted 134 false deaths before this rule.

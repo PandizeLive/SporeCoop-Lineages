@@ -19,14 +19,28 @@ int main() {
     q=p; q.sequence=kMaxCredits+1; reject(q);
     q=p; q.run=0; reject(q);
     q=p; q.visitor=0; reject(q);
-    q=p; q.goal.kind=3; reject(q); // Combat must not enter the dialogue-only path.
+    q=p; q.goal.kind=0; reject(q);
+    q=p; q.goal.kind=16; reject(q);
     q=p; q.goal.slot=8; reject(q);
     q=p; q.goal.act=16; reject(q);
-    q=p; q.goal.required=2; reject(q);
+    q=p; q.goal.required=0; reject(q);
+    q=p; q.goal.required=kMaxRequired+1; reject(q);
+    q=p; q.goal.count=1; reject(q); // count must stay below required
+    // BUG-9089 (44): a counted defeat goal, a credit per object
+    q=p; q.goal={0,0,3,1025,UINT32_MAX,5,0xABCD1234,4};
+    { net::Writer w; q.write(w); net::Reader rr(w.data.data(),w.size()); Packet z; assert(z.read(rr) && z.goal==q.goal); }
+    { Goal a={0,0,3,1025,UINT32_MAX,5,7,0}, b=a; b.count=3; assert(a.same_credit(b)); b.object=8; assert(!a.same_credit(b));
+      Goal c={0,0,3,1025,UINT32_MAX,5,0,1}, d=c; assert(c.same_credit(d)); d.count=2; assert(!c.same_credit(d)); }
+    // Death and Outcome
+    { Packet d; d.kind=Death; d.mission={1,2,3}; d.run=5; d.visitor=6; d.object=0x1234; d.deaths=2;
+      net::Writer w; d.write(w); assert(decode(w));
+      Packet bad=d; bad.object=0; reject(bad); bad=d; bad.deaths=0; reject(bad); bad=d; bad.deaths=65; reject(bad); }
+    { Packet o; o.kind=Outcome; o.mission={1,2,3}; o.run=5; o.visitor=6; o.state=6;
+      net::Writer w; o.write(w); assert(decode(w)); Packet bad=o; bad.state=4; reject(bad); }
     q=p; q.mission={}; reject(q);
     q=p; q.kind=Kind(255); reject(q);
     valid.u8(1); assert(!decode(valid));
     p.kind=Hello; p.run=0; p.sequence=0;
     net::Writer hello; p.write(hello); assert(decode(hello));
-    puts("PASS Adventure packets: round-trip, every truncation, bounds, unsupported goals, trailing bytes.");
+    puts("PASS Adventure packets: round-trip, every truncation, bounds, unsupported goals, trailing bytes, counted credits, deaths, outcomes.");
 }

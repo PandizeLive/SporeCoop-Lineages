@@ -92,3 +92,27 @@ Verdict for the player: story / exploration adventures (go to, talk to) are play
 combat adventures run as two parallel solo copies that can end differently. Not tested: collect and
 timed goals, returning from an Adventure into a Space campaign, more than two players, two PCs.
 Screenshots: out/qa43/adventure-town-both-complete.png, out/qa43/adventure-city-assault-split.png.
+
+## Combat adventures shared (2026-11-10, feat/lineages-44)
+
+Implementation (mods/coop/adventure.cpp, adventure_sync.h, creature_rescue.cpp):
+- every objective kind goes through the host journal (credits keyed by goal and object, or by count);
+  a defeat of an adventure object counts natively in each game (holding it failed the mission);
+- deaths of adventure objects (buildings, creatures; id = marker + class) are mirrored both ways
+  (Death messages, host relays), each object killed at most once, only while the mission plays;
+- the host decides the end: its success / failure reaches every guest (Outcome); a guest never fails
+  on its own;
+- a captain is revived like a Creature-stage avatar (partner within 6 m for 1.5 s in 10 s), else gets
+  back up beside a standing partner at 40%; a captain whose partners are all down dies and the host's
+  failure ends it for everyone. Switches: adventure.combat, adventure.revive.
+Tests: tests/adventure_sync_tests.cpp (counted credits, deaths, outcomes: PASS); QA (host 9 + guest 8):
+- City Assault started together: host kill -> both 1/5 and identical buildings; guest kill -> both 2/5;
+  alternating kills to the end: counts equal at every step, both "Mission Complete! 100%", 0 faults.
+- guest downed beside the host: revived at 40% in ~2 s; guest downed 35 m away: back up 1.9 m from the
+  host after 10 s; both downed: both games failed together.
+- Adventure Town (regression): all 8 move/talk goals shared, both completed, 0 faults.
+Bugs found on the way and fixed: false deaths during a load; credits dropped while the host sat in the
+intro; held defeat credits failing the mission; the death list resent with every Hello.
+Open: enemies' movement is each game's own (deaths, credits and the end are shared); missions started
+apart in time catch up by mirrored deaths; two PCs, 3-4 players and adventures from a Space campaign
+not tested yet.

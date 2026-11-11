@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Combat adventures together: every goal is shared (destroy, defend and the
+  rest), anything one player destroys is destroyed for everyone, and the host's
+  success or failure ends the mission for all. A downed captain can be revived
+  by a partner within 10 seconds, or gets back up beside them; the mission fails
+  only if every captain is down (BUG-9089).
+
 ## [0.7.3.6-lineages43-dev] - 2026-11-10
 
 - Player Cells: cells from your group now swim in the Cell stage as native
