@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.8-lineages47-dev] - 2026-11-11
+
+- Creature editor depth cube: it now moves a part straight in and out of the
+  skin where the part sits (it followed a slanted line from the spine), and it
+  zooms with Spore's arrows and balls instead of staying one fixed size
+  (BUG-9116).
+
 ## [0.7.8-lineages46-dev] - 2026-11-11
 
 - Built on SporeCoop 0.7.8: every upstream fix from 0.7.4 to 0.7.8 is in,
