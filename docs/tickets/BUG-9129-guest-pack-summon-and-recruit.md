@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner reports on 0.7.8-lineages49-dev ("Summon Flock isn't working for the connected player still"; "connected player is unable to create a party with the host's creatures")
 role: guest
 versions: all
-fixed_in:
+fixed_in: 0.7.8-lineages51-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8: guest `coop.prules roar 33` (its Summon Flock node tick), guest `call SporeCoop::cPosseSimulator_AddMember` on a proxy, host `coop.gpack`, `coop.gpack recruit <guest> <npc>`, `coop.gpack summon <guest>`

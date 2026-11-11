@@ -63,6 +63,7 @@ Done in 47-dev: the Creature editor depth cube moves parts straight in and out o
 Done in 48-dev: a tidier Co-op window, 30 s to be revived with give-up (hold G), and progress debt instead of lost DNA or food.
 Done in 49-dev: Spore's Settings no longer vanishes on the Audio and other tabs.
 Done in 50-dev: progression debt (10% of the bar), a visible downed state, no endless heal, the guest's home follows a nest migration, and Cell fixes (no black screen on a partner's respawn, arrows to off-screen partners, the shared DNA explained, custom cells 1 in 6).
+Done in 51-dev: the connected player's own pack (Summon Flock, recruiting), meteors / rain / the UFO shared from the host, and the connected player's Strike splash.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages50-dev
 role: guest
 versions: 0.7.8-lineages50-dev
-fixed_in:
+fixed_in: 0.7.8-lineages51-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8: guest `coop.abilities target <npc>` + `coop.abilities play <i>` beside the proxy; host log "npc: guest 1 hit npc ..."; guest log "npc: proxy N hit here"

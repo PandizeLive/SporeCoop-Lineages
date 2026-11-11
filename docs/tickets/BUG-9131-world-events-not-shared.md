@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner reports on 0.7.8-lineages50-dev ("meteor event and time of day seem desynced"; "the space ship wasn't synced either")
 role: all
 versions: all
-fixed_in:
+fixed_in: 0.7.8-lineages51-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8: host `coop.drama start 3` / `start 2`, guest `coop.drama start 3|5|1`, `coop.drama` counters on both, `coop.wstate` tod on both

@@ -2,14 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages51-dev] - 2026-11-11
+
 - Creature: the connected player's Strike now hurts the host's creatures in
   full: its splash on the creatures around the target was dropped, so a
   Strike that only splashed did nothing (BUG-9132).
-
 - Creature: meteors, rain storms and the UFO visit follow the host's world: the
   host's events show on the guest, and the guest's game no longer starts its
   own (nor its own night predator) (BUG-9131).
-
 - Creature: the connected player has a pack of their own. Their Summon Flock
   now summons a flock that follows and fights for them, and they can recruit
   allied creatures; the host's game runs that pack (BUG-9129).
