@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages51-dev ("transition to Tribe ... the connected player loaded ... but no tribe"; "BigTexas's chief is not their creature")
 role: guest
 versions: 0.7.8-lineages46-dev to 0.7.8-lineages51-dev (since the 0.7.8 merge)
-fixed_in:
+fixed_in: 0.7.8-lineages52-dev
 branch: feat/lineages-47
 commits:
 tests: QA DuoQAClythHost (Clyth.spo, Tribe, its founder roster moved aside) + DuoQACreatureGuest with `coop.creations choose creature 291D7B07` (Duckulon, its own creation); host log "tribe automatic founders: ..."; coop.fix tribe.founder_parts off / on

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages52-dev] - 2026-11-11
+
 - Tribe / Civilization: a connected player who plays their own custom creature
   gets their own village again (with their creature as chief). Since Lineages
   46 the founding refused any custom creature (BUG-9134).
