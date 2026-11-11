@@ -16,7 +16,7 @@
 
 namespace lineage_cells {
 
-constexpr unsigned kSharePercent = 25; // of a native creature species' spawns (player decision 2A)
+constexpr unsigned kSharePercent = 17; // of a native creature species' spawns (player decision 2A: 1/4; 2026-11-11: 1/6)
 
 void init(const SkHost* host, SkMod* mod, net::Session* session);
 void tick(double now, bool in_cell); // main thread, every frame

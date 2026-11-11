@@ -29,6 +29,7 @@ struct Ctx {
     net::Session* sess = nullptr;
     std::function<std::vector<std::pair<std::string, net::Vec3>>()> partners; // same place
     std::function<void(const std::string&)> notice;
+    std::function<void(const std::string&)> feed; // BUG-9123: this game's feed only (not relayed)
     // a partner's meals added to the shared food here (the DNA cause ledger, dna_ledger.h): `from` the
     // guest whose meal the host applied, 0xFF on a guest (the host's total: some partner's)
     std::function<void(int from, int before, int amount)> food_cause;

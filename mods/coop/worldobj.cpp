@@ -250,6 +250,13 @@ static uint32_t orn_state(void* o)
 }
 static bool orn_used(uint32_t s) { return s != kGone && (s & 1); }
 static void orn_collect(Items& out) { collect_noun(kOrnNoun, out, orn_state, orn_take); }
+// BUG-9124: the interact node also moves the ornament to its next model (0xC40360: the dug-up bones of a real
+// save; the fixture's bones have no model list, so it was never seen). orn_use left it, so the other player
+// still saw the bones and could not use them. Off (`coop.fix wobj.ornament_model off`): the model stays.
+static bool g_orn_model_fix = true;
+COOP_FIX("wobj.ornament_model", "BUG-9124", g_orn_model_fix,
+         "creature: bones a partner used change to their used model here too (they no longer stay)");
+static uint32_t g_orn_models; // tests: next models applied for a partner's use
 static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves the last use (and the interact node the ornament)
 {
     uint8_t* r = orn_reward(o);
@@ -258,6 +265,8 @@ static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves t
     field<int>(r, 0x10) = 0;
     field<uint8_t>(r, 0x24) = 1;
     field<uint8_t>(o, 0xA3) = 0;
+    if (g_orn_model_fix && a_OrnUsed && thiscall<int>(a_OrnUsed, o)) // as the interact node does
+        g_orn_models++;
 }
 static bool orn_behind(uint32_t local, uint32_t host) { return orn_used(host) && !orn_used(local); }
 static void orn_apply(const Item& l, uint32_t) { orn_use(l.p); }

@@ -376,6 +376,12 @@ constexpr float kKoOpacity = 0.35f;
 constexpr uintptr_t kOpacity = 0xA4;
 
 // a one-shot game effect on a cell (names from the game: cell_death_oneshot, cell_hatch_ice, ...)
+static bool g_fix_offscreen_arrow = true; // BUG-9121 (the switch is coop.cpp's ui.offscreen_arrow: this one cell.)
+COOP_FIX("cell.offscreen_arrow", "BUG-9121", g_fix_offscreen_arrow, "cell: the arrow to an off-screen knocked-out partner points at it");
+static bool g_fix_partner_hatch = true;
+COOP_FIX("cell.partner_hatch", "BUG-9122", g_fix_partner_hatch,
+         "cell: a partner's respawn shows a hatch burst on its cell, not the own respawn's fade to black");
+
 static void effect(uint8_t* c, const char* name)
 {
     if (!c || !a_Fnv || !a_Effect || !F<uint32_t>(c, 0x248))
@@ -3428,7 +3434,11 @@ static void symbiosis_tick(double now)
             F<float>(c, kOpacity) = kKoOpacity;
         if (k.fx_at > 0 && now >= k.fx_at) {
             k.fx_at = 0;
-            effect(c, "cell_egg_L0_autohatch");
+            // BUG-9122: the respawn's egg-hatch effect fades the whole screen to black (it is the own
+            // cell's hatch, camera included): on a partner's puppet it blacked out this player's screen
+            // (the ice-hatch burst still dimmed it). The partner's cell just appears. Off: the egg hatch.
+            if (!g_fix_partner_hatch)
+                effect(c, "cell_egg_L0_autohatch");
         }
     }
     if (g_downed) {
@@ -4115,7 +4125,11 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
         return;
     // off screen: an arrow on the screen edge towards it
     float cx = sw / 2.f, cy = sh / 2.f;
-    if (!H->world_to_screen(w, sc)) // behind: never happens in the flat cell world, keep a fallback
+    sc[0] = sc[1] = NAN;
+    bool front = H->world_to_screen(w, sc) != 0;
+    if (g_fix_offscreen_arrow) // BUG-9121: off screen the point is still written (only behind is not)
+        front = std::isfinite(sc[0]) && std::isfinite(sc[1]);
+    if (!front) // behind: never happens in the flat cell world, keep a fallback
         sc[0] = cx, sc[1] = sh + 100.f;
     float dx = sc[0] - cx, dy = sc[1] - cy;
     float fx, fy;
@@ -5115,6 +5129,8 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "dna") {
         uint8_t* state = S();
         if (!state || !a_DnaFor) return "no Cell DNA state";
+        if (a.size() >= 3 && a[1] == "spend") // tests (BUG-9123): as the editor's result writes it
+            F<int32_t>(state, 0x2C) += atoi(a[2].c_str());
         int food = F<int32_t>(state,0x1C), spent = F<int32_t>(state,0x2C);
         int earned = ((int(__fastcall*)(int))a_DnaFor)(food);
         return "food="+std::to_string(food)+" earned="+std::to_string(earned)+" spent="+std::to_string(spent)+
@@ -5769,10 +5785,24 @@ bool spent_dna(int& v)
     return true;
 }
 
+static bool g_fix_shared_dna_note = true;
+COOP_FIX("cell.shared_dna_note", "BUG-9123", g_fix_shared_dna_note,
+         "cell: a guest is told when a partner's editor spends the shared DNA");
+
 void set_spent_dna(int v)
 {
-    if (uint8_t* s = in_cell() ? S() : nullptr)
-        *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s)
+        return;
+    const int before = F<int32_t>(s, 0x2C);
+    *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+    // BUG-9123: the Cell DNA is the party's (one pool, as the Creature pack's): a partner's editor spends
+    // it for everybody. Say so, or the guest's own number seems to drop for nothing.
+    if (g_fix_shared_dna_note && v > before && before >= 0 && C.feed) {
+        const int left = editor_budget();
+        C.feed("A partner spent " + std::to_string(v - before) + " of the shared DNA in the editor" +
+               (left >= 0 ? " (" + std::to_string(left) + " left)." : "."));
+    }
 }
 
 int dna_for_food(int food)

@@ -2152,3 +2152,8 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   animation event's per-target effects 0x682E8D4B / 0xF0D5A994 / 0xCFECC623, sound 0xD05B58ED; `coop_tribe_fight_sounds.py`
   prints the host's plays). docs/re/tribe.md#tribe-mirror-fx.
 - BUG-0604: Cell: after the guest's level-up its screen showed only water (no cell drawn, nothing on screen for 7 min) in one cell_new_game run (`tools/lab.py run cell_new_game`; not analysed)
+
+- BUG-9124 (Creature): bones a partner used stay visible for the other player (they cannot be used again). Not
+  reproduced on Samuth.spo's bones (no model list); needs the save where it was seen.
+- BUG-9125 (Cell): meat a partner ate stays on the other screen at a huge size. Not reproduced with ambient meat;
+  likely loot from a kill or a chunk bitten off a big cell.

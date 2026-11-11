@@ -3512,6 +3512,11 @@ void add_beacon(const net::Vec3& p, const std::string& text, double seconds, uin
     g_marks.push_back({text, p, g_mode, H->time_seconds() + seconds, argb});
 }
 
+// BUG-9121: off-screen arrows (the partner's, map marks) pointed down whenever the target was off the
+// screen, as if it were behind the camera. Off: the old direction.
+bool g_arrow_fix = true;
+COOP_FIX("ui.offscreen_arrow", "BUG-9121", g_arrow_fix, "ui: arrows to off-screen partners and marks point at them (not down)");
+
 void draw_marks()
 {
     double now = H->time_seconds();
@@ -3528,7 +3533,10 @@ void draw_marks()
         float w[3] = {m.pos.x, m.pos.y, m.pos.z}, sc[2] = {0, 0};
         bool blink = ((int)(now * 4)) & 1;
         uint32_t col = blink ? m.argb : (m.argb & 0xFF000000) | ((m.argb >> 1) & 0x7F7F7F);
+        sc[0] = sc[1] = NAN;
         bool front = H->world_to_screen(w, sc) != 0;
+        if (g_arrow_fix) // BUG-9121: off screen is not behind
+            front = std::isfinite(sc[0]) && std::isfinite(sc[1]);
         if (front && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh) {
             H->overlay_text((int)sc[0] - text_width(m.text) / 2, (int)sc[1] - 10, col, m.text.c_str());
             continue;
@@ -3861,7 +3869,11 @@ void on_overlay(void*, int, void*)
             w[1] = p.y + h; // cell world: screen up is +y on the plane
             w[2] = p.z;
         }
-        const bool front = H->world_to_screen(w, sc) != 0;
+        // BUG-9121: world_to_screen returns 0 both behind the camera and off the screen (outside 1.2x the
+        // view); only behind leaves the point unwritten. Off screen it is still the direction to point.
+        sc[0] = sc[1] = NAN;
+        H->world_to_screen(w, sc);
+        const bool front = g_arrow_fix ? std::isfinite(sc[0]) && std::isfinite(sc[1]) : H->world_to_screen(w, sc) != 0;
         if (g_partner_arrows && sw > 0 && sh > 0) {
             const float size = std::clamp(sh / 24.f,30.f,60.f);
             const bool visible = front && sc[0] >= 40 && sc[0] < sw-40 && sc[1] >= 70 && sc[1] < sh-70;
@@ -6928,6 +6940,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    },
                    nullptr, MT);
     cellsync::Ctx cc;
+    cc.feed = [](const std::string& t) { feed(t); }; // BUG-9123
     cc.sess = &g_sess;
     cc.partners = partners;
     cc.notice = [](const std::string& t) { notice(t, -1); };

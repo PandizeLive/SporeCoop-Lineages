@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Cell: a partner's respawn no longer blacks out your screen (BUG-9122).
+- Arrows to an off-screen partner (and map marks) point at them instead of
+  straight down (BUG-9121).
+- Cell: the shared DNA is explained: when a partner's editor spends it, the
+  others see "A partner spent N of the shared DNA" (BUG-9123).
+- Cell: your own creations make up 1 in 6 of a species' spawns (was 1 in 4).
+- Creature: bones a partner used also move to their used look here, where the
+  save's bones have one (BUG-9124, partly).
+
 ## [0.7.8-lineages49-dev] - 2026-11-11
 
 - Spore's Settings no longer vanishes when you open Audio Settings (or Game &
