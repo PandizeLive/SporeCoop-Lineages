@@ -125,7 +125,8 @@ static void set_position(void* rb, const Vec3& p)
     if (model && readable(model, 0x18)) field<Vec3>(model, 0x0C) = p;
 }
 
-// "Out of the body": from the nearest spine segment through the part (and that distance).
+// "Out of the body" as the spine sees it: from the nearest spine segment through the part (and that
+// distance). Used for the depth limits; the handle's direction is the skin's normal below.
 static Vec3 outward(void* em, void* rb, float* dist = nullptr)
 {
     const Vec3 p = position(rb);
@@ -139,6 +140,29 @@ static Vec3 outward(void* em, void* rb, float* dist = nullptr)
     }
     if (dist) *dist = best < 1e8f ? best : 0.f;
     return dir;
+}
+
+// BUG-9116: straight in and out of the skin. EditorRigblock +0xA8 is the attach (pin) frame, a 3x3
+// rotation stored by rows; its second row, negated, points out of the skin where the part sits
+// (runtime 2026-11-11: a side detail out sideways, the front detail forward, the tail details back, a
+// back detail up; two details pinned at one spot share it while their own rotation +0x60 differs).
+// The line from the spine through the part (the first version) was slanted wherever the skin is not
+// round about the spine. `coop.fix editor.depth_normal off`: that line.
+static bool g_normal = true;
+COOP_FIX("editor.depth_normal", "BUG-9116", g_normal, "editor: the depth handle moves a part straight in and out of the skin (off: along the line from the spine)");
+
+static Vec3 skin_normal(void* em, void* rb)
+{
+    if (g_normal && readable(rb, 0xA8 + 36)) {
+        const float* m = reinterpret_cast<const float*>(static_cast<uint8_t*>(rb) + 0xA8);
+        const Vec3 r0{m[0], m[1], m[2]}, r1{m[3], m[4], m[5]}, r2{m[6], m[7], m[8]};
+        const float l = r1.len();
+        auto unit = [](const Vec3& v) { return std::fabs(v.len() - 1.f) < 0.02f; };
+        const float d01 = r0.x * r1.x + r0.y * r1.y + r0.z * r1.z, d12 = r1.x * r2.x + r1.y * r2.y + r1.z * r2.z;
+        if (std::isfinite(l) && unit(r0) && unit(r1) && unit(r2) && std::fabs(d01) < 0.02f && std::fabs(d12) < 0.02f)
+            return r1 * (-1.f / l);
+    }
+    return outward(em, rb);
 }
 
 // The mirrored twin of a symmetric part: x mirrored (left and right pieces can be different
@@ -166,7 +190,15 @@ constexpr float kOffset = 0.18f;   // world units outside the part's anchor, tim
 constexpr float kOutBody = 0.3f;   // at most this fraction of the body depth out...
 constexpr float kOutScale = 0.2f;  // ...and at most this many times the part scale
 constexpr float kInBody = 0.25f;   // stays at least this fraction of the body depth from the spine
-constexpr int kHalf = 9;           // square half size in pixels
+constexpr int kHalf = 9;           // the flat square's half size in pixels (editor.depth_size off)
+// BUG-9116: the cube is a thing in the scene like Spore's handle balls and arrows: a world size, so it
+// grows and shrinks with the editor's zoom as they do (it was 9 pixels at every zoom). Never smaller
+// than kMinHalfPx on screen, so it stays easy to grab far out.
+constexpr float kHalfWorld = 0.028f;
+constexpr float kMinHalfPx = 5.f;
+static bool g_size = true;
+COOP_FIX("editor.depth_size", "BUG-9116", g_size, "editor: the depth cube has a size in the scene and zooms with Spore's handles (off: 9 pixels)");
+static float g_half_px = kHalf; // the cube's half size on screen last drawn (the click area)
 struct Drag {
     void* rb = nullptr;
     void* twin = nullptr;
@@ -175,9 +207,10 @@ struct Drag {
     int x0 = 0, y0 = 0;
     float depth = 0, lo = 0, hi = 0;
 };
-// first-seen spine distance of each part in the open editor model (drags do not add up)
+// where each part sat when the editor first saw it, and its spine distance then (drags do not add up)
+struct Base { void* rb; Vec3 pos; float dist; };
 static void* g_base_em;
-static std::vector<std::pair<void*, float>> g_base;
+static std::vector<Base> g_base;
 static Drag g_drag;
 static bool g_dragging, g_hover;
 static float g_square[2] = {-1, -1};
@@ -195,7 +228,7 @@ static float part_scale(void* rb)
 static bool square_for(void* em, void* rb, float out[2], Vec3* dir_out = nullptr, Vec3* at_out = nullptr)
 {
     if (!rb || !readable(rb, 0x50) || why_not(rb)) return false;
-    const Vec3 dir = outward(em, rb);
+    const Vec3 dir = skin_normal(em, rb);
     const Vec3 at = position(rb) + dir * (kOffset * part_scale(rb));
     if (!H->world_to_screen(&at.x, out) || !std::isfinite(out[0]) || !std::isfinite(out[1])) return false;
     if (dir_out) *dir_out = dir;
@@ -232,7 +265,8 @@ static bool draw_cube(IDirect3DDevice9* device, const Vec3& at, const Vec3& dir,
         if (H->world_to_screen(&p.x, s)) ppu = std::max(ppu, std::hypot(s[0] - c0[0], s[1] - c0[1]) / 0.05f);
     }
     if (!(ppu > 1.f) || !std::isfinite(ppu)) return false;
-    const float h = kHalf / ppu;
+    const float h = g_size ? std::max(kHalfWorld, kMinHalfPx / ppu) : kHalf / ppu;
+    g_half_px = h * ppu;
     // corners: bit 0 = +u, bit 1 = +v, bit 2 = +w
     float sc[8][2];
     for (int i = 0; i < 8; ++i) {
@@ -341,7 +375,8 @@ static bool input(unsigned message, uintptr_t, int x, int y)
         }
         return message == WM_LBUTTONDOWN;
     }
-    const bool over = g_square_rb && std::abs(x - g_square[0]) <= kHalf + 5 && std::abs(y - g_square[1]) <= kHalf + 5;
+    const float reach = g_half_px + 5.f;
+    const bool over = g_square_rb && std::fabs(x - g_square[0]) <= reach && std::fabs(y - g_square[1]) <= reach;
     if (message == WM_MOUSEMOVE) { g_hover = over; return false; }
     if (message != WM_LBUTTONDOWN || !over) return false;
     void* em = editor_model();
@@ -363,16 +398,21 @@ static bool input(unsigned message, uintptr_t, int x, int y)
     d.x0 = x;
     d.y0 = y;
     float cur = 0;
-    outward(em, d.rb, &cur);
+    const Vec3 spine_dir = outward(em, d.rb, &cur);
     if (g_base_em != em) { g_base.clear(); g_base_em = em; }
-    float base = cur;
-    auto it = std::find_if(g_base.begin(), g_base.end(), [&](const auto& b) { return b.first == d.rb; });
-    if (it != g_base.end()) base = it->second;
-    else g_base.emplace_back(d.rb, cur);
+    auto it = std::find_if(g_base.begin(), g_base.end(), [&](const Base& b) { return b.rb == d.rb; });
+    if (it == g_base.end()) { g_base.push_back({d.rb, d.start, cur}); it = g_base.end() - 1; }
+    const float base = it->dist;
     if (!(base > 1e-3f)) return false;
-    // depth moves the part along the line from the spine, so its spine distance is cur + depth
-    d.hi = std::max(0.f, base + std::min(kOutBody * base, kOutScale * part_scale(d.rb)) - cur);
-    d.lo = std::min(0.f, kInBody * base - cur);
+    // The limits, measured from where the part first sat, along the handle's line: out at most a little
+    // past the skin, in no further than short of the spine. Along the skin normal a step in brings the
+    // part closer to the spine by about cos(angle to the spine's line): the inward room grows by 1/cos.
+    const float off = dot(d.start - it->pos, d.dir);
+    const float out_max = std::min(kOutBody * base, kOutScale * part_scale(d.rb));
+    const float cosine = std::clamp(dot(d.dir, spine_dir), 0.3f, 1.f);
+    const float in_max = (1.f - kInBody) * base / cosine;
+    d.hi = std::max(0.f, out_max - off);
+    d.lo = std::min(0.f, -in_max - off);
     d.twin = twin(em, d.rb);
     if (d.twin) d.twin_start = position(d.twin);
     g_drag = d;
@@ -437,6 +477,37 @@ static int command(void*, int argc, const char* const* argv, SkOut* out)
     }
     void* ed = nullptr;
     void* em = editor_model(&ed);
+    if (em && argc >= 4 && !strcmp(argv[1], "nudge")) { // tests (BUG-9116): move a part along the handle's line
+        void* rb = (void*)(uintptr_t)strtoul(argv[2], nullptr, 16);
+        const auto parts = rigblocks(em);
+        if (std::find(parts.begin(), parts.end(), rb) == parts.end() || why_not(rb)) { say("not a depth part\n"); return 1; }
+        const Vec3 n = skin_normal(em, rb), spine = outward(em, rb), before = position(rb);
+        const float amount = (float)atof(argv[3]);
+        set_position(rb, before + n * amount);
+        const Vec3 after = position(rb), moved = after - before;
+        const float ml = moved.len();
+        say("normal %.3f %.3f %.3f (spine line %.3f %.3f %.3f) moved %.4f %.4f %.4f, along the normal %.4f, sideways %.5f\n",
+            n.x, n.y, n.z, spine.x, spine.y, spine.z, moved.x, moved.y, moved.z, dot(moved, n),
+            ml > 0 ? (moved - n * dot(moved, n)).len() : 0.f);
+        if (std::fabs(amount) > 1e-5f) H->run_outside_frame(commit, nullptr);
+        return 0;
+    }
+    if (em && argc >= 3 && !strcmp(argv[1], "where")) { // tests: a part's anchor on screen (to click it)
+        void* rb = (void*)(uintptr_t)strtoul(argv[2], nullptr, 16);
+        const auto parts = rigblocks(em);
+        if (std::find(parts.begin(), parts.end(), rb) == parts.end()) { say("no such part\n"); return 1; }
+        const Vec3 p = position(rb);
+        float s[2];
+        if (!H->world_to_screen(&p.x, s)) { say("off screen\n"); return 1; }
+        float ppu = 0; // screen pixels per world unit at the part (the camera's zoom there)
+        for (const Vec3& axis : {Vec3{1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, 0, 1}}) {
+            const Vec3 q = p + axis * 0.05f;
+            float t[2];
+            if (H->world_to_screen(&q.x, t)) ppu = std::max(ppu, std::hypot(t[0] - s[0], t[1] - s[1]) / 0.05f);
+        }
+        say("at %.0f %.0f ppu %.1f\n", s[0], s[1], ppu);
+        return 0;
+    }
     say("fix=%d editor=%p dragging=%d moves=%u commits=%u square=%.0f %.0f last range %.3f..%.3f\n", g_fix, em ? ed : nullptr,
         g_dragging, g_moves, g_commits, g_square_rb ? g_square[0] : -1.f, g_square_rb ? g_square[1] : -1.f, g_drag.lo, g_drag.hi);
     if (!em) return 0;

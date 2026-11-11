@@ -1544,3 +1544,18 @@ fix/w40-cell-evo 20261103-161211, rel/0.7.4 20261103-204638), so the editor star
 a config start budget, whatever the held post did. GetEvolutionPoints reads the same value inside the editor (40 -> 40
 while the part is bought: the editor keeps its own count until done, the result's +0x34 then sets it).
 ? Not looked at: where the Creature editor takes its start budget (OnEnter or the stage's DNA); no re-post needed.
+
+## The depth handle's line: the skin normal (2026-11-11, feat/lineages-47)
+<a id="creations-depth-skin-normal"></a>
+
+BUG-9116. Steam QA copy (GOG 2024 code), Creature editor.
+* ✔ EditorRigblock +0x60: the part's rotation, 3x3 by rows (includes the player's own turning of the
+  part). +0xA8: the attach (pin) frame, 3x3 by rows. Its second row, negated, points out of the skin at
+  the part: a side detail out sideways and up, the front detail forward, tail details backward, a back
+  detail up and back. Two details pinned at one spot share +0xA8 while their +0x60 differ.
+* ✔ Mirrored twins: the frames mirror in x (columns 1 and 2 mirror, column 0 flips: handedness).
+* ✔ Writing +0x48 and the model's +0x0C along that normal moves the part straight out (0.0200 along,
+  0 sideways on all 9 depth parts of the fixture creature).
+* Pitfall: the creature editor opened with `coop.depth open` from inside a running stage, or in the
+  background QA window, did not render its 3D view and `world_to_screen` returned one point (ppu 0.1):
+  no screen checks of handles there.
