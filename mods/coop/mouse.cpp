@@ -3,6 +3,7 @@
 #include "fixes.h"
 
 #include <windows.h>
+#include <string>
 
 namespace mouse {
 
@@ -17,6 +18,11 @@ static bool (*g_depth_input)(unsigned, uintptr_t, int, int);
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
 static volatile int g_mx = -1, g_my = -1; // the last mouse move over the game window (client pixels)
+static std::u16string g_chars; // BUG-0482: WM_CHAR seen since the last take_chars (main thread)
+static size_t g_click_pos = std::u16string::npos; // BUG-0551: where in g_chars the last click came
+static bool g_own_armed, g_last_own;
+static int g_own_x, g_own_y;
+static ULONGLONG g_own_until;
 
 static bool ours(HWND w)
 {
@@ -71,7 +77,13 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             g_x = p.x;
             g_y = p.y;
             g_clicks = g_clicks + 1;
+            g_click_pos = g_chars.size();
+            g_last_own = g_own_armed && p.x == g_own_x && p.y == g_own_y && GetTickCount64() < g_own_until;
+            if (g_last_own)
+                g_own_armed = false;
         }
+        if (m->message == WM_CHAR && ours(m->hwnd) && g_chars.size() < 256)
+            g_chars.push_back((char16_t)m->wParam);
     }
     return CallNextHookEx(g_hook, code, wp, lp);
 }
@@ -103,6 +115,27 @@ void last_move(int& x, int& y)
     x = g_mx;
     y = g_my;
 }
+
+std::u16string take_chars(std::u16string* after_click)
+{
+    if (after_click)
+        *after_click = g_click_pos != std::u16string::npos && g_click_pos < g_chars.size() ? g_chars.substr(g_click_pos)
+                                                                                         : std::u16string();
+    g_click_pos = std::u16string::npos;
+    std::u16string r;
+    r.swap(g_chars);
+    return r;
+}
+
+void own_click(int x, int y)
+{
+    g_own_x = x;
+    g_own_y = y;
+    g_own_until = GetTickCount64() + 5000;
+    g_own_armed = true;
+}
+
+bool last_click_own() { return g_last_own; }
 
 void last_click(int& x, int& y)
 {

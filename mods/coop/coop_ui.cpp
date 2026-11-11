@@ -336,7 +336,8 @@ COOP_FIX("core.ui_locked_clicks", "BUG-0273", g_locked_clicks_fix, "ui: co-op wi
 static bool g_tribal_clicks_fix = true;
 COOP_FIX("core.ui_tribal_clicks", "BUG-9018", g_tribal_clicks_fix, "ui: Tribal co-op buttons recover clicks swallowed without a native input lock");
 static std::map<Win, std::function<void()>> g_btn_fn; // every button of the window and its action
-static std::map<Win, double> g_btn_native;            // when the game last delivered a click to it
+static std::map<Win, double> g_btn_native;
+static std::map<Win, int> g_edit_max;                 // every text line of the window and its length (BUG-0482)            // when the game last delivered a click to it
 static Win g_locked_btn;                              // a click under the lock waits for the game
 static double g_locked_at;
 static unsigned g_locked_clicks, g_locked_native;     // tests: clicks given / the game delivered itself
@@ -348,6 +349,45 @@ static int input_lock()
     using Get_t = uint8_t*(__cdecl*)();
     uint8_t* im = get ? ((Get_t)get)() : nullptr;
     return im && !IsBadReadPtr(im + 0x110, 4) ? *(int*)(im + 0x110) : 0;
+}
+
+// BUG-0482 follow-up: a modal box of the game (the "game saved" box, the window manager's modal window
+// cWindowManager +0x82C, PushModal; gamefixes.cpp BUG-0270) takes the clicks like the input lock does: a
+// chat line clicked while the host's "game saved" box was up never took the typing (play_creature, rel/0.7.4
+// out/lab/20261103-224540). The locked paths (buttons, text lines) take any such box too. Off: only the
+// input lock (0.7.4).
+static bool g_modal_fix = true;
+COOP_FIX("core.ui_modal_edit", "BUG-0482", g_modal_fix, "ui: the co-op window's buttons and chat line work while a modal box of the game (\"game saved\") is up");
+static unsigned g_modal_seen; // tests: frames with a modal box of the game seen under a click
+
+static void* game_modal()
+{
+    uintptr_t get = H ? H->sym("UTFWin::IWindowManager::Get") : 0;
+    using Get_t = uint8_t*(__cdecl*)();
+    uint8_t* wm = get ? ((Get_t)get)() : nullptr;
+    void* m = wm && !IsBadReadPtr(wm + 0x82C, 4) ? *(void**)(wm + 0x82C) : nullptr;
+    if (!m)
+        return nullptr;
+    for (Win w = (Win)m; w; w = sui::parent(w)) // our own window is no box of the game
+        if (w == D.root)
+            return nullptr;
+    return m;
+}
+
+// BUG-0599: the window steps aside (hidden for a moment) while the mod clicks the game's "game saved" box under it
+static double g_aside_until;
+static bool root_up() { return D.root && (sui::visible(D.root) || (H && H->time_seconds() < g_aside_until)); }
+
+// clicks on our window are dropped now: the input lock (a caption) or a modal box of the game
+static bool clicks_locked()
+{
+    if (input_lock() > 0)
+        return true;
+    if (g_modal_fix && game_modal()) {
+        g_modal_seen++;
+        return true;
+    }
+    return false;
 }
 
 static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, const std::string& t,
@@ -401,7 +441,7 @@ static void locked_click_tick(bool clicked)
     }
     const bool tribal_fallback = g_tribal_clicks_fix && A.mode && A.mode() == modes::kTribe && tribe::village_orders();
     if (!clicked || !g_locked_clicks_fix || !mouse::g_fix || !g_want_open || !D.root || !sui::visible(D.root) ||
-        g_locked_btn || (input_lock() <= 0 && !tribal_fallback))
+        g_locked_btn || (!clicks_locked() && !tribal_fallback))
         return;
     int cx = 0, cy = 0;
     mouse::last_click(cx, cy);
@@ -424,8 +464,117 @@ static Win add_edit(std::vector<Win>& page, const char* name, const Rect& r, con
     if (w) {
         page.push_back(w);
         g_named[name] = w;
+        g_edit_max[w] = max_len;
     }
     return w;
+}
+
+// BUG-0482: a click on one of our text lines under the game's input lock (a caption: a part found, the
+// death, a nest claimed) is dropped like every click (BUG-0273), so the line never takes the focus and
+// what the player types next goes nowhere (play_creature lost a chat line typed while the "new part"
+// caption was up). The mod then takes the typing itself: the characters the game window takes from its
+// queue (mouse::take_chars) go into that line, Backspace erases, Enter does what Enter in the line does
+// (the chat: send). It stops at the next click anywhere else, when the window closes, or as soon as the
+// game changes the line's text itself (it has the focus after all: never typed twice).
+// `coop.fix core.ui_locked_edit off`: the typing is lost (0.7.3.6).
+static void do_send_chat();
+static bool g_locked_edit_fix = true;
+COOP_FIX("core.ui_locked_edit", "BUG-0482", g_locked_edit_fix, "ui: the co-op window's chat line takes the typing while a caption holds the game's input lock");
+static Win g_locked_edit;          // the line clicked under the lock, typed by the mod
+static std::string g_locked_text;  // its text as the mod left it (the game changing it: it has the focus)
+static unsigned g_locked_typed;    // tests: characters the mod typed
+static std::u16string g_typed_queue;
+
+static void locked_edit_apply(void*)
+{
+    Win w = g_locked_edit;
+    std::u16string q;
+    q.swap(g_typed_queue);
+    if (!w || !root_up() || !sui::visible(w))
+        return;
+    std::string t = sui::edit_text(w);
+    if (t != g_locked_text) { // the game typed into it itself
+        g_locked_edit = nullptr;
+        return;
+    }
+    int max_len = g_edit_max.count(w) ? g_edit_max[w] : 120;
+    bool enter = false;
+    for (char16_t c : q) {
+        if (c == 0x0D) {
+            enter = true;
+            break;
+        }
+        if (c == 0x08) {
+            while (!t.empty() && (t.back() & 0xC0) == 0x80) // a UTF-8 continuation byte
+                t.pop_back();
+            if (!t.empty())
+                t.pop_back();
+        } else if (c >= 0x20 && (int)t.size() < max_len) {
+            char b[4];
+            int n = c < 0x80 ? (b[0] = (char)c, 1)
+                    : c < 0x800 ? (b[0] = (char)(0xC0 | (c >> 6)), b[1] = (char)(0x80 | (c & 0x3F)), 2)
+                                : (b[0] = (char)(0xE0 | (c >> 12)), b[1] = (char)(0x80 | ((c >> 6) & 0x3F)),
+                                   b[2] = (char)(0x80 | (c & 0x3F)), 3);
+            t.append(b, n);
+            g_locked_typed++;
+        }
+    }
+    sui::set_edit_text(w, t);
+    g_locked_text = sui::edit_text(w);
+    if (enter && w == D.chat_edit) {
+        do_send_chat();
+        g_locked_text = sui::edit_text(w);
+    }
+}
+
+// every frame (main thread): a click under the lock on a line starts the mod's typing, any other click ends it
+// BUG-0551: a chat line typed while the host was paused saving the world for a returning guest was lost
+// (play_creature, out/lab/20261104-135838): the mod took the typing (the "game saved" box is a modal window)
+// and two things ended it: the mod's own click on the box's OK button (world.cpp box_task) counted as "a click
+// anywhere else", and a frame held by the save took the click and the keys after it at once, and the keys of
+// the frame of a click were dropped. The mod's own click no longer ends the typing, and the keys that came
+// after the click in its frame go into the line. Off: both lost (0.7.7).
+static bool g_locked_keep_fix = true;
+COOP_FIX("core.ui_locked_edit_keep", "BUG-0551", g_locked_keep_fix, "ui: the chat line typed under the game saved box keeps its typing over the mod's own click on the box and a held frame");
+
+static void locked_edit_tick(bool clicked)
+{
+    std::u16string after;
+    std::u16string chars = mouse::take_chars(&after);
+    if (clicked && g_locked_keep_fix && g_locked_edit && mouse::last_click_own())
+        clicked = false; // the mod confirmed the game's box: the player goes on typing
+    if (clicked) {
+        g_locked_edit = nullptr;
+        if (g_locked_edit_fix && mouse::g_fix && g_want_open && D.root && sui::visible(D.root) && clicks_locked()) {
+            int cx = 0, cy = 0;
+            mouse::last_click(cx, cy);
+            for (auto& [w, n] : g_edit_max) {
+                if (!sui::visible(w))
+                    continue;
+                Rect r = sui::screen_rect(w);
+                if (cx >= r.x1 && cx < r.x2 && cy >= r.y1 && cy < r.y2) {
+                    g_locked_edit = w;
+                    g_locked_text = sui::edit_text(w);
+                    H->log(M, SK_INFO, "ui: a click on a co-op text line while the game's input is locked (a caption): "
+                                       "the mod takes the typing");
+                    break;
+                }
+            }
+        }
+        if (!g_locked_keep_fix || !g_locked_edit || after.empty())
+            return; // (characters of the frame of the click before it went to whatever had the focus before)
+        chars = after; // the keys after the click in the same frame (a frame held by the save)
+    }
+    if (!g_locked_edit || chars.empty())
+        return;
+    if (!g_want_open || !root_up()) {
+        g_locked_edit = nullptr;
+        return;
+    }
+    bool queued = !g_typed_queue.empty();
+    g_typed_queue += chars;
+    if (!queued)
+        H->run_outside_frame(locked_edit_apply, nullptr);
 }
 
 // ttl: seconds the text stays (0: until the session event that ends it, session_event)
@@ -751,6 +900,8 @@ static void build_dialog()
     D = Dialog{};
     g_named.clear();
     g_btn_fn.clear();
+    g_edit_max.clear();
+    g_locked_edit = nullptr;
     g_btn_native.clear();
     g_locked_btn = nullptr;
     D.root = root;
@@ -1516,7 +1667,7 @@ static void refresh()
     }
     if (g_want_open && g_recenter_fix)
         place_window(D.root);
-    show(D.root, g_want_open);
+    show(D.root, g_want_open && H->time_seconds() >= g_aside_until);
     if (!g_want_open) {
         if (A.lan_scan)
             A.lan_scan(false);
@@ -1908,6 +2059,20 @@ void draw_tooltip()
         H->run_outside_frame(apply_tooltip, nullptr); // UI changes: outside Present
     }
 }
+
+bool step_aside(int x, int y, double secs)
+{
+    if (!g_want_open || !D.root || !sui::visible(D.root))
+        return false;
+    Rect r = sui::screen_rect(D.root);
+    if (x < r.x1 || x >= r.x2 || y < r.y1 || y >= r.y2)
+        return false;
+    sui::set_visible(D.root, false);
+    g_cache[D.root].vis = 0;
+    g_aside_until = H->time_seconds() + secs;
+    g_dirty = true;
+    return true;
+}
 int input_lock_now() { return input_lock(); }
 
 void tick()
@@ -1937,6 +2102,7 @@ void tick()
     bool lb = mouse::g_fix ? nclicks != g_lb_seen : (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     g_lb_seen = nclicks;
     locked_click_tick(mouse::g_fix && lb);
+    locked_edit_tick(mouse::g_fix && lb);
     if (mouse::g_fix)
         g_lb_down = false;
     // menu_intro_playing() (mode-checked) before any call on the item
@@ -2004,8 +2170,10 @@ std::string debug_state()
     std::string s = "open=" + std::to_string(g_want_open) + " page=" +
                     (A.role() ? (g_space_page ? "space" : "lobby") : "connect") +
                     " menu_button=" + (g_menu_btn ? "yes" : "no") + " in_menu=" + (in_menu() ? "1" : "0") +
-                    " input_lock=" + std::to_string(input_lock()) + " locked_clicks=" + std::to_string(g_locked_clicks) +
+                    " input_lock=" + std::to_string(input_lock()) + " modal=" + (game_modal() ? "1" : "0") +
+                    " modal_seen=" + std::to_string(g_modal_seen) + " locked_clicks=" + std::to_string(g_locked_clicks) +
                     " locked_native=" + std::to_string(g_locked_native) +
+                    " locked_typed=" + std::to_string(g_locked_typed) +
                     " share_enabled=" + (D.share_btn && (sui::flags(D.share_btn) & sui::kFlagEnabled) ? "1" : "0") + "\n";
     char b[256];
     int sw = 0, sh = 0;

@@ -92,13 +92,27 @@ public:
     // first: ahead of what is queued (the player state must not wait behind a big snapshot)
     void send_unreliable(uint8_t type, const Writer& w, bool first = false);
     size_t pending_reliable() const { return rel_out_.size(); }
+    // the rel_id the next reliable message (or its first piece) gets; with it a caller marks the
+    // messages it sends: [before, after) of one send
+    uint16_t next_rel_id() const { return next_rel_id_; }
+    // every reliable message with a rel_id in [lo, hi) was acknowledged by the peer (its transport
+    // has it and delivers it in order), BUG-0542
+    bool rel_acked(uint16_t lo, uint16_t hi) const
+    {
+        for (auto& m : rel_out_)
+            if ((uint16_t)(m.rel_id - lo) < (uint16_t)(hi - lo))
+                return false;
+        return true;
+    }
 
     // Builds the next datagram if anything is due (messages, acks, keepalive).
     bool build_packet(uint32_t now, std::vector<uint8_t>& out, bool pace_world = false);
     // Parses a datagram, updates acks, delivers messages in order. false = invalid packet.
     bool on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver);
-    // Acknowledge before a frame's receive burst outruns the 128-packet window.
-    bool ack_urgent() const { return g_fix.bulk_acks && recv_since_send_ >= 48; }
+    // BUG-0405: so many packets arrived since our last one that the oldest of them would fall out
+    // of the ack bits of the next one: acknowledge now, not at the end of the frame
+    bool ack_urgent() const { return g_fix.bulk_acks && recv_since_send_ >= kAckEvery; }
+    static constexpr unsigned kAckEvery = 48;
 
     static bool looks_valid(const uint8_t* data, size_t n);
     static uint32_t peek_conn(const uint8_t* data, size_t n); // conn id of a valid packet
@@ -110,7 +124,7 @@ private:
         std::vector<uint8_t> payload;
         bool more = false; // a piece of a split message, more pieces follow (wire flag 2)
         uint32_t last_sent = 0;
-        uint16_t last_seq = 0;
+        uint16_t last_seq = 0; // the packet it went out in last (BUG-0405)
         int sends = 0;
     };
     struct SentPkt {
@@ -132,12 +146,15 @@ private:
     AckBits recv_bits_;
     bool have_remote_ = false;
     bool ack_pending_ = false;
-    uint32_t recv_since_send_ = 0;
-    uint16_t newest_acked_seq_ = 0;
-    bool any_acked_ = false;
     uint32_t last_send_ms_ = 0;
+    // paced world transfer (Lineages): when the last world chunk went out
     uint32_t last_world_chunk_ms_ = 0;
     bool sent_world_chunk_ = false;
+    // BUG-0405: packets received since our last packet (its ack bits cover 128 back), and the newest
+    // of our packets the peer acknowledged (a message sent before it and not acknowledged is lost)
+    unsigned recv_since_send_ = 0;
+    uint16_t newest_acked_seq_ = 0;
+    bool any_acked_ = false;
 
     std::deque<SentPkt> sent_;
     uint16_t next_rel_id_ = 0;

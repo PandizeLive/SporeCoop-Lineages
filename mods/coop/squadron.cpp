@@ -1,4 +1,5 @@
 #include "squadron.h"
+#include "civ.h"
 #include "vehicle_health.h"
 
 #include <algorithm>
@@ -23,6 +24,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "creations.h"
+#include "savestrip.h"
 
 using skg::thiscall;
 using skg::vcall;
@@ -263,7 +265,11 @@ static int SK_THISCALL h_FireTool(void* mgr, void* tool, void* owner, const floa
         g_puppet_shots++;
         return 0;
     }
-    return o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
+    int r = o_FireTool(mgr, tool, owner, aim, dp, a5, target, show);
+    // BUG-0477: the host's Civ shots go to the guests; BUG-0530: FireTool's al tells whether a shot left
+    civ::fire_observed(tool, owner, aim, target, (r & 0xFF) != 0);
+    civ::fire_local(owner, (uintptr_t)__builtin_return_address(0), (r & 0xFF) != 0);
+    return r;
 }
 
 // BUG-0378, BUG-0190: the UFO controller update (SporeCoop::UFOController_Update, a virtual
@@ -286,6 +292,114 @@ static void SK_THISCALL h_CtlUpdate(void* self, float* ctx)
     o_CtlUpdate(self, ctx);
 }
 
+// BUG-0479: a partner's ship is a Defender NPC UFO here (modes.cpp space_spawn), and the game sizes every
+// UFO itself each frame (cModelObject_SetScale 0xC88630 on the ship's loco +0x34, the scale at loco +0x64):
+// an NPC ship smaller than the player's own (3.30 vs 4.95 in a star system, 0.84 vs 4.82 seen on a
+// planet), so each player saw the other's ship at an NPC's size. A size set by the mod lasts one frame
+// (measured: 4.95 set, 3.30 again 2 s later), so this is not a replicated field: the game's own setter
+// is hooked and a partner's puppet gets the size the game gives the own ship in this view.
+// `coop.fix space.puppet_scale off`: the game's NPC size (0.7.3.6).
+static bool g_puppet_scale_fix = true;
+COOP_FIX("space.puppet_scale", "BUG-0479", g_puppet_scale_fix,
+         "space: a partner's ship is drawn at a player ship's size, not an NPC ship's");
+using SetScale_t = void(SK_THISCALL*)(void*, float);
+static SetScale_t o_SetScale;
+static void* g_loco_vt;                      // the UFO loco's vtable (read from the own ship)
+static uint32_t g_scale_puppet_calls, g_scale_replaced;
+static uintptr_t g_scale_caller;             // diagnostics: where the game sizes a puppet from
+static float g_scale_game = 0, g_scale_own = 0;
+// BUG-0485 (diagnostics): who gives an object the scale 10 the detector saw on the host's commodity
+// nodes (noun 0x0403DF5C, loco vtable 0x1469A28 -> this setter): caller and the object's vtable, logged
+// once per caller
+static uintptr_t g_ten_callers[8];
+static void SK_THISCALL h_SetScale(void* obj, float s)
+{
+    if (s > 9.99f && s < 10.01f && obj) {
+        uintptr_t ra = (uintptr_t)__builtin_return_address(0) - H->image_base() + 0x400000;
+        for (auto& c : g_ten_callers)
+            if (c == ra)
+                break;
+            else if (!c) {
+                c = ra;
+                H->log(M, SK_INFO, "scale 10 set on an object with vtable %08X from %08X (BUG-0485 diagnostics)",
+                       (unsigned)(*(uintptr_t*)obj - H->image_base() + 0x400000), (unsigned)ra);
+                break;
+            }
+    }
+    if (g_ok && obj && g_loco_vt && *(void**)obj == g_loco_vt && in_space()) {
+        void* u = (uint8_t*)obj - kLoco;
+        void* me = player_ufo();
+        if (me && u != me && C.puppet_owner && C.puppet_owner(u) >= 0) {
+            g_scale_puppet_calls++;
+            g_scale_caller = (uintptr_t)__builtin_return_address(0) - H->image_base() + 0x400000;
+            g_scale_game = s;
+            float own = F<float>(me, kLoco + 0x64); // cModelObject_GetScale: loco +0x64
+            g_scale_own = own;
+            if (g_puppet_scale_fix && std::isfinite(own) && own > 0.01f && own < 1000.f) {
+                s = own;
+                g_scale_replaced++;
+            }
+        }
+    }
+    o_SetScale(obj, s);
+}
+
+// BUG-0522: the ships this game shows for the session (the partners' puppets, Defenders of my empire made
+// by modes.cpp space_spawn; a guest's mirrors of the host's NPC ships; a puppet retired to a game mission)
+// are not this player's world, but a Space save wrote them like the game's own: a guest that loaded its
+// save alone had them back as ordinary Defenders of its empire where they stood (lab 20261104-094503:
+// both puppets and the mirror, no longer invincible). A savestrip filter writes a null reference for them
+// (both roles: the host's share save holds the guests' puppets too). BUG-0470's null rule: no list was
+// found that reads a null back where it wants a ship (cSimulatorSpaceGame +0x78, ModAPI's mNPC_UFOs, was
+// an empty vector in a system with 3 NPC ships; the noun list skips nulls; a reload ran with no fault),
+// so nothing is taken out of a list while the save is written. `coop.fix space.save_strip off`: saved
+// like the game's own (0.7.5).
+static bool g_save_strip_fix = true;
+COOP_FIX("space.save_strip", "BUG-0522", g_save_strip_fix, "saves: the partners' ships and the host's ship mirrors are kept out of Space saves");
+constexpr uint32_t kUfoNoun = 0x018EBADCu;
+static std::unordered_set<void*> g_strip_ufos;
+static uint32_t g_ufo_stripped, g_ufo_strip_saves;
+
+static std::vector<void*> listed_ufos() // every listed UFO, the dying ones too (they are written as well)
+{
+    std::vector<void*> r;
+    void* nm = game::noun_manager();
+    void* v = nm ? thiscall<void*>(a_GetAllUFOs, nm) : nullptr;
+    if (!v)
+        return r;
+    void** b = F<void**>(v, 0);
+    void** e = F<void**>(v, 4);
+    for (void** it = b; it && it < e && r.size() < 512; ++it)
+        if (*it && game::object_alive(*it))
+            r.push_back(*it);
+    return r;
+}
+
+static void ufo_save_start()
+{
+    g_strip_ufos.clear();
+    if (!g_save_strip_fix || !in_space())
+        return;
+    void* me = player_ufo();
+    for (void* u : listed_ufos())
+        if (u != me && (g_mirror_of.count(u) || (C.puppet_owner && C.puppet_owner(u) >= 0) || modes::space_retired(u)))
+            g_strip_ufos.insert(u);
+    if (g_strip_ufos.empty())
+        return;
+    g_ufo_strip_saves++;
+    H->log(M, SK_INFO, "space: %u ships of ours leave this save (space.save_strip)", (unsigned)g_strip_ufos.size());
+}
+
+static void ufo_save_end() { g_strip_ufos.clear(); }
+
+static bool ufo_save_filter(void* o, uint32_t noun)
+{
+    if (noun != kUfoNoun || g_strip_ufos.empty() || !g_strip_ufos.count(o))
+        return false;
+    g_ufo_stripped++;
+    return true;
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -302,10 +416,14 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->log(M, SK_WARN, "squadron: symbols missing, space co-op disabled");
         return false;
     }
+    savestrip::add_filter(ufo_save_filter); // BUG-0522
+    savestrip::add_save_hooks(ufo_save_start, ufo_save_end);
     H->hook_create(M, (void*)a_TakeDamage, (void*)h_TakeDamage, (void**)&o_TakeDamage);
     H->hook_create(M, (void*)a_FireTool, (void*)h_FireTool, (void**)&o_FireTool);
     if (uintptr_t a = H->sym("SporeCoop::UFOController_Update")) // GOG 2024 only (BUG-0378)
         H->hook_create(M, (void*)a, (void*)h_CtlUpdate, (void**)&o_CtlUpdate);
+    if (uintptr_t a = H->sym("cModelObject_SetScale")) // BUG-0479
+        H->hook_create(M, (void*)a, (void*)h_SetScale, (void**)&o_SetScale);
     return true;
 }
 
@@ -652,6 +770,7 @@ void tick(double now)
     modes::space_retired_tick(); // BUG-0218 (reads the UFO list only, before it touches a ship)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
         return;
+    g_loco_vt = *(void**)((uint8_t*)player_ufo() + kLoco); // BUG-0479 (h_SetScale)
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -703,6 +822,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
 }
 
+static std::string status_ships();
 void on_session_end()
 {
     clear_enemy_stats();
@@ -725,21 +845,31 @@ void on_session_end()
 
 std::string status()
 {
-    char b[420];
+    char sc[200];
+    snprintf(sc, sizeof sc, "space puppet scale: fix=%d sized=%u replaced=%u game=%.3f own=%.3f from=%08X\n",
+             g_puppet_scale_fix ? 1 : 0, g_scale_puppet_calls, g_scale_replaced, g_scale_game, g_scale_own,
+             (unsigned)g_scale_caller);
+    return status_ships() + sc;
+}
+
+static std::string status_ships()
+{
+    char b[560];
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b,
                  "space(host): ships=%u hits_in=%u damage_out=%u freed_by_game=%u puppet_shots_blocked=%u "
-                 "att_dropped=%u att_freed=%u controller_skips=%u\n",
+                 "att_dropped=%u att_freed=%u controller_skips=%u save_stripped=%u/%u\n",
                  (unsigned)g_hid.size(), g_hits_in, g_damage_out, game::g_ufos_freed, g_puppet_shots, g_att_dropped,
-                 g_att_freed, g_ctl_skipped);
+                 g_att_freed, g_ctl_skipped, g_ufo_stripped, g_ufo_strip_saves);
     else
         snprintf(b, sizeof b,
                  "space(guest): mirrors=%u created=%u removed=%u local_removed=%u hits_sent=%u damage_in=%u "
                  "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u stale_chunks=%u "
-                 "partial_cycles=%u posse_kept=%u unknown_models=%u content_checked=%u controller_skips=%u\n",
+                 "partial_cycles=%u posse_kept=%u unknown_models=%u content_checked=%u controller_skips=%u save_stripped=%u/%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
                  game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
-                 g_partial_cycles, g_posse_kept, g_unknown_models, g_content_checked, g_ctl_skipped);
+                 g_partial_cycles, g_posse_kept, g_unknown_models, g_content_checked, g_ctl_skipped, g_ufo_stripped,
+                 g_ufo_strip_saves);
     return b;
 }
 
@@ -750,19 +880,30 @@ std::string status()
 // session time (lag) and at an earlier one (lag taken out: a real offset stays). kind: m = our own
 // ship (the truth of this game), p = a partner's puppet, s = a host NPC ship (host: the ship itself,
 // guest: its mirror). off = mOffsetFromPosition (+0x740), zoom = mZoomAltitude (+0x768).
+// BUG-0388: a puppet's row also has the pose the mod gave it last (sx sy sz: the partner's state as
+// sampled, before the game's update), how far that state was extrapolated past the newest snapshot (ex,
+// s) and whether it was pinned for the game's update (pin); other rows: their own position, 0, 0.
 struct TrackRow {
     float t;
     char kind;
     uint16_t id;
     float x, y, z, ox, oy, oz, zoom;
+    float sx, sy, sz, ex;
+    uint8_t pin;
 };
 static std::deque<TrackRow> g_track;
 static bool g_track_on;
 constexpr size_t kTrackMax = 120000;
 
+static void track_rows(double t, bool clock_ok);
 void frame_start(double t, bool clock_ok)
 {
+    track_rows(t, clock_ok);  // (before the clear: a row tells whether its puppet was pinned)
     modes::space_pin_frame(); // BUG-0378: what was pinned for the game's last update is done
+}
+
+static void track_rows(double t, bool clock_ok)
+{
     if (!g_track_on || !clock_ok || !in_space() || !C.sess || !C.sess->connected())
         return;
     void* me = player_ufo();
@@ -771,7 +912,10 @@ void frame_start(double t, bool clock_ok)
     auto row = [&](char kind, uint16_t id, void* u) {
         auto& p = F<float[3]>(u, kPos);
         auto& o = F<float[3]>(u, 0x740);
-        g_track.push_back({(float)t, kind, id, p[0], p[1], p[2], o[0], o[1], o[2], F<float>(u, 0x768)});
+        float sp[3] = {p[0], p[1], p[2]}, ex = 0;
+        bool noted = kind == 'p' && modes::space_drive_note(u, sp, ex);
+        g_track.push_back({(float)t, kind, id, p[0], p[1], p[2], o[0], o[1], o[2], F<float>(u, 0x768), sp[0], sp[1], sp[2],
+                           ex, (uint8_t)(noted && modes::space_pinned(u))});
     };
     for (void* u : all_ufos()) {
         if (u == me) {
@@ -802,8 +946,8 @@ static std::string track_cmd(const std::vector<std::string>& a)
         std::string out;
         for (size_t i = from; i < g_track.size() && i < from + n; i++) {
             const auto& r = g_track[i];
-            snprintf(b, sizeof b, "%.4f %c %u %.2f %.2f %.2f %.2f %.2f %.2f %.1f\n", r.t, r.kind, r.id, r.x, r.y, r.z,
-                     r.ox, r.oy, r.oz, r.zoom);
+            snprintf(b, sizeof b, "%.4f %c %u %.2f %.2f %.2f %.2f %.2f %.2f %.1f %.2f %.2f %.2f %.3f %u\n", r.t, r.kind, r.id,
+                     r.x, r.y, r.z, r.ox, r.oy, r.oz, r.zoom, r.sx, r.sy, r.sz, r.ex, (unsigned)r.pin);
             out += b;
         }
         return out;
@@ -829,9 +973,11 @@ std::string debug(const std::vector<std::string>& a)
                 id = g_hid[u];
             else if (g_mirror_of.count(u))
                 id = g_mirror_of[u];
-            snprintf(b, sizeof b, "  ship #%d %p type=%d pol=%08X hp=%.0f/%.0f%s pos=(%.0f %.0f %.0f)\n", id, u,
-                     F<int>(u, kType), F<uint32_t>(u, kPol), F<float>(u, kHp), F<float>(u, kMaxHp),
-                     u == me ? " (me)" : "", p.x, p.y, p.z);
+            // (inv, model, puppet: BUG-0522's save test tells our ships from the game's by them)
+            snprintf(b, sizeof b, "  ship #%d %p type=%d pol=%08X hp=%.0f/%.0f%s pos=(%.0f %.0f %.0f) inv=%d model=%08X%s\n",
+                     id, u, F<int>(u, kType), F<uint32_t>(u, kPol), F<float>(u, kHp), F<float>(u, kMaxHp),
+                     u == me ? " (me)" : "", p.x, p.y, p.z, (int)F<uint8_t>(u, kInvincible), F<uint32_t>(u, kModel),
+                     modes::space_puppet_ok(u) ? " puppet" : "");
             out += b;
         }
         return status() + out;

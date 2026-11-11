@@ -8,14 +8,14 @@ reported: 2026-11-02
 source: player reports on Discord 2026-11-02 (bug-reports forum, 0.7.3.4, GOG host + Steam guest)
 role: host
 versions: 
-fixed_in:
-branch: feat/lineages-45
-commits:
-tests: QA host 9 + guest 8 (Cell, Cellfive.spo), coop.parts cellpick, see Verification
+fixed_in: 0.7.4
+branch: fix/w40-editor
+commits: 43ef1445 9681b9d3
+tests: cell_parts (tools/tests/coop_cell_parts.py)
 signature:
 docs: docs/re/cell.md#cell-parts-shared
-related: BUG-0401 BUG-0316 BUG-0446
-switch: parts.cell_shared
+related: BUG-0401, BUG-0316, BUG-0446
+switch: parts.shared_cell
 ---
 
 ## Report
@@ -23,29 +23,32 @@ Host's mark (s 433, 17:31): 'My guest just took a new piece in cell stage but i 
 Target: 0.7.4. Owner request (2026-11-10): parts either player unlocked, also before the session, are everyone's.
 
 ## Root cause
-The Cell stage keeps its parts in 13 slots of the Cell player's data (S+0x34 + 4*part, S = cCellGame
-+0x5190; 0 locked, 1 unlocked in a save, 2 just collected), not in the Creature's collected items that
-parts.shared (BUG-0401) shares. Nothing sent them. Observed (QA, sharing off): the host's slot 12 and the
-guest's slot 1 each stayed in their own game.
+Observed (objdump GOG 2024, lab 20261103-142941 with the fix off): the Cell stage's collected parts are 13
+ints at cCellSerializableData +0x34 (0 locked, 1 unlocked, 2 new), set by 0xE5D7B0
+(`Simulator::Cell::CollectPart`, the part token's collision) in the collecting player's game only;
+the cell editor's palette is built from them (0xE4FAA0). parts.shared (BUG-0401) covers the creature
+parts (cPlayer +0x10E8) only, so a guest's Cell part never reached the host (the host's state stayed 0,
+its mating-call button too) and the other way round.
 
 ## Fix
-The Cell slots join parts.shared's host-held union as keys {0xCE11BA57, slot}: a guest sends the slots
-it has and the host lacks, the host unlocks them (2, and the mating-call button S+0x68 / S+0x69, as a
-collected token does: 0xE5D7B0) and sends its set, every guest in the host's world unlocks what it lacks.
-On a join both games' slots merge (retroactive: what either player had is everyone's). The host's set is
-per world and stage (Cell slots and Creature items are separate sets). Switch: `coop.fix parts.cell_shared off`.
+`parts.shared_cell` (parts.cpp, MSG_PARTS kinds 3 and 4, older SporeCoop ignores them): every game polls
+the 13 states in a live Cell game (1 Hz); a guest in the host's world sends the parts it has and the
+host lacks, the host collects them through the game's own CollectPart (outside the frame: the part
+pop-up, the mating-call button, the palette's items) and sends its set (at once on a change, else
+every 10 s); a guest collects what it lacks the same way. Nothing is locked. Notice "Bob found a new
+cell part: it is in your editor too". Also `coop.pool`'s `parts=` read the states as bytes (13 ints
+now). Test helper `coop.parts cell [collect <i>]`.
 
 ## Verification
-Windows QA (Steam copy, GOG 2024 code), host 9 + guest 8 in the host's Cell world (Cellfive.spo), 10 fps.
-`coop.parts cellpick <slot>` writes a slot as 0xE5D7B0 does.
-* OFF: host picked 12, guest picked 1: host 0011002101212, guest 0211002101210, each its own (the bug).
-* ON: within 8 s both 0211002101212 (earlier pickups merged); a live guest pickup (slot 10) reached the
-  host within 6 s. 0 faults on both. The guest's mating-call button showed after the share.
-* Pitfall: a pickup right after a join can be replaced by the guest's load of the host's world (it was
-  in the guest's copy before the load).
-* Not verified: the part offered in the Cell editor after a share (the game's own pickup writes the same
-  value); the Collect mission counter (1/6) does not count a shared part; two PCs.
+FAIL: SPORE_FIX_OFF=parts.shared_cell cell_parts, lab 20261103-142941 (lane 7: the guest's part 0 stays
+0 on the host, the host's mating-call button 0, the host's part 1 stays 0 on the guest).
+PASS: cell_parts, lab 20261103-142443 (lane 7: guest part 0 -> host state 2 and button 1 within 15 s;
+host part 1 -> guest state 2).
 
 ## History
 - 2026-11-02: opened.
-- 2026-11-10: fixed on feat/lineages-45 (parts.cell_shared).
+- 2026-11-03: fix/w40-editor: the party shares its Cell parts (parts.shared_cell); fixed (unreleased).
+- 2026-11-03: released in 0.7.4.
+- 2026-11-10: fixed again on feat/lineages-45 (parts.cell_shared, Cell slots in the parts.shared union).
+- 2026-11-10: 0.7.8 merge into Lineages: the Lineages duplicate (parts.cell_shared, feat/lineages-45) was
+  dropped; upstream's parts.shared_cell (fixed in 0.7.4) is kept.

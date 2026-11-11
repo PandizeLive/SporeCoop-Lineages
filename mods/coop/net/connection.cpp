@@ -114,17 +114,26 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out, bool pace
 {
     uint32_t rto = (uint32_t)std::max(100.f, rtt_ms * 1.5f + 20.f);
     uint16_t oldest = rel_out_.empty() ? 0 : rel_out_.front().rel_id; // rel_out_ is in rel_id order
-    // Upstream BUG-0405: a loading guest may not read its socket for hundreds
-    // of milliseconds. Wait for evidence of a lost packet or a long silence.
+    // BUG-0405: a guest that loads reads and acks its packets once per frame (frames of 200-950 ms):
+    // every message sent in the last stall was resent at the rto although it waited in the guest's
+    // socket. A message is sent again when a packet sent after it was acknowledged (it was lost) or
+    // when the peer has said nothing for a long while (both lost, or a stall); the rto first in both.
     uint32_t silent_rto = std::max<uint32_t>(rto * 4, 1000);
+    bool evidence = g_fix.bulk_acks;
+    // paced world transfer (Lineages): at most one world chunk per kPacedWorldIntervalMs
     const bool world_due = !sent_world_chunk_ || now - last_world_chunk_ms_ >= kPacedWorldIntervalMs;
     auto due = [&](const OutMsg& m) {
-        if (pace_world && m.type == MSG_WORLD_CHUNK && !world_due) return false;
-        if ((uint16_t)(m.rel_id - oldest) >= kRelWindow) return false;
-        if (m.sends == 0) return true;
-        if (now - m.last_sent < rto) return false;
-        return !g_fix.bulk_acks || (any_acked_ && seq_greater(newest_acked_seq_, m.last_seq)) ||
-            now - m.last_sent >= silent_rto;
+        if (pace_world && m.type == MSG_WORLD_CHUNK && !world_due)
+            return false;
+        if ((uint16_t)(m.rel_id - oldest) >= kRelWindow)
+            return false;
+        if (m.sends == 0)
+            return true;
+        if (now - m.last_sent < rto)
+            return false;
+        if (!evidence)
+            return true;
+        return (any_acked_ && seq_greater(newest_acked_seq_, m.last_seq)) || now - m.last_sent >= silent_rto;
     };
     bool any_rel_due = false;
     for (auto& m : rel_out_) {
@@ -271,7 +280,7 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
     stats.bytes_recv += n;
     last_recv_ms = now;
     ack_pending_ = true;
-    ++recv_since_send_;
+    recv_since_send_++;
 
     // receive window
     if (!have_remote_) {

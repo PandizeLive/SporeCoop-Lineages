@@ -10,6 +10,8 @@
 #include <windows.h>
 
 #include "cell_logic.h"
+#include "cellsync.h"
+#include "dna_pace.h"
 #include "game.h"
 #include "gamefixes.h"
 #include "modes.h"
@@ -21,14 +23,58 @@ static const SkHost* H;
 #define SAY(...) H->out_printf(out, __VA_ARGS__)
 
 namespace {
-int c_save(void*, int, const char* const*, SkOut* out)
+int c_save(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "confirm")) { // tests: the held box is confirmed as usual again
+        world::g_box_hold = false;
+        SAY("box released");
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "box")) {
+        SAY("saved_box=%d hold=%d", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0);
+        return 0;
+    }
+    world::g_box_hold = argc > 1 && !strcmp(argv[1], "hold"); // tests (BUG-0482): the box stays up
     std::string err;
     if (!world::save_game(err)) {
         SAY("%s", err.c_str());
         return 1;
     }
     SAY("saved (mode 0x%08X)", game::mode_id());
+    return 0;
+}
+
+// tests (BUG-0313, BUG-0576): every pause reason the game counts now. cGameTimeManager: +0x48 flags (bit 0 paused),
+// +0x4C a map reason -> index (EASTL rbtree, anchor +0x50: right +0, left +4, parent +8; node key +0x10, index
+// +0x14), +0x68 an array of 8-byte rows, the count first (Pause 0xB32330 / Resume 0xB32360 add / remove one;
+// docs/re/tribe.md#tribe-game-time-pauses)
+static void pause_walk(const uint8_t* n, const uint8_t* anchor, const uint8_t* arr, std::string& out, int depth)
+{
+    if (!n || n == anchor || depth > 64 || !skg::readable(n, 0x18))
+        return;
+    pause_walk(*(const uint8_t* const*)(n + 4), anchor, arr, out, depth + 1);
+    uint32_t key = *(const uint32_t*)(n + 0x10);
+    int idx = *(const int*)(n + 0x14);
+    int cnt = idx >= 0 && idx < 256 && skg::readable(arr + idx * 8, 4) ? *(const int*)(arr + idx * 8) : -999;
+    char b[64];
+    snprintf(b, sizeof b, " %08X=%d", key, cnt);
+    if (cnt)
+        out += b;
+    pause_walk(*(const uint8_t* const*)n, anchor, arr, out, depth + 1);
+}
+int c_pauses(void*, int, const char* const*, SkOut* out)
+{
+    uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
+    const uint8_t* tm = get ? skg::cdecl_call<const uint8_t*>(get) : nullptr;
+    if (!tm || !skg::readable(tm, 0x6C)) {
+        SAY("no time manager");
+        return 1;
+    }
+    const uint8_t* anchor = tm + 0x50;
+    const uint8_t* arr = *(const uint8_t* const*)(tm + 0x68);
+    std::string r;
+    pause_walk(*(const uint8_t* const*)(anchor + 8), anchor, arr, r, 0);
+    SAY("pauses: flags=%X paused=%d reasons:%s", *(const uint32_t*)(tm + 0x48), (int)(tm[0x48] & 1), r.empty() ? " none" : r.c_str());
     return 0;
 }
 
@@ -64,6 +110,20 @@ int c_leavewalk(void*, int, const char* const*, SkOut* out)
 int c_physorphan(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s", gamefixes::arm_physics_orphan().c_str());
+    return 0;
+}
+
+// tests (BUG-0453): the next NPC in its attack animation loses its target (as when the target is destroyed)
+int c_attackcut(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::arm_attack_cut().c_str());
+    return 0;
+}
+
+// tests (BUG-0582): the next attacker of a creature attack finds no spot record
+int c_spotcut(void*, int, const char* const*, SkOut* out)
+{
+    SAY("%s", gamefixes::arm_spot_cut().c_str());
     return 0;
 }
 
@@ -112,6 +172,23 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         float k = (g + 0.05f) / r;
         game::teleport(av, {p.x * k, p.y * k, p.z * k}, game::orientation(av));
         SAY("at ground %.2f\n", g);
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "put")) { // tests (BUG-0592): to x y z as given, no grounding [1: SetPosition]
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        if (argc > 5 && atoi(argv[5]) == 1)
+            game::set_position(av, p); // (the game puts a standing creature moved so back onto its ground)
+        else
+            game::teleport(av, p, game::orientation(av));
+        p = game::position(av);
+        SAY("at (%.2f %.2f %.2f)\n", p.x, p.y, p.z);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "halt")) { // tests (BUG-0408): it stops at once (a stop without slowing down)
+        game::stop(av);
+        game::teleport(av, game::position(av), game::orientation(av));
+        *(net::Vec3*)((uint8_t*)av + game::kVelOff) = net::Vec3{};
+        SAY("halted\n");
         return 0;
     }
     if (argc > 2 && !strcmp(argv[1], "lift")) { // put it <m> higher (its fall is the second half of a jump)
@@ -204,10 +281,12 @@ int c_cell(void*, int argc, const char* const* argv, SkOut* out)
         Vector3 pos{mp[0] + (argc > 3 ? (float)atof(argv[3]) : 4.f), mp[1] + (argc > 4 ? (float)atof(argv[4]) : 0.f), mp[2]};
         uint32_t idx = cdecl_call<uint32_t>(H->sym("Simulator::Cell::CreateCellObject"), *(void**)(g + 0x40FC), &pos, 0.f,
                                             *(void**)(src + 0x108), argc > 5 ? atoi(argv[5]) : *(int*)(src + 0x358), 1.f, 1.f, 1, (void*)nullptr, 0);
+        if (argc > 6) // tests (BUG-0455): the guests get this cell with a model instance they do not have
+            cellsync::set_fake_model(idx, strtoul(argv[6], nullptr, 16));
         SAY("created %08X from #%u", idx, slot);
         return 0;
     }
-    SAY("usage: coop.cell list | spawn <slot> [dx dy]");
+    SAY("usage: coop.cell list | spawn <slot> [dx dy [level [model instance hex sent to the guests]]]");
     return 1;
 }
 
@@ -401,9 +480,16 @@ namespace {
 int c_dna(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc > 2 && !strcmp(argv[1], "add")) {
-        // simulate a gain as the game would report it (goes through the coop hook)
+        // simulate a gain as the game would report it (goes through the coop hook), exactly N: test
+        // setups (not scaled by the party's pace, BUG-0510)
+        dna_pace::g_bypass = true;
         skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
+        dna_pace::g_bypass = false;
     }
+    if (argc > 2 && !strcmp(argv[1], "gain")) // a reward of the game (a kill, a friend): the party's pace applies (BUG-0510)
+        skg::cdecl_call<void>(H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"), (float)atof(argv[2]));
+    if (argc > 2 && !strcmp(argv[1], "pace")) // as coop.ini [coop] dna_pace (tests)
+        dna_pace::g_ini = atoi(argv[2]);
     if (argc > 2 && !strcmp(argv[1], "local")) // tests: our total only, as a host total we missed (BUG-0128)
         game::dna_add_raw((float)atof(argv[2]));
     SAY("dna=%.1f", game::dna());
@@ -526,7 +612,9 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_load, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ground", "coop.ground <x> <y> <z> - terrain radius under a point (tests, BUG-0329)", c_ground,
                       nullptr, SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+    host->command_add(self, "coop.abilities", "coop.abilities [play <i> | lift <m> | halt | put <x> <y> <z> | goto <x> <y> <z> | ground <x> <y> <z>] - the own avatar's abilities (tests, BUG-0366)", c_abilities,
+                      nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.pauses", "coop.pauses - the game's pause reasons counted now (tests, BUG-0313)", c_pauses,
                       nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.menu", "coop.menu - save and leave the stage for the galaxy menu (tests)", c_menu,
                       nullptr, SK_CMD_MAIN_THREAD);
@@ -538,9 +626,13 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_leavewalk, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.physorphan", "tests (BUG-0449): the next physics update gets a body of kind 0 without an owner",
                       c_physorphan, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.attackcut", "tests (BUG-0453): the next NPC in its attack animation loses its target (cleared as on the target's destroy)",
+                      c_attackcut, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.spotcut", "tests (BUG-0582): the next attacker of a creature attack finds no spot record (a cell without one)",
+                      c_spotcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.dna", "coop.dna [add|local <n>] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.dna", "coop.dna [add|gain|local <n> | pace 0|1] - shared DNA debug", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.memfind", "coop.memfind <hex dword> [max] - addresses holding the value (RE)",
                       c_memfind, nullptr, 0);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,

@@ -39,6 +39,8 @@ void request_autosave();
 // peers, then reload the host through the existing menu/load path.
 bool checkpoint_reload(std::string& err);
 bool post_quit_to_menu(std::string& err);
+extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set
+bool saved_box_up();     // the "game saved" box of our last save is up (seen, watched)
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
 // nullptr when it may
 void set_save_blocker(const char* (*probe)());

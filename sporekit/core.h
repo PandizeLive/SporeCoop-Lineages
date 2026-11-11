@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.6"
+#define SK_VERSION "0.3.11"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -108,6 +108,8 @@ void set_main_thread();
 struct Out {
     std::string text;
 };
+// append printf output to a command's output (BUG-0388: up to 1 MB per call, kit.fix longout)
+void out_vappend(Out* o, const char* fmt, va_list ap);
 bool console_start(int port);
 int command_add(SkMod* mod, const char* name, const char* help, SkCommandFn fn, void* user,
                 int flags);
@@ -217,11 +219,13 @@ std::string diag_headline_text();
 const std::string& diag_files_text();
 void diag_install();          // the crash filter, ExitProcess log
 void diag_after_device();     // GPU and other hooks into the log (once)
-void diag_hang_report(const char* why); // the watchdog: no frames while focused (once per run)
+void diag_hang_report(const char* why);
+void diag_init_failed(int result);      // BUG-0521: App::cSporeApp::Init returned 0 (the game ends) // the watchdog: no frames while focused (once per run)
 void diag_crash_test(const char* where); // tests: "thread" (unhandled) | "main"
 // watchdog.cpp
 void watchdog_start();
 void watchdog_mark(const char* stage);
+void watchdog_loop_tick();           // after every App::Canvas::Tick: the game loop is alive (BUG-0347)
 std::string watchdog_dump_now();
 
 // cheats.cpp
@@ -265,6 +269,7 @@ struct KitFix {
     const char* what;
     volatile LONG on;
 };
+extern KitFix g_fix_longout;   // BUG-0388: a command's printf output is not cut at 8 KB
 extern KitFix g_fix_stackdump; // BUG-0050: copy a suspended thread's stack, resume, then format
 extern KitFix g_fix_cheatwait; // BUG-0065: commands that wait for the main thread refuse to run on it
 extern KitFix g_fix_reentry;   // BUG-0115: the fault logger and the log are not re-entered by a fault
@@ -278,6 +283,8 @@ extern KitFix g_fix_iniencode; // BUG-0245: UTF-16 BE converted, unknown encodin
 extern KitFix g_fix_inilock;   // BUG-0245: a named mutex per settings file; no "????" writes
 extern KitFix g_fix_exitwait;  // BUG-0243: the exit waits for an update's file swaps
 extern KitFix g_fix_crashtid;  // BUG-0248: a crash report names the faulting thread
+extern KitFix g_fix_initfail;  // BUG-0521: a failed start of the game is reported and explained
+extern KitFix g_fix_hangloop;  // BUG-0347: no frames while the game loop runs (minimized) is not a hang
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 inline bool fixed(const KitFix& f) { return f.on != 0; }
 KitFix* kit_fix_find(const char* name);

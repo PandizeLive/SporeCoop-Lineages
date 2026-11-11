@@ -15,6 +15,8 @@
 #include "busy.h"
 #include "swap_ledger.h"
 #include "world_name.h"
+#include "fields_wire.h"
+#include "realign_rule.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -476,6 +478,74 @@ static void test_busy_gate()
     CHECK(busy::kShareGate == busy::kCinematic);
 }
 
+// fields_wire.h (BUG-0419 G2): MSG_FIELDS round trip, chunking, malformed packets, the compare rule
+static void test_fields_wire()
+{
+    fields_wire::Batch b;
+    b.kind = 2;
+    b.fids = {1};
+    for (int i = 0; i < 500; i++) { // more than one packet
+        b.ids.push_back((uint16_t)(i + 1));
+        b.vals.push_back(0.5f + i * 0.01f);
+    }
+    auto ws = fields_wire::encode(b);
+    CHECK(ws.size() >= 2);
+    std::vector<uint16_t> ids;
+    std::vector<float> vals;
+    for (auto& w : ws) {
+        CHECK(w.size() <= net::kMaxPacket - 64);
+        net::Reader r(w.data.data(), w.data.size());
+        fields_wire::Batch d;
+        CHECK(fields_wire::decode(r, d) && d.kind == 2 && d.fids == b.fids);
+        ids.insert(ids.end(), d.ids.begin(), d.ids.end());
+        vals.insert(vals.end(), d.vals.begin(), d.vals.end());
+    }
+    CHECK(ids == b.ids && vals == b.vals);
+    // a cut packet, a wrong count, no fields: refused
+    net::Writer& w = ws[0];
+    net::Reader cut(w.data.data(), w.data.size() - 1);
+    fields_wire::Batch d;
+    CHECK(!fields_wire::decode(cut, d));
+    std::vector<uint8_t> bad = {2, 0, 0, 0};
+    net::Reader nf(bad.data(), bad.size());
+    CHECK(!fields_wire::decode(nf, d));
+    fields_wire::Batch mism = b;
+    mism.vals.pop_back();
+    CHECK(fields_wire::encode(mism).empty());
+    // compare: 2 % of the wanted value, NaN always different; sane range
+    CHECK(!fields_wire::differs(1.01f, 1.0f, 0.02f));
+    CHECK(fields_wire::differs(0.93f, 0.80f, 0.02f)); // the first detector finding (BUG-0461)
+    CHECK(fields_wire::differs(std::nanf(""), 1.0f, 0.02f));
+    CHECK(!fields_wire::sane(1e30f, 0.001f, 1000.f) && !fields_wire::sane(-1.f, 0.001f, 1000.f) &&
+          fields_wire::sane(4.9f, 0.001f, 1000.f));
+}
+
+
+// W2 (BUG-0564): the whole-planet match and the extra streaks (realign_rule.h)
+static void test_realign_rule()
+{
+    using realign::Obj;
+    std::vector<Obj> host = {{0, 0, 0, 1000, realign::kFlPlayer}, {100, 0, 0, 500, 0}};
+    std::vector<Obj> local = {{1, 0, 0, 1000, realign::kFlPlayer}, {130, 0, 0, 900, 0}, {300, 0, 0, 0, 0}, {5, 0, 0, 0, 0}};
+    auto m = realign::match(host, local, 40.f);
+    CHECK(m.bound.size() == 2);   // the player village with the player's, the NPC one 30 m off
+    CHECK(m.lack.empty());
+    CHECK(m.extra.size() == 2);   // 300 m away, and the NPC village 5 m from the player's (another flag)
+    CHECK(realign::state_off(500, 900) && !realign::state_off(500, 515));
+    auto m2 = realign::match(host, local, 20.f);
+    CHECK(m2.lack.size() == 1 && m2.lack[0] == 1);
+    realign::Streaks s;
+    std::vector<uint64_t> due;
+    s.step({7, 8}, 2, 4, due);
+    CHECK(due.empty());            // one look is not enough
+    s.step({7}, 2, 4, due);
+    CHECK(due.size() == 1 && due[0] == 7);
+    s.step({8}, 2, 4, due);
+    CHECK(due.empty());            // 8 had a partner in between: it starts over
+    s.step({8}, 0, 4, due);
+    CHECK(due.empty() && s.n.empty()); // a host list without the kind while this game has several: no list of the planet
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -490,6 +560,8 @@ int main(int argc, char** argv)
     test_ids();
     test_hits();
     test_ledger();
+    test_fields_wire();
+    test_realign_rule();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

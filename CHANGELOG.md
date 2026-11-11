@@ -221,6 +221,260 @@
 - Wildlife sync diagnostics and proxy creation resolve cached native herds
   through the current object list before using them (BUG-9008).
 
+## [0.7.8] - 2026-11-05
+
+### Changed
+- The GOG 2016 build of Spore is no longer supported: please update the game through GOG (the current download
+  is the 2024 build). SporeCoop still starts on GOG 2016, but it is not tested there and its bugs are not fixed.
+
+### Fixed
+- Creature: the guest's Raging Roar now scares the host's animals: creatures of other species around the guest
+  run away in both games, as they do from the host's roar (BUG-0501).
+- Co-op window: *Send my world* is greyed out while no game is loaded or nobody has joined, instead of saying
+  "Sending the world to everyone..." and doing nothing; the lobby of a host alone says that you can start or load a
+  game now and friends can join any time (BUG-0597).
+- Co-op window: the "My creature" / "My cell" row says whose creature you play ("the host's species") and, when you
+  have none of your own, that making one in an editor gives you the choice (BUG-0598).
+- Co-op window: a chat line typed while the host's game was saving the world for a joining player is no longer lost
+  (BUG-0551).
+- The host's game no longer stays paused on the "game saved" box while the co-op window is open (BUG-0599).
+- Tribe: a guest's game should no longer crash when the camera jumps (the home button) to creatures whose effect
+  was broken; the broken effect is left out instead (BUG-0575, a guard: the cause is not known).
+- Creature / Tribe: the game no longer crashes when a fruit falls from a plant after the other player ate a fruit
+  that was on the ground since the save was loaded (BUG-0584).
+- Tribe: villages founded during play now show the host's mood and food in the guest's game too, instead of the
+  values of another village (BUG-0591).
+- Civilization: a city the host's player captured, bought or converted now has the player's buildings in the
+  guest's game too, and the other nations' moods and money are the host's (BUG-0593).
+- Tribe -> Civilization: the City Hall and vehicle editors of the end of Tribe no longer say "evolved the species",
+  and the co-op sync check no longer reports a mismatch while the host's game prepares the Civilization stage
+  (BUG-0588).
+
+- Creature: an animal in the air in the host's game (a flier, a jump, thrown by a hit) is in the air at the same
+  height in the guest's game too, instead of walking on the ground under it (BUG-0550).
+- Creature: your own creature no longer stays half in the ground after the other player comes back at your spot
+  (after a return from the main menu or an editor) or bumps into it on a slope (BUG-0592, BUG-0504).
+- Tribe: a guest sees the members of every village fight, gather, dance and build, instead of standing still
+  (BUG-0569).
+- Tribe: a guest hears the stage's hunting and fighting music of its tribe, as the host does (BUG-0568).
+- Tribe: a guest hears the fight's sounds of the host's villagers: their war cries going into a fight, their sighs
+  coming out of it, the sprint and the effects of their attacks (BUG-0600; the hit impacts of the attack animations
+  are still open, BUG-0603).
+- Tribe: in co-op new villages no longer appear as soon as the whole party has gathered the food one player's tribe
+  needs alone: they come at one player's pace (BUG-0571).
+
+## [0.7.7] - 2026-11-05
+
+### Fixed
+- Creature: on a guest with a low frame rate the animals no longer trail metres behind where they walk in the
+  host's game (BUG-0590).
+- Tribe: the host's game no longer faults every frame when the animals of a creature attack go for a village that
+  was founded during play (BUG-0582).
+- Tribe: the other villages have the same food in the guest's game as in the host's (BUG-0580).
+- Tribe: a guest's game no longer faults every frame when its tribe's leader would take a weapon or instrument a
+  member took in the host's game (BUG-0583).
+- Creature: an animal's charge now stuns the guest's creature as it stuns the host's (the stars, the stagger), and the
+  guest's charge stuns the host's animals too (BUG-0554).
+- Creature: animals can no longer bite or charge a guest's creature while it is in the air (BUG-0555).
+- Creature: the creatures the host calls with Summon Flock are friendly to the guest too and show their hearts on the
+  guest's screen; so are the members of the host's pack (BUG-0556).
+- Creature: a nest of a species you allied with shows the ally face on the guest's minimap too (BUG-0561).
+- Tribe: the guest sees the red circle under the enemy its selected members attack (BUG-0570).
+- Creature: on a game without a parts pack (Creepy & Cute, or any other) the other player's creatures and their
+  family no longer show big blocks where the pack's parts are; each part the game lacks is shown as the most similar
+  part it has (an eye stays an eye, a foot a foot, of a similar size) (BUG-0559).
+- Creature: a creature that kept a paint of the Cell stage (such as the cell stripes) has the same colours on every
+  player's screen instead of another shade (BUG-0559).
+- Tribe: on a guest whose game runs slowly the animals no longer trail several metres behind where the host's game
+  has them while they walk (BUG-0503).
+- Tribe: a guest's food no longer stays at 0 for good after its tribe spent the last of it; it shows the host's food
+  again, so its members can eat on their own (BUG-0572, BUG-0573).
+- Tribe: the villages feel about a guest's tribe as they do in the host's game (hostile after the host's raids,
+  friendly after its gifts), instead of all staying neutral (BUG-0565).
+- Tribe: a guest's goal card shows the host's current goal village and the host's goal progress (BUG-0564).
+- Tribe and Civilization: day and night are the host's on a guest's screen, also after the host's game over and
+  reload (BUG-0579).
+- Cell: the host's editor after the evolution vote shows the DNA the stage earned instead of 100, and no longer gives
+  DNA again on every visit; a guest's Cell DNA counts what the host's editor spent (BUG-0560).
+- A guest's game shows the stages the host's game has done (BUG-0577).
+- Tribe: after the host's game over and the reload of its last save (or a rejoin) a guest's game no longer keeps the
+  villages the host's world does not have: their huts, tools, food mats and map marks are gone too (BUG-0564).
+- Tribe: a guest sees an enemy village's hut lose health when the host's tribe attacks it, and a hut or tool damaged
+  in the guest's old world is mended to the host's (BUG-0566, BUG-0567).
+- Tribe: the co-op epic creature is never one of the players' own creatures from the Creature stage (BUG-0563).
+- Tribe -> Civilization: after the evolution vote at the end of Tribe the host's City Hall editor (and then the
+  vehicle editor) opens at once instead of after a minute or more on a black screen (BUG-0576).
+- Tribe -> Civilization: the host's game no longer freezes in the vehicle editor when a guest's tribe gathers or
+  eats food meanwhile (BUG-0585).
+
+## [0.7.6] - 2026-11-04
+
+### Fixed
+- Space: a colony a guest founds in the host's home system is kept for it too when it leaves and joins again
+  (BUG-0552).
+- Civilization: when a guest looks at another city than the host, the people walking there are shown in the
+  guest's game; they were all put back at the host's city and the guest's city stayed empty (BUG-0553).
+
+- Space: the game no longer crashes when an NPC empire's ship uses a creation whose model is missing from your
+  Sporepedia cache; the ship is shown with a known ship model instead (BUG-0546).
+- Civilization: an old tribe village the host's vehicles raided is gone on every guest's screen too (BUG-0539).
+- Civilization: a religious vehicle's area of conversion ends on a guest's screen when it ends on the host's, with no
+  religious shots left behind (BUG-0530).
+- Tribe: the tools of every tribe (the other tribes' fire pits, racks and huts too) now stand at the same places in
+  every player's game; a guest's game no longer shows tools there the host's game does not have (BUG-0523).
+- Tribe: a tool a guest buys and places now appears in the host's game too, at the same spot, and the guest's
+  members can take the weapon or instrument from it (BUG-0524).
+- Space: on a colony planet you and your partner now see the colony's citizens standing at the same spots and at
+  the same size, and its vehicles driving at the same places (BUG-0490).
+- Space: the spice stored in a shared colony's cities is collected once: when one player's ship collects it (by
+  arriving in the colony's system), it is gone from the colony and from the spice pickups by its cities on every
+  player's planet; before, the other player could collect the same spice again (BUG-0537).
+- Civilization: a city the host's vehicles hit now shows its damage on every guest's screen too, not full health
+  until a building falls (BUG-0529).
+- Civilization: the host's shots (religious ones too) appear on a guest's screen about 0.2 s sooner, nearly at the
+  same time as on the host's; a guest's game fires exactly the shots that left on the host (BUG-0530, BUG-0538).
+- Civilization: a city's defence turrets are the same in every game: a guest's game no longer builds its own, and
+  a turret the host's city builds appears for the guests (BUG-0484).
+- Space: a guest's save no longer keeps the partners' ships and the host's ships its game showed; after loading it
+  alone they came back as extra Defenders of your own empire (BUG-0522).
+- Space: a guest's own colonies are no longer lost when it leaves and joins again: the host keeps them and gives
+  them back (with one city; a host that restarts its game does not keep them yet) (BUG-0195).
+- Creature: in a guest's social game the creature now shows what to do (it sings, dances ... first) and only an answer
+  to its prompt counts, as in the host's own game; before, any social ability at any time counted (BUG-0525).
+- Creature: your partner's creature in the middle of a jump or fall no longer drops to the ground for a frame and
+  back up (BUG-0532).
+- Space: a tool gift or a spice sale to a partner that is still waiting for the answer when you leave the session
+  no longer comes back to you while your partner keeps it too (BUG-0542).
+- Space: a colony your partner founds in a star system you both own (another planet of your home system, for
+  example) now appears in your game too, as a colony of your empire; it stayed a free planet there (BUG-0543).
+- Space: a gift, mission, war or alliance your partner makes with an alien empire while the host is in an editor
+  is no longer lost when the host comes back to Space (BUG-0544).
+- Space: right after the session restarts (a rejoin, a new load) a lethal hit next to your partner disables your
+  ship again instead of destroying it (BUG-0257).
+
+## [0.7.5] - 2026-11-04
+
+### Fixed
+- A guest in a new world now plays that world's species, not its cell or creature from another game; it plays its
+  own creation when it picks it in the co-op window or already played it in this world, and everybody gets a
+  notice "<name> plays its own creature" (BUG-0345).
+- Creature: when your partner's creature jumps or falls, it now leaves the ground on your screen too instead of
+  staying on the ground (BUG-0376).
+- Creature: a partner standing on a nest mound is drawn on the mound, not half sunk into it (BUG-0435).
+- Cell: after a knockout and the respawn next to your partner, and after your cell is put next to the host after a
+  load or an editor, your view is centred on your cell again; it stayed off to the side until you swam a while
+  (BUG-0343).
+- Cell: while a level-up rescales the world, your partner's cell is drawn where it is; it was drawn several
+  metres off for a few seconds (BUG-0519).
+- Minimizing the game or switching away from it no longer writes a "WATCHDOG" stack dump into the log as if the
+  game had frozen; a real freeze is still reported (BUG-0347).
+- Joining a host whose world is sent while your game is still loading no longer sends most of the world twice:
+  the transfer resends almost nothing on a good connection and is about twice as fast then (BUG-0405).
+- Creature: a guest's game no longer starts its own UFO visit that the host's world does not have, so no UFO
+  takes the host's creatures in the guest's game only (BUG-0486).
+- Tribe: a weapon rack (or any tool building) the host builds now appears in the guests' games too, a guest's
+  members can take the weapon from it, and a guest sees its members hold the weapons and tools they took
+  (BUG-0514).
+- Tribe: a tribe member sent to take a weapon or tool from a rack no longer stands still next to the rack for
+  good when its walk stops short of its place there; it takes the tool (BUG-0505).
+- Tribe: the epic creature that comes to the players' village now hits as hard as the game's own epics; it
+  dealt only about 8 damage, like an ordinary animal (BUG-0515).
+- Tribe: when you save as a guest and later load that save alone, your tribe no longer holds copies of the
+  host's members, and the host's villages your game showed are not in it (BUG-0495).
+- Tribe: a guest's game no longer makes new villages of its own that the host's world does not have, and the
+  members of a village the host no longer has leave the guest's game too (BUG-0483).
+- Civilization: the people walking in the cities are where the host's are and have their size on a guest's
+  screen, instead of walking somewhere else (BUG-0476, BUG-0475).
+- Civilization: roads between cities (trade routes) that appear in the host's game appear in the guest's game too
+  (BUG-0494).
+- Civilization: a guest sees the host's fights: vehicles and turrets fire their shots in the guest's game too,
+  and those shots do no damage of their own there (BUG-0477).
+- Creature: a guest's social game now shows the game's social meter, like the host's, and a win tells the
+  guest's game that the creature became a friend (BUG-0179).
+- A chat line typed in the co-op window while the game's "game saved" box (or another box of the game) is up
+  is no longer lost; the window's buttons work then too (BUG-0482).
+- Creature: after evolving in the editor your creature is the new species at once, also when you play alone;
+  the host no longer saves the game after every evolution in co-op (BUG-0517).
+- Tribe and Civilization: the effects of your tribe members and vehicles (a hit, a death, ...) now show on the
+  other players' screens too, as in Cell and Creature (BUG-0451).
+
+## [0.7.4] - 2026-11-03
+
+### Fixed
+- When Spore itself fails to start (the game closes at once after the mod was installed), you now get a
+  message that says what to check and a report to attach, instead of the game just closing (BUG-0521).
+- Cell: when the cells grow to the next size, the other cells no longer fly around on the guest's screen for a
+  few seconds; they stay where the host's game has them (BUG-0511).
+- The game no longer crashes when you open Settings in the galaxy menu or a Cell editor opens (for example from a
+  mate) on a PC where Spore cannot make its Documents\My Spore Creations folders, as with the Russian Steam version;
+  pictures and videos then go to the Spore folder in AppData (BUG-0506).
+- Creature: a guest now sees the host's animals look around, eat, answer and fight as they do on the host,
+  instead of standing still or only walking (BUG-0464).
+- Creature: a partner whose game froze or was minimized is no longer shown sunk into the ground; you
+  are told that the partner is not responding, and when it is back (BUG-0513).
+- Cell: a knocked-out cell can no longer bite, spike or kill anything while it waits to be revived
+  (BUG-0509).
+- Creature: the host's pack no longer turns on a partner when the host targets the partner's creature or
+  fights next to it (BUG-0512).
+- Creature: a guest no longer crashes when its game removes the partner's creature by itself (seen after
+  a long freeze or alt-tab); the partner is shown again (BUG-0507).
+- Cell and Creature: after the host's editor a guest in the same world keeps playing: it no longer drops
+  to the galaxy menu and loads the whole world again; the host's new creature and (when you play the host's
+  species) your own new body arrive in place. A migration to a new nest still sends the world (BUG-0508).
+- Creature: a guest can befriend creatures with the mouse too: a click on the social ability's button
+  of the ability bar (sing, dance, ...) next to the creature now counts, not only the keys 1-4 (BUG-0518).
+- Cell and Creature: a party no longer evolves two to four times faster than a single player: every
+  player's DNA (and Cell food) now counts 1/N with N players in the world, so the shared total grows at
+  the single-player pace; spending is not affected. Hosts who prefer the old sum set `dna_pace=0` in
+  `mods\coop.ini` [coop] (BUG-0510).
+- Creature: animals are neutral, hostile or allied to a guest as they are to the host; a guest playing its own
+  creature no longer sees neutral species as hostile (BUG-0462).
+- Creature: a partner who sneaks is shown sneaking (see-through) on your screen too, and the host's animals
+  no longer hear a sneaking guest (BUG-0463).
+- Co-op window: a chat line typed while a caption is on the screen (a new part, the brain upgrade, a nest)
+  is no longer lost; the line takes the typing and Enter sends it (BUG-0482).
+- Creature: after a death your partner's creature appears at the nest and steps out of its egg where its
+  own game has it, instead of sliding there or standing a few metres away for a moment (BUG-0499).
+- Creature: animals of other species now have the same size on every player's screen; young ones are no
+  longer shown at an adult's size on the guest (BUG-0461).
+- Tribe: tribe members (yours, your partners' and other tribes') have the same size on every screen; the
+  guest no longer sees them bigger or smaller than the host does (BUG-0475).
+- Space: your partner's ship is shown at a player ship's size, not at the smaller size of an NPC ship
+  (BUG-0479).
+- Creature: an animal near a guest no longer stays missing on its screen (or keeps living there after
+  the host killed it) when its first message was lost; the guest asks the host for it again (BUG-0487).
+- Civ: a guest no longer crashes in its city planner while the host's world goes on (attacks, new
+  buildings, vehicles that die): the planner's city is left as it is until the planner closes, and a
+  building outside its plot can no longer be picked up (BUG-0491, BUG-0493).
+- Civ: a guest no longer crashes when it clicks a city of a nation its game does not know (BUG-0492).
+- Civ: a guest's saves no longer keep the host's vehicles it was showing; the save loads cleanly on its
+  own (BUG-0470).
+- Civ: a vehicle that is gone on the host no longer stays behind as a wreck on the guest (BUG-0478).
+- Cell and Creature: the effects of your cell or creature (mating-call hearts, being hit, death, a part
+  found, the brain upgrade, ...) now show on the other players' screens too, while they play in the same
+  place as you. Tribe, Civilization and Space follow in their own versions (BUG-0451, BUG-0471).
+- Creature: a bone or skeleton one player takes is taken for everybody: the party gets one new part, not
+  two (BUG-0459).
+- Creature and Tribe: fruit one player eats is gone for the other players too, and fruit that falls from
+  a tree falls in every game (BUG-0472).
+- Creature: a nest whose species the host's game made extinct is extinct for every player (BUG-0460).
+- Tribe: the eggs at the animal nests are now in every player's game, not only in the host's (BUG-0474).
+- Cell: a part one player collects is now unlocked for the whole party (the host and every guest get
+  it in their cell editor, with the mating call), not only in the game of the player who touched it
+  (BUG-0467).
+- Creature: the parts a guest adds in its own editor of an evolution vote now cost DNA, and the DNA a
+  guest spends is taken off the party's total for everybody; before, the guest had the same DNA as
+  before the editor (BUG-0466).
+- Creature: the host's game no longer crashes when an animal was attacking the partner's creature at the
+  moment that creature disappeared (the partner died, left or came back); the animal stops its attack
+  (BUG-0453).
+- Creature: the host's game no longer aborts ("pure virtual function call") when animals still
+  remembered a partner's creature that had just disappeared (BUG-0456).
+- Cell: a guest's game no longer crashes when the host comes back from its editor with a new cell before
+  the new cell has reached the guest; such cells show up as soon as it arrives (BUG-0455).
+- Editor: a skin texture the graphics driver could not make no longer crashes the creature editor
+  (RenderWare::Raster::Fill) (BUG-0454).
+
 ## [0.7.3.6] - 2026-11-02
 
 ### Fixed

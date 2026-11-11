@@ -77,21 +77,35 @@ enum MsgType : uint8_t {
     MSG_PARTS = 53,       // the party's collected creature parts (parts.cpp, BUG-0401): u8 kind (0 host -> guests the
                           // host's set, 1 host -> guests news, 2 guest -> host found here), u8 origin, u32 world,
                           // u16 n, n x {u32 lo, u32 hi}. Older SporeCoop ignores it (an unknown type).
+    MSG_FIELDS = 56,      // host -> guests: replicated state fields of mirrored objects (fields.h, BUG-0419 G2):
+                          // u8 kind, u8 nf, nf x u8 field, u16 n, n x {u16 id, nf x f32}; unreliable, deltas + refresh.
+                          // Older SporeCoop ignores it (an unknown type).
+    MSG_NPC_RESYNC = 57,  // guest -> host: u8 n, n x u16 NPC id the guest gets states for and has no spawn of
+                          // (BUG-0487 / G5): the host sends that spawn again. Older SporeCoop ignores it.
+    MSG_NPC_ANIM = 59,    // host -> guest: animations the host's NPCs' behaviour trees started (BUG-0464, npc.cpp):
+                          // u8 kind 0 (started, at most once a frame): u8 n, n x {u16 NPC id, u32 anim, u8 how (0 CreaturePlayAnim,
+                          // 1 PlayAnimation, 2 PlayAnimationTo), u8 arg, u32 arg2};
+                          // kind 1 (1 Hz: what they play now, a BT's animation or a body's): u8 n, n x {u16 id, u32 anim}.
+                          // Unreliable.
+                          // Older SporeCoop ignores it (an unknown type).
+    MSG_WOBJ = 54,        // world objects owned by the host (worldobj.cpp, BUG-0472 / BUG-0459): u8 kind (0 host -> guest
+                          // snapshot {u8 obj kind, vec3 centre, f32 r, u8 n, n x {u32 id, vec3 pos, u32 state}}, unreliable 1 Hz;
+                          // 1 guest -> host request {u8 obj kind, u32 id, vec3 pos, u32 state now}). Older SporeCoop ignores it.
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
-    MSG_CREATURE_RESCUE = 54, // u32 world, u32 knockout number, u8 event; only the host sends results
+    MSG_CREATURE_RESCUE = 73, // u32 world, u32 knockout number, u8 event; only the host sends results
     MSG_TRIBE_BUILDINGS = 55, // host -> guest: u32 world/sequence, u8 count, {id/noun/faction, pos, hp/maxhp}
-    MSG_TRIBE_EQUIPMENT = 56, // host -> guest: u32 world/sequence, u8 count, {u16 citizen, u8 tool/item}
-    MSG_TRIBE_TOOLS = 57, // host -> guest: complete per-village rack inventory, transforms and health
+    MSG_TRIBE_EQUIPMENT = 74, // host -> guest: u32 world/sequence, u8 count, {u16 citizen, u8 tool/item}
+    MSG_TRIBE_TOOLS = 75, // host -> guest: complete per-village rack inventory, transforms and health
     MSG_TRIBE_RELATIONSHIPS = 58, // host -> guest: world/sequence, ordered faction pair, flags, native event values
-    MSG_TRIBE_FOOD = 59, // host -> guest: NPC stores, bounded by world/faction/species/position
-    MSG_TRIBE_PERFORMANCE = 61, // host -> guest: world/sequence, up to64 {member, native token, phase/request/ready, progress, round/total}
-    MSG_TRIBE_OUTFIT = 62, // reliable: u8 begin/result/accepted, u32 world/token/previous/model; voted founders only
+    MSG_TRIBE_FOOD = 76, // host -> guest: NPC stores, bounded by world/faction/species/position
+    MSG_TRIBE_PERFORMANCE = 77, // host -> guest: world/sequence, up to64 {member, native token, phase/request/ready, progress, round/total}
+    MSG_TRIBE_OUTFIT = 78, // reliable: u8 begin/result/accepted, u32 world/token/previous/model; voted founders only
     MSG_CIV_TURRETS = 67,  // host -> guest: one city wall layout, occupied slots and turret HP
     MSG_CELL_COMBAT = 66, // guest contact hit; host replies with any whole bonus for the same body
     MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
-    MSG_TRIBE_COMBAT = 64, // reliable host snapshot: world, count, {member id, scaled native max HP}
-    MSG_SPACE_LAUNCH = 63, // reliable host offer and founder reply for a missed Civilization launch
+    MSG_TRIBE_COMBAT = 80, // reliable host snapshot: world, count, {member id, scaled native max HP}
+    MSG_SPACE_LAUNCH = 79, // reliable host offer and founder reply for a missed Civilization launch
     MSG_CIV_ECONOMY = 68, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
     MSG_CIV_INFLUENCE = 69, // host native religious followers and meter; civ_influence.h
     MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
@@ -99,6 +113,23 @@ enum MsgType : uint8_t {
     MSG_ADVENTURE_ACTORS = 72, // unreliable host -> guest: scenario creatures' states (adventure_sync.h ActorBatch, BUG-9114)
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
+    MSG_EFFECT = 61,      // a player's own creature started / stopped a visual effect (BUG-0451,
+                          // effects.h): u8 player, u8 stop, u8 pool (1/2), u32 effect id, u32 key.
+                          // The host relays a guest's message to the other guests; the receiver
+                          // plays it on that player's puppet with the game's own effect pools.
+                          // Older SporeCoop ignores it (an unknown type).
+    MSG_PLAYER_RULE = 63, // the game's rules for a player that one game decides on the other player's creature
+                          // (player_rules.cpp, BUG-0418 / P1 of 0.7.7): u8 kind; kind 0 host -> guest "stunned"
+                          // {u8 player, f32 seconds} (an NPC's charge stunned its puppet: CreatureStun vt 0x94),
+                          // kind 1 guest -> host {u16 NPC id, f32 seconds} (the guest's charge stunned a proxy).
+                          // Older SporeCoop ignores it (an unknown type).
+    MSG_MIRROR_FX = 64,   // host -> guests: what the host's game did to a creature a guest mirrors (mirror_fx.h, BUG-0600):
+                          // u8 kind; 0 effect {u8 space (0 NPC, 1 tribe member), u16 id, u8 stop, u8 pool, u32 effect,
+                          // u32 key}, 1 combat voice {space, id, u8 enter}, 2 sprint {space, id, u8 on}.
+                          // Older SporeCoop ignores it (an unknown type).
+    MSG_WSTATE = 62,      // host -> guests: host-owned world state rows (wsync.h, BUG-0419 / BUG-0565 / BUG-0577 /
+                          // BUG-0579 / BUG-0564): u8 kind 0, u32 host mode, u8 rows, {u8 id, u8 nv, u8 n, n x {u32 key,
+                          // nv x u32}}. Older SporeCoop ignores it (an unknown type).
 };
 
 // LAN discovery: plain datagrams outside any connection, answered by hosts on their game port
@@ -151,8 +182,13 @@ enum PlayerFlags : uint8_t {
     PF_JUMPING = 8,
     PF_DEAD = 16,
     PF_SWIMMING = 32,
-    PF_DOWNED = 64,
+    PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
+    PF_DOWNED = 128,  // Lineages: knocked down (creature_rescue), 64 before the 0.7.8 merge
 };
+
+// BUG-0425: a height over the sender's terrain (m) that is not known (an older sender, no terrain)
+constexpr float kNoAgl = -1e9f;
+inline bool agl_known(float agl) { return agl > -1e6f; }
 
 struct Vec3 {
     float x = 0, y = 0, z = 0;
@@ -394,8 +430,15 @@ struct PlayerState {
     uint32_t species = 0; // instance id of species key (appearance hint)
     uint32_t mode = 0;    // game mode id (Creature 0x1654C01, Space 0x1654C05, ...)
     uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
-    AdventureGate gate;   // optional Duo extension for a single move-to objective
-    float scale = 0;      // optional (Adventure, BUG-9113): the captain's own scale; 0 = not sent
+    AdventureGate gate;   // optional Duo extension for a single move-to objective (Lineages)
+    float captain_scale = 0; // Lineages (Adventure, BUG-9113): the captain's own scale; 0 = not sent
+    // BUG-0519: the sender's Cell world scale (G+0x514C) the pos / vel / size are in; 0 = not in Cell
+    // or an older sender (the field is appended: older readers stop before it)
+    float scale = 0;
+    // BUG-0425: the sender's height over its own terrain (cPlanetModel::GetHeightAt) when its body is off the
+    // ground (PF_JUMPING); kNoAgl otherwise or from an older sender (appended after scale: older readers stop
+    // before it). NPC states carry it in the MSG_NPC_STATE batch's trailer (npc.cpp), not here
+    float agl = kNoAgl;
 
     void write(Writer& w) const
     {
@@ -407,11 +450,12 @@ struct PlayerState {
         w.f32(health); w.f32(max_health);
         w.u32(species);
         w.u32(mode); w.u32(world);
+        w.f32(scale);
+        w.f32(agl);
+        w.f32(captain_scale); // Lineages: after the 0.7.8 fields (every Lineages peer has the same build)
         if (gate.visit || gate.credit) {
             w.u32(gate.visit); w.u32(gate.act); w.u32(gate.target); w.u32(gate.credit);
         }
-        if (scale > 0) // after the gate: a reader that only knows the gate ignores 4 or 20 bytes left
-            w.f32(scale);
     }
     bool read(Reader& r)
     {
@@ -423,14 +467,16 @@ struct PlayerState {
         health = r.f32(); max_health = r.f32();
         species = r.u32();
         mode = r.u32(); world = r.u32();
-        gate = {};
-        scale = 0;
-        if (r.left() == 16 || r.left() == 20)
-            gate = {r.u32(), r.u32(), r.u32(), r.u32()};
-        if (r.left() == 4) {
+        scale = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
+        agl = r.ok() && r.left() >= 4 ? r.f32() : kNoAgl;
+        captain_scale = 0;
+        if (r.ok() && r.left() >= 4) {
             float s = r.f32();
-            scale = s > 0.01f && s < 100.f ? s : 0.f; // a creature's scale; anything else is not one
+            captain_scale = s > 0.01f && s < 100.f ? s : 0.f; // a creature's scale; anything else is not one
         }
+        gate = {};
+        if (r.ok() && r.left() == 16)
+            gate = {r.u32(), r.u32(), r.u32(), r.u32()};
         return r.ok();
     }
 };
@@ -443,11 +489,16 @@ struct Chat {
 };
 
 enum NpcFlags : uint8_t {
-    NF_SCALED_HP = 8, // host campaign combat multiplier applies to this NPC
+    NF_SCALED_HP = 64, // Lineages: host campaign combat multiplier applies to this NPC (8 before the 0.7.8 merge)
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
-    NF_ALPHA = 16,    // the nest's alpha (cCreatureAnimal +0xB58 bit 0x1: the "Alpha" card, one more social round; BUG-9115)
+
+    NF_PACK = 8,      // in the host's pack (+0xB58 bit 0x100: recruited, a Summon Flock member; BUG-0556). Older guests ignore it
+    NF_SUMMONED = 16, // its herd is a summoned flock (herd +0x192, cSummonCreatureEvent: the hearts effect 0x6A17B05A; BUG-0556)
+    NF_AIR = 32,      // BUG-0550 / BUG-0425: off its ground in the host's game (+0x137 = 0 and off GetHeightAt: a jump, a fall,
+                      // thrown, flying); its height over the host's terrain is in the batch's agl trailer. Older guests ignore it
+    NF_ALPHA = 128,   // Lineages: the nest's alpha (cCreatureAnimal +0xB58 bit 0x1: the "Alpha" card, one more social round; BUG-9115)
 };
 
 struct NpcSpawn {
@@ -510,8 +561,16 @@ struct Damage { // host -> guest: you were hit
     float damage = 0;
     int32_t type = 0;
     uint16_t attacker = 0xFFFF; // NPC net id or 0xFFFF
-    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); }
-    bool read(Reader& r) { player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16(); return r.ok(); }
+    // BUG-0555 (appended, older readers ignore it): the type of the attacker's ability whose hit it is (+8 of the
+    // ability, 0x1E bite, 0x1F charge, 0x20 spit; 0 = not an ability hit / unknown, also from an older host)
+    uint32_t ability = 0;
+    void write(Writer& w) const { w.u8(player); w.f32(damage); w.u32((uint32_t)type); w.u16(attacker); w.u32(ability); }
+    bool read(Reader& r)
+    {
+        player = r.u8(); damage = r.f32(); type = (int32_t)r.u32(); attacker = r.u16();
+        ability = r.ok() && r.left() >= 4 ? r.u32() : 0;
+        return r.ok();
+    }
 };
 
 struct AnimEvent {

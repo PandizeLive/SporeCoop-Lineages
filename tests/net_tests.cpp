@@ -8,12 +8,14 @@
 #include <map>
 #include <set>
 #include "net/dbpf.h"
+#include "net/partprops.h"
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <random>
 #include <chrono>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #ifdef _WIN32
 #include <winsock2.h>
@@ -142,27 +144,57 @@ static void test_buffer()
     Reader r2(w2.data.data(), w2.size());
     PlayerState t2;
     CHECK(t2.read(r2) && t2.mode == 0x1654C05 && t2.world == 0x80B16021);
+    // BUG-0519: the Cell world scale is appended; an older sender's state (without it) reads as 0
+    s.scale = 1.5f;
+    Writer w4;
+    s.write(w4);
+    Reader r4(w4.data.data(), w4.size());
+    PlayerState t4;
+    CHECK(t4.read(r4) && t4.scale == 1.5f && r4.left() == 0);
+    Reader r5(w4.data.data(), w4.size() - 12); // Lineages: + the captain_scale f32 after agl
+    PlayerState t5;
+    CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021 && !agl_known(t5.agl));
+    // BUG-0425: the sender's agl after the scale; a 0.7.7 sender's state (scale, no agl) reads as kNoAgl
+    s.agl = 2.5f;
+    Writer w6;
+    s.write(w6);
+    Reader r6(w6.data.data(), w6.size());
+    PlayerState t6;
+    CHECK(t6.read(r6) && t6.agl == 2.5f && t6.scale == 1.5f && r6.left() == 0);
+    Reader r7(w6.data.data(), w6.size() - 8); // Lineages: + the captain_scale f32 after agl
+    PlayerState t7;
+    CHECK(t7.read(r7) && t7.scale == 1.5f && !agl_known(t7.agl));
+    // Lineages (Adventure, BUG-9113): the captain's scale is written after upstream's scale and agl,
+    // then the optional gate (16 bytes)
     s.mode = 0x1654C10;
     s.gate = {42, 1, 1210, 35};
     Writer away;
     s.write(away);
     Reader ar(away.data.data(), away.size());
     CHECK(t2.read(ar) && t2.gate.visit == 42 && t2.gate.act == 1 && t2.gate.target == 1210 && t2.gate.credit == 35);
-    CHECK(t2.scale == 0);
-    // BUG-9113: the Adventure captain's scale, alone and after the gate
-    s.scale = 2.093f;
+    CHECK(t2.captain_scale == 0 && t2.scale == 1.5f && t2.agl == 2.5f);
+    s.captain_scale = 2.093f;
     Writer sc;
     s.write(sc);
     Reader rsc(sc.data.data(), sc.size());
-    CHECK(t2.read(rsc) && t2.gate.visit == 42 && t2.scale > 2.09f && t2.scale < 2.1f);
+    CHECK(t2.read(rsc) && t2.gate.visit == 42 && t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
+    CHECK(t2.scale == 1.5f && t2.agl == 2.5f && rsc.left() == 0);
+    Reader rso(sc.data.data() + sc.size() - 28, 28); // scale, agl, captain_scale, gate
+    CHECK(rso.f32() == 1.5f && rso.f32() == 2.5f);
+    float cs = rso.f32();
+    CHECK(cs > 2.09f && cs < 2.1f && rso.u32() == 42);
     s.gate = {};
     Writer sc2;
     s.write(sc2);
     Reader rsc2(sc2.data.data(), sc2.size());
-    CHECK(t2.read(rsc2) && t2.gate.visit == 0 && t2.scale > 2.09f && t2.scale < 2.1f);
-    s.scale = 0;
+    CHECK(t2.read(rsc2) && t2.gate.visit == 0 && t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
+    Reader rso2(sc2.data.data() + sc2.size() - 12, 12); // scale, agl, captain_scale, no gate
+    CHECK(rso2.f32() == 1.5f && rso2.f32() == 2.5f);
+    cs = rso2.f32();
+    CHECK(cs > 2.09f && cs < 2.1f && rso2.left() == 0);
+    s.captain_scale = 0;
     Reader old_state(w2.data.data(), w2.size());
-    CHECK(t2.read(old_state) && !t2.gate.visit && !t2.gate.credit);
+    CHECK(t2.read(old_state) && !t2.gate.visit && !t2.gate.credit && t2.captain_scale == 0);
     // shared resource message payload (u8 id, f64)
     Writer w3;
     w3.u8(3);
@@ -666,6 +698,24 @@ static void test_interp()
     PlayerState o;
     CHECK(b.sample(5.0 + 0.5, o)); // newest local recv time -> render 0.1 s behind -> x=8
     CHECK(std::fabs(o.pos.x - 8.0f) < 0.01f);
+    {   // BUG-0519: a Cell level change: the same point at x=10 (scale 1) and x=5 (scale 2) blends
+        // in the newer state's scale (5), not half-way between two scales (7.5)
+        SnapshotBuffer c;
+        c.delay = 0.1;
+        for (int i = 0; i <= 10; i++) {
+            PlayerState s;
+            s.time_ms = 1000 + i * 50;
+            s.scale = i < 5 ? 1.f : 2.f;
+            s.pos = {i < 5 ? 10.f : 5.f, 0, 0};
+            c.push(s, 5.0 + i * 0.05);
+        }
+        PlayerState q;
+        CHECK(c.sample(5.0 + 0.325, q)); // between the states 4 (scale 1) and 5 (scale 2)
+        CHECK(std::fabs(q.pos.x - 5.0f) < 0.01f && q.scale == 2.f);
+        SnapshotBuffer::scale_lerp = false;
+        CHECK(c.sample(5.0 + 0.325, q) && q.pos.x > 6.f); // the old blend (cell.puppet_scale off)
+        SnapshotBuffer::scale_lerp = true;
+    }
     CHECK(b.sample(5.0 + 0.6, o)); // extrapolate 0 s past newest: x=10
     CHECK(std::fabs(o.pos.x - 10.0f) < 0.01f);
     CHECK(b.sample(5.0 + 2.0, o)); // capped at 0.25 s -> x = 10 + 5
@@ -866,6 +916,101 @@ static void test_bulk_bad_link()
                a.stats.resends, a.rtt_ms);
         CHECK(got == N && ordered);
         CHECK(now - 1000 < 45000);
+    }
+}
+
+// BUG-0405: the world sent to a guest that loads. The guest reads its socket once per frame (frames of
+// 200-950 ms while it loads), up to 256 packets per update, and acknowledges at the end of the frame:
+// the ack bits covered the last 128 packets only and the sender's rto (from a 5-80 ms rtt) fired long
+// before the guest read the rest, so 50-90 % of the packets went out twice on a clean loopback.
+struct BusyResult {
+    int got = 0;
+    double secs = 0;
+    uint32_t sent = 0, resends = 0;
+};
+static BusyResult bulk_busy_case(bool fix, bool busy, uint32_t delay, float loss, int seed)
+{
+    bool was = g_fix.bulk_acks;
+    g_fix.bulk_acks = fix;
+    struct Pk {
+        uint32_t t;
+        std::vector<uint8_t> d;
+    };
+    Connection a, b;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> U(0, 1);
+    std::deque<Pk> ab, ba; // in flight (constant delay: in order)
+    auto send = [&](std::deque<Pk>& q, const std::vector<uint8_t>& p, uint32_t now) {
+        if (U(rng) >= loss && q.size() < 3600) // udp.cpp: a 4 MB receive buffer, the rest is dropped
+            q.push_back({now + delay, p});
+    };
+    const int N = 3400; // a tribe world: ~3.4 MB in 1 KB chunks
+    int queued = 0, got = 0;
+    bool ordered = true;
+    uint32_t now = 1000, guest_next = 1000;
+    std::vector<uint8_t> pkt;
+    for (; got < N && now < 1000 + 120000; now += 1) {
+        if (now % 33 == 0) { // the host's frame: world.cpp's window, Session::flush's burst
+            size_t window = a.rtt_ms < 40 ? 600 : 160;
+            while (queued < N && a.pending_reliable() < window) {
+                Writer w;
+                w.u32(queued++);
+                std::vector<uint8_t> pad(1010, 0x55);
+                w.raw(pad.data(), pad.size());
+                a.send_reliable(42, w);
+            }
+            int burst = a.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+            for (int i = 0; i < burst && a.build_packet(now, pkt); i++)
+                send(ab, pkt, now);
+        }
+        while (!ba.empty() && ba.front().t <= now) { // the host reads in its frame too, but often
+            a.on_packet(ba.front().d.data(), ba.front().d.size(), now, [](uint8_t, Reader&) {});
+            ba.pop_front();
+        }
+        if (now >= guest_next) { // the guest's frame: Session::update, then Session::flush
+            for (int i = 0; i < 256 && !ab.empty() && ab.front().t <= now; i++) {
+                b.on_packet(ab.front().d.data(), ab.front().d.size(), now, [&](uint8_t type, Reader& r) {
+                    if (type == 42 && r.u32() != (uint32_t)got++)
+                        ordered = false;
+                });
+                ab.pop_front();
+                if (b.ack_urgent() && b.build_packet(now, pkt))
+                    send(ba, pkt, now);
+            }
+            while (b.build_packet(now, pkt))
+                send(ba, pkt, now);
+            guest_next = now + (busy ? 200 + (uint32_t)(U(rng) * 750) : 33);
+        }
+    }
+    g_fix.bulk_acks = was;
+    CHECK(ordered);
+    return {got, (now - 1000) / 1000.0, a.stats.packets_sent, a.stats.resends};
+}
+
+static void test_bulk_busy_receiver()
+{
+    printf("bulk transfer to a guest that loads (BUG-0405)\n");
+    struct Case {
+        const char* name;
+        bool busy;
+        uint32_t delay;
+        float loss;
+    } cases[] = {{"clean, guest loads", true, 1, 0}, {"clean, guest plays", false, 1, 0},
+                 {"40 ms, 3% loss, guest loads", true, 40, 0.03f}, {"40 ms, 3% loss, guest plays", false, 40, 0.03f},
+                 {"150 ms, 10% loss, guest loads", true, 150, 0.10f}};
+    for (auto& c : cases) {
+        BusyResult r[2];
+        for (int fix = 0; fix < 2; fix++) {
+            r[fix] = bulk_busy_case(fix, c.busy, c.delay, c.loss, 3);
+            printf("  %-30s fix %s: %d/3400 in %.1f s, sent %u, resends %u (%.0f %%)\n", c.name, fix ? "on " : "off",
+                   r[fix].got, r[fix].secs, r[fix].sent, r[fix].resends, 100.0 * r[fix].resends / std::max(1u, r[fix].sent));
+        }
+        CHECK(r[1].got == 3400);
+        CHECK(r[1].secs <= r[0].secs * 1.1 + 0.5); // not slower
+        if (c.loss == 0)
+            CHECK(r[1].resends * 10 <= r[1].sent); // a clean link resends little (was 50-90 %)
+        else
+            CHECK(r[1].resends <= r[0].resends);
     }
 }
 
@@ -2555,6 +2700,84 @@ static void test_diag_conn_stats()
     CHECK(c.stats.packets_sent > 1500 && c.stats.lost == 0);
 }
 
+
+// BUG-0559: a part's description and the most similar part (net/partprops)
+static std::vector<uint8_t> part_prop(const std::vector<std::tuple<uint32_t, uint16_t, std::vector<uint8_t>>>& props)
+{
+    std::vector<uint8_t> d;
+    auto be = [&](uint32_t v, int n) {
+        for (int i = n - 1; i >= 0; i--)
+            d.push_back((uint8_t)(v >> (8 * i)));
+    };
+    be((uint32_t)props.size(), 4);
+    for (auto& [id, t, val] : props) {
+        be(id, 4);
+        be(t, 2);
+        be(t == 0x39 ? 0x1C : t == 0x13 ? 0x0D : 0, 2);
+        if (t == 0x39) { // an array of one bounding box
+            be(1, 4);
+            be(24, 4);
+        } else if (t == 0x13) {
+            be((uint32_t)val.size() / 2, 4);
+        }
+        d.insert(d.end(), val.begin(), val.end());
+    }
+    return d;
+}
+
+static std::vector<uint8_t> be_int(int v)
+{
+    return {(uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v};
+}
+
+static std::vector<uint8_t> box(float s)
+{
+    std::vector<uint8_t> b(24);
+    float f[6] = {-s, -s, -s, s, s, s};
+    memcpy(b.data(), f, 24);
+    return b;
+}
+
+static void test_partprops()
+{
+    using namespace partprops;
+    std::vector<uint8_t> name = {'a', 0, 'b', 0};
+    // a carnivore mouth of the pack (bite 3), a small one; a string with flags 0x0D before the ints
+    auto want_d = part_prop({{0x04EBB27E, 0x13, name}, {0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)},
+                             {0x02166464, 0x09, be_int(75)}, {0x1CBB2F62, 0x39, box(0.1f)}});
+    Part want;
+    CHECK(parse(want_d.data(), want_d.size(), 0xF6DE5C63, want));
+    CHECK(want.roles.size() == 1 && want.roles[0] == 0xB00F0FEC && want.abil.size() == 1 && want.abil[0].second == 3);
+    CHECK(want.cost == 75 && want.has_box && std::fabs(want.size() - 0.3464f) < 0.01f);
+    std::vector<Part> have(5);
+    auto mk = [&](int i, uint32_t id, std::vector<std::tuple<uint32_t, uint16_t, std::vector<uint8_t>>> pr) {
+        auto d = part_prop(pr);
+        CHECK(parse(d.data(), d.size(), id, have[i]));
+    };
+    mk(0, 0x10000001, {{0x02166464, 0x09, be_int(75)}, {0x1CBB2F62, 0x39, box(0.1f)}});                    // a detail
+    mk(1, 0x10000002, {{0xB00F0FE9, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)}, {0x1CBB2F62, 0x39, box(0.1f)}}); // an eye
+    mk(2, 0x10000003, {{0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)}, {0x02166464, 0x09, be_int(75)},
+                       {0x1CBB2F62, 0x39, box(1.0f)}});                                                           // a big mouth
+    mk(3, 0x10000004, {{0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(2)}, {0x02166464, 0x09, be_int(75)},
+                       {0x1CBB2F62, 0x39, box(0.12f)}});                                                          // a mouth like it
+    mk(4, 0x10FE0005, {{0xB00F0FEC, 0x01, {1}}, {0xB1C3E5B6, 0x09, be_int(3)}, {0x02166464, 0x09, be_int(75)},
+                       {0x1CBB2F62, 0x39, box(0.1f)}});                                                           // the same, but an 0xFE byte
+    CHECK(nearest(want, have) == 0x10000004); // a mouth stays a mouth, of a similar size, and fits in place
+    CHECK(std::isinf(distance(want, have[0])) && std::isinf(distance(want, have[1])));
+    have.resize(2);
+    CHECK(nearest(want, have) == 0); // no mouth here: none (the caller falls back)
+    // untrusted bytes: truncations and a count past the end are refused, never read past the end
+    for (size_t n = 0; n < want_d.size(); n++) {
+        Part p;
+        CHECK(!parse(want_d.data(), n, 1, p));
+    }
+    std::vector<uint8_t> bad = want_d;
+    bad[3] = 0xFF;
+    Part p;
+    CHECK(!parse(bad.data(), bad.size(), 1, p));
+    printf("partprops: ok\n");
+}
+
 int main(int argc, char** argv)
 {
     if (!net_init()) return 1;
@@ -2621,6 +2844,7 @@ int main(int argc, char** argv)
     test_buffer();
     test_unreliable_chunks();
     test_dbpf();
+    test_partprops();
     test_be_keys();
     test_dbbf();
     test_refpack_untrusted();
@@ -2634,6 +2858,7 @@ int main(int argc, char** argv)
     test_bulk_bad_link();
     test_civ_economic_packet();
     test_civ_religious_packet();
+    test_bulk_busy_receiver();
     test_session();
     test_session_password();
     test_session_end_in_delivery();
