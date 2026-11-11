@@ -28,6 +28,7 @@
 #include "net/utf8.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "give_up.h"
 #include "fixes.h"
 #include "trace.h"
 
@@ -250,12 +251,16 @@ static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bi
 // (half health). Otherwise it respawns next to the partner as a small cell (half size), which
 // grows back by eating or at the next level up. Alone in the pool the vanilla death happens
 // (it rebuilds the whole level).
-constexpr double kDownTime = 10.0, kReviveHold = 1.5;
+// BUG-9118: 30 s for a partner (10 before; `coop.fix cell.down_30 off`), and the downed player can give up (hold G)
+static bool g_down_30 = true;
+COOP_FIX("cell.down_30", "BUG-9118", g_down_30, "cell: a knocked-out cell waits 30 s for a partner (10 before)");
+static double down_time() { return g_down_30 ? 30.0 : 10.0; }
+constexpr double kReviveHold = 1.5;
 constexpr float kSmall = 0.5f;
 static double g_last_regen, g_invuln_until, g_last_tick;
 static uint32_t g_revives, g_respawns;
 static std::unordered_map<uint32_t,uint32_t> g_pending_bonus; // request -> local body index
-static bool g_downed;
+static bool g_downed, g_give_up_now; // g_give_up_now: coop.giveup (tests, BUG-9118)
 static double g_down_since, g_hold;
 static net::Vec3 g_down_pos;
 static float g_body = 1.f;    // body size factor after a respawn (1 = full size)
@@ -467,9 +472,9 @@ static bool go_down(uint8_t* c)
         g_hold = 0;
         g_down_pos = pos_of(c);
         effect(c, "cell_death_oneshot");
-        send_ko(KO_OUT, (float)kDownTime, 0);
+        send_ko(KO_OUT, (float)down_time(), 0);
         if (C.notice)
-            C.notice(C.my_name() + " is knocked out: swim right next to them within 10 s");
+            C.notice(C.my_name() + " is knocked out: swim right next to them within " + std::to_string((int)down_time()) + " s (hold G to give up)");
     }
     F<int>(c, kHp) = 1;
     F<uint8_t>(c, kDead) = 0;
@@ -494,7 +499,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     std::string helper = nearest_partner(revive_dist(a), nullptr, &d, true);
     g_hold = helper.empty() ? 0 : g_hold + dt;
     if (now - g_ko_sent > 0.25)
-        send_ko(KO_OUT, (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold));
+        send_ko(KO_OUT, (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold));
     if (!helper.empty() && g_hold >= kReviveHold) { // revived by the partner
         g_downed = false;
         F<int>(a, kHp) = 3;
@@ -507,7 +512,10 @@ static void downed_tick(uint8_t* a, double now, double dt)
             C.notice(helper + " revived " + C.my_name());
         return;
     }
-    if (now - g_down_since < kDownTime)
+    if (give_up::held(H, now) || g_give_up_now) // BUG-9118: as if the timer ran out
+        g_down_since = now - down_time();
+    g_give_up_now = false;
+    if (now - g_down_since < down_time())
         return;
     // nobody came: respawn next to the partner, small again
     g_downed = false;
@@ -4110,7 +4118,7 @@ void draw_overlay()
     H->screen_size(&sw, &sh);
     double now = H->time_seconds();
     if (g_downed)
-        draw_ko(avatar(), "", (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
+        draw_ko(avatar(), "", (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
                 sw, sh);
     if (!C.puppets)
         return;
@@ -5689,6 +5697,13 @@ void census_rows(std::vector<census::Row>& out)
                 row(c, (int)idx, "npc");
         });
     }
+}
+
+bool give_up()
+{
+    if (!g_downed) return false;
+    g_give_up_now = true;
+    return true;
 }
 
 bool food_total(int& food)

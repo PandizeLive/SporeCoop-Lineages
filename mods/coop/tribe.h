@@ -133,4 +133,5 @@ bool remove_tool(void* tool);
 // tool of that type elsewhere goes, as the palette's placement of a type the tribe has); false: nothing done
 bool buy_player_tool(int type, const net::Vec3& pos);
 
+void give_up_now(); // BUG-9118: the own downed founder / disabled ship gives up (tests: coop.giveup)
 } // namespace tribe

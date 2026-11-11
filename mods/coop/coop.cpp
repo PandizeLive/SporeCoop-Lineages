@@ -6556,6 +6556,23 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
     adventure::init(H, M, &g_sess);
+    H->command_add(M, "coop.giveup", "coop.giveup [down] - a downed player gives up now, as holding G does; down: a lethal hit on the own creature through the game's damage path (BUG-9118, tests)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "down")) {
+                           void* av = game::avatar();
+                           if (!av) { H->out_printf(out, "no creature\n"); return 1; }
+                           game::hit(av, game::health(av) + 50.f, 0, nullptr);
+                           H->out_printf(out, "hit: hp now %.1f, down=%d\n", game::health(av), (int)creature_rescue::down());
+                           return 0;
+                       }
+                       creature_rescue::give_up_now();
+                       const bool cell = cellsync::give_up();
+                       tribe::give_up_now();
+                       spacecoop::give_up_now();
+                       H->out_printf(out, "give up sent (creature down=%d cell down=%d)\n", (int)creature_rescue::down(), (int)cell);
+                       return 0;
+                   },
+                   nullptr, MT);
     adventure::set_body_lookup([](uint8_t player) -> void* { // BUG-9114: a partner's body in this game
         auto it = g_remotes.find(player);
         return it != g_remotes.end() && it->second.puppet && game::object_alive(it->second.puppet) ? it->second.puppet : nullptr;

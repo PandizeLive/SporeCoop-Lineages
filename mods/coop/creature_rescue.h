@@ -15,4 +15,5 @@ bool pending();
 bool protect(void* avatar, float& damage);
 void message(uint8_t from, net::Reader& r);
 std::string status();
+void give_up_now(); // BUG-9118: the downed player gives up (the timer's result at once)
 }

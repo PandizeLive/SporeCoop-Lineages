@@ -29,6 +29,7 @@
 #include "net/interp.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "give_up.h"
 #include "fixes.h"
 #include "fields.h"
 
@@ -248,9 +249,15 @@ struct FounderRescue {
     net::Vec3 anchor;
     uint32_t attacker_faction = 0;
     bool hut_down = false;
+    bool gave_up = false; // BUG-9118: the founder gave up (hold G / a guest's CMD_GIVE_UP): the timer's result now
 };
 static std::array<FounderRescue, 2> g_founder_rescues;
 static std::array<std::pair<uint16_t, double>, 2> g_remote_rescues;
+// BUG-9118: a downed founder waits 30 s for its partner (10 before); `coop.fix tribe.down_30 off`: 10 s
+static bool g_down_30 = true;
+COOP_FIX("tribe.down_30", "BUG-9118", g_down_30, "tribe: a downed last villager or village waits 30 s for the partner (10 before)");
+static double down_time() { return g_down_30 ? 30.0 : 10.0; }
+static bool g_give_up_now; // coop.giveup (tests)
 constexpr uint32_t kRescueTag = 0x56525254; // TRRV
 constexpr size_t kRescueBytes = 12;
 // BUG-9016: replacing the guest's citizens discarded their native chief. The
@@ -1201,7 +1208,7 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_FORAGE = 3, CMD_REPAIR = 4, CMD_REBUILD = 5, CMD_BABY = 6, CMD_BUILD = 7, CMD_INSTRUMENT = 8 };
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_FORAGE = 3, CMD_REPAIR = 4, CMD_REBUILD = 5, CMD_BABY = 6, CMD_BUILD = 7, CMD_INSTRUMENT = 8, CMD_GIVE_UP = 9 };
 static bool queue_instrument(uint8_t from, uint16_t id, unsigned tool, uint32_t token);
 static bool request_instrument(unsigned tool);
 static bool release_completed_performers(uint8_t from);
@@ -1230,7 +1237,7 @@ static bool queue_partner_rebuild(uint8_t from, uint16_t member);
 
 static bool send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
-    if (kind != CMD_REPAIR && (ids.empty() || g_guest_orders_held))
+    if (kind != CMD_REPAIR && kind != CMD_GIVE_UP && (ids.empty() || g_guest_orders_held))
         return false;
     net::Writer w;
     w.u8(kind);
@@ -2480,7 +2487,7 @@ static void host_tick(double now)
             w.u32(kRescueTag);
             for (const auto& rescue : g_founder_rescues) {
                 w.u16(rescue.until > 0 ? rescue.member : 0);
-                w.u16((uint16_t)std::clamp(std::ceil((rescue.until - now) * 10), 0.0, 100.0));
+                w.u16((uint16_t)std::clamp(std::ceil((rescue.until - now) * 10), 0.0, 300.0)); // BUG-9118: up to 30 s
             }
         }
         for (auto& p : C.sess->players())
@@ -2580,6 +2587,11 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
     if (kind == CMD_REBUILD) {
         if (!village_orders || ids.size() != 1 || from >= 0xFE || from != village_commander() ||
             !queue_partner_rebuild(from, ids[0])) g_cmds_rejected++;
+        return;
+    }
+    if (kind == CMD_GIVE_UP) { // BUG-9118: the guest founder gives up its rescue
+        auto& rescue = g_founder_rescues[1];
+        if (from < 0xFE && from == village_commander() && rescue.until) rescue.gave_up = true;
         return;
     }
     if (kind == CMD_REPAIR) {
@@ -3271,7 +3283,7 @@ static void guest_state(net::Reader& r)
             extra -= kRescueBytes;
             for (auto& rescue : g_remote_rescues) {
                 auto id = tail.u16(), tenths = tail.u16();
-                if (id && tenths <= 100) rescue = {id, now + tenths / 10.0};
+                if (id && tenths <= 300) rescue = {id, now + tenths / 10.0}; // BUG-9118: up to 30 s
             }
         }
     }
@@ -4605,11 +4617,11 @@ static bool protect_founder(void* victim, float damage, uint32_t attacker)
     for (void* c : members(partner)) survivor |= living(c);
     if (!survivor) return false;
     auto& rescue = g_founder_rescues[guest ? 1 : 0];
-    rescue = {tracked->second.id, F<uint32_t>(tribe, 0x30), now + 10, -1, 0, game::position(victim)};
+    rescue = {tracked->second.id, F<uint32_t>(tribe, 0x30), now + down_time(), -1, 0, game::position(victim)};
     rescue.attacker_faction = attacker;
     game::set_health(victim, 1);
     game::stop(victim);
-    if (C.notice) C.notice("Last villager down. Bring a partner villager within 15 metres for 1.5 seconds to revive. 10 seconds before respawn or capture.");
+    if (C.notice) C.notice("Last villager down. Bring a partner villager within 15 metres for 1.5 seconds to revive. " + std::to_string((int)down_time()) + " seconds before respawn or capture (hold G to give up).");
     return true;
 }
 
@@ -4634,14 +4646,14 @@ static bool protect_founder_hut(void* hut, float damage, uint32_t attacker)
         void* representative = nullptr;
         for (void* person : members(tribe)) if (living(person) && g_hm.count(person)) { representative = person; break; }
         if (!representative) return false;
-        rescue = {g_hm[representative].id, F<uint32_t>(tribe, 0x30), now + 10, -1, 0, game::position(representative)};
+        rescue = {g_hm[representative].id, F<uint32_t>(tribe, 0x30), now + down_time(), -1, 0, game::position(representative)};
         rescue.attacker_faction = attacker;
         game::set_health(representative, 1);
     }
     rescue.hut_down = true;
     F<float>(hut, 0x158) = 1;
     for (void* person : members(tribe)) game::stop(person);
-    if (C.notice) C.notice("Village down. Bring a partner villager to the marked survivor within 10 seconds to prevent capture.");
+    if (C.notice) C.notice("Village down. Bring a partner villager to the marked survivor within " + std::to_string((int)down_time()) + " seconds to prevent capture (hold G to give up).");
     return true;
 }
 
@@ -4650,6 +4662,8 @@ static void founder_rescue_tick(double now)
     for (size_t seat = 0; seat < g_founder_rescues.size(); ++seat) {
         auto& rescue = g_founder_rescues[seat];
         if (!rescue.until) continue;
+        if (seat == 0 && !rescue.gave_up && (give_up::held(H, now) || g_give_up_now)) rescue.gave_up = true; // BUG-9118: the host's founder
+        if (rescue.gave_up) rescue.until = std::min(rescue.until, now);
         auto found = g_hm_by_id.find(rescue.member);
         void* t = founder_village(seat != 0);
         if (!t || F<uint32_t>(t, 0x30) != rescue.faction || found == g_hm_by_id.end()) { rescue = {}; continue; }
@@ -4673,7 +4687,7 @@ static void founder_rescue_tick(double now)
                 if (living(c) && net::dist(game::position(c), rescue.anchor) <= 15) partner_near = true;
         if (!partner_near) rescue.near_since = -1;
         else if (rescue.near_since < 0) rescue.near_since = now;
-        bool revived = partner_near && rescue.near_since + 1.5 <= std::min(now, rescue.until);
+        bool revived = !rescue.gave_up && partner_near && rescue.near_since + 1.5 <= std::min(now, rescue.until);
         if (!revived && now < rescue.until) continue;
         if (!revived && queue_founder_capture(seat != 0, rescue.attacker_faction)) continue;
         double cost = 0;
@@ -5812,8 +5826,13 @@ void tick(double now)
         return;
     auto_founders_tick(now);
     drop_foreign_selection();
+    if (!is_host() && g_remote_rescues[1].first && g_remote_rescues[1].second > now && (give_up::held(H, now) || g_give_up_now)) {
+        send_cmd(CMD_GIVE_UP, {}, 0, {}, {}); // BUG-9118: the guest founder is down and gives up
+        g_give_up_now = false;
+    }
     if (is_host()) {
         founder_rescue_tick(now);
+        g_give_up_now = false;
         host_tick(now);
         combat_tick(now);
         load_six_trial();
@@ -7411,4 +7430,5 @@ int give_selected(uint8_t to)
     return (int)ids.size();
 }
 
+void give_up_now() { g_give_up_now = true; }
 } // namespace tribe

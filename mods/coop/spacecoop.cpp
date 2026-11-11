@@ -14,6 +14,7 @@
 #include "space_ext.h"
 #include "space_logic.h"
 #include "sporekit_game.hpp"
+#include "give_up.h"
 #include "fixes.h"
 #include "world.h"
 
@@ -35,7 +36,12 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 // invincible +0x588, death cinematic handle +0x7F0
 constexpr uintptr_t kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540, kInvincible = 0x588,
                     kCinematic = 0x7F0, kPos = 0x38;
-constexpr double kDownTime = 20.0, kRepairHold = 2.0;
+// BUG-9118: 30 s for a partner's repair (20 before; `coop.fix space.down_30 off`), and the pilot can give up (hold G)
+static bool g_down_30 = true;
+COOP_FIX("space.down_30", "BUG-9118", g_down_30, "space: a disabled ship waits 30 s for a partner's repair (20 before)");
+static double down_time() { return g_down_30 ? 30.0 : 20.0; }
+static bool g_give_up_now; // coop.giveup (tests)
+constexpr double kRepairHold = 2.0;
 static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
 
 enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6 };
@@ -221,7 +227,7 @@ float filter_own_damage(void* ufo, float dmg, int type)
         return dmg; // nobody can help: the native death
     // disabled instead of destroyed: HP stays at 1, no more damage, no shooting
     g_down = true;
-    g_down_until = now + kDownTime;
+    g_down_until = now + down_time();
     g_last_down = now;
     g_last_down_epoch = spaceext::world_epoch();
     note_down_ship(ufo);
@@ -229,10 +235,10 @@ float filter_own_damage(void* ufo, float dmg, int type)
     g_down_fresh = g_repair_fix;
     net::Writer w;
     w.u8(1);
-    w.u8((uint8_t)kDownTime);
+    w.u8((uint8_t)down_time());
     send(K_DOWN, w);
     if (C.notice)
-        C.notice("your ship is disabled: a partner can repair it by flying close (20 s)");
+        C.notice("your ship is disabled: a partner can repair it by flying close (" + std::to_string((int)down_time()) + " s, hold G to give up)");
     return std::max(0.f, hp - 1.f);
 }
 
@@ -355,7 +361,10 @@ static void down_tick(double now)
     double dt = std::min(0.5, now - last);
     last = now;
     g_repair_t = close_by ? g_repair_t + dt : std::max(0.0, g_repair_t - dt);
-    if (g_repair_t >= kRepairHold)
+    if (give_up::held(H, now) || g_give_up_now) // BUG-9118: as if the timer ran out
+        g_down_until = std::min(g_down_until, now - 0.01);
+    g_give_up_now = false;
+    if (g_repair_t >= kRepairHold && now <= g_down_until)
         end_down(true);
     else if (now > g_down_until) {
         if (g_down_world_fix && g_down_ship.u && !down_ship_here()) {
@@ -1882,7 +1891,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "disable" && a.size() > 1) { // tests (BUG-0063): the disabled flag alone, no rescue messages
         g_down = a[1] != "0";
         if (g_down) {
-            g_down_until = H->time_seconds() + kDownTime;
+            g_down_until = H->time_seconds() + down_time();
             note_down_ship(in_space() ? u : nullptr);
         } else
             clear_down_invincible();
@@ -2147,4 +2156,5 @@ static std::vector<spaceext::Row> squad_rows()
     return v;
 }
 static bool squad_reg = spaceext::add({.name = "squad", .rows = squad_rows});
+void give_up_now() { g_give_up_now = true; }
 } // namespace spacecoop

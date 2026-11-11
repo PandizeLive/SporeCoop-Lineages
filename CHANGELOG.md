@@ -6,6 +6,9 @@
   spaced, the difficulty has a proper field, ping never wraps, the lobby drops
   the extra heading and lines that did not apply, and update messages are short
   ("Lineages 48 is available") (BUG-9117).
+- A downed player now has 30 seconds for a partner to come (Space: 30 instead
+  of 20), and can give up by holding G for a second: the same as the timer
+  running out, including its loss (BUG-9118).
 
 ## [0.7.8-lineages47-dev] - 2026-11-11
 

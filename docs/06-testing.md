@@ -5164,3 +5164,13 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 - Labels centre their text whatever alignment is set; coop_ui.cpp sizes them with measured character
   widths (text_px). A new label that wraps or drifts: check its box against text_px plus 16 px a side.
 - The 10 fps QA games ping each other at about 100 ms: good for checking the 3-digit ping column.
+
+## Downed players: 30 s and giving up (2026-11-11, feat/lineages-47)
+<a id="test-downed-give-up"></a>
+
+- `coop.giveup down`: a lethal hit on the own creature through the game's damage path (Creature,
+  Adventure): with a partner in the world the player is downed. Stand the two creatures more than 6 m
+  apart first (`coop.npc gopos x y z`), or the partner revives at once.
+- `coop.giveup`: the downed player gives up (as holding G for 1 s does), in every stage.
+- `coop.adventure` prints the rescue line ("Downed: N s ..."); `coop.dna` the pack's DNA (10% is lost
+  on a timeout or a give-up in Creature).

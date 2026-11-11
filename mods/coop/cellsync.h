@@ -80,5 +80,6 @@ std::string debug(const std::vector<std::string>& args);
 void set_fake_model(uint32_t idx, uint32_t inst);
 
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
+bool give_up(); // BUG-9118: a knocked-out own cell gives up (respawns at once); false when not down
 
 } // namespace cellsync

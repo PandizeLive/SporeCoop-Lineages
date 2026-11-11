@@ -6,14 +6,20 @@
 #include <vector>
 #include "fixes.h"
 #include "game.h"
+#include "give_up.h"
 #include "modes.h"
 #include "net/interp.h"
 
 namespace creature_rescue {
 namespace {
-constexpr double window = 10, hold = 1.5;
+// BUG-9118: 30 s for a partner to come (10 before); the downed player can give up (hold G 1 s): the
+// same as the timer running out, at once. `coop.fix creature.down_30 off`: 10 s.
+bool g_long_fix = true;
+COOP_FIX("creature.down_30", "BUG-9118", g_long_fix, "creature / adventure: a downed player waits 30 s for a partner (10 before)");
+double window_s() { return g_long_fix ? 30.0 : 10.0; }
+constexpr double hold = 1.5;
 constexpr float reach = 6;
-enum Event : uint8_t { Begin, Revived, Expired };
+enum Event : uint8_t { Begin, Revived, Expired, GiveUp };
 const SkHost* H;
 net::Session* S;
 void (*notice)(const std::string&, int);
@@ -40,7 +46,9 @@ struct Rescue {
     bool active = false;
     double begin = 0, near_since = -1;
     std::string name;
+    bool gave_up = false; // BUG-9118: the downed player gave up (as if the timer ran out)
 };
+bool local_give_up; // this game's downed player asked to give up (sent / applied by the next tick)
 Rescue watches[net::kMaxPlayers];
 // A departed seat may be reused before its timer expires. Keep only the old
 // episode's deadline and name, never an avatar pointer or the reusable seat.
@@ -60,10 +68,10 @@ void begin(uint8_t player, uint32_t id, double now)
         w = {id, true, now, -1, S->name_of(player)};
 }
 
-void charge(const std::string& name)
+void charge(const std::string& name, bool gave_up = false)
 {
     if (game::mode_id() == modes::kScenario) { // no DNA in an adventure
-        notice(name + " was down too long.", -1);
+        notice(name + (gave_up ? " gave up." : " was down too long."), -1);
         return;
     }
     float dna = game::dna(), cost = 0;
@@ -72,7 +80,7 @@ void charge(const std::string& name)
         game::dna_add_raw(-cost);
     }
     char loss[80];
-    std::snprintf(loss, sizeof loss, " fell. The pack lost %.0f DNA.", cost);
+    std::snprintf(loss, sizeof loss, " %s. The pack lost %.0f DNA.", gave_up ? "gave up" : "fell", cost);
     notice(name + loss, -1);
 }
 
@@ -166,6 +174,8 @@ void message(uint8_t from, net::Reader& r)
         if (event == Begin && from < net::kMaxPlayers && from && has_peer && peer.id == from &&
             (peer.flags & net::PF_DOWNED))
             begin(from, id, H->time_seconds());
+        else if (event == GiveUp && from && from < net::kMaxPlayers && watches[from].active && watches[from].id == id)
+            watches[from].gave_up = true; // BUG-9118: settled by the next tick
     } else if (from == 0 && id == local_id && (event == Expired || event == Revived)) {
         resolve((Event)event);
     }
@@ -188,14 +198,21 @@ void tick(uint32_t world, void* avatar, const net::PlayerState* partner, double 
             send(0, Begin, local_id); // the first request may predate the host's first usable peer state
             last_request = now;
         }
-        if (S->role() == net::Role::Client && !has_peer && now - local_start >= window + 5) {
+        if (S->role() == net::Role::Client && !has_peer && now - local_start >= window_s() + 5) {
             resolve(Expired); // a host in another stage cannot resolve this body's knockout
             return;
         }
-    }
+        // BUG-9118: giving up (hold G, or coop.giveup): the host settles it like an expired timer
+        if (local_give_up || give_up::held(H, now)) {
+            local_give_up = false;
+            if (S->role() == net::Role::Client) send(0, GiveUp, local_id);
+            else if (watches[0].active && watches[0].id == local_id) watches[0].gave_up = true;
+        }
+    } else
+        local_give_up = false;
     if (S->role() != net::Role::Host) return;
     for (auto it = departed.begin(); it != departed.end();) {
-        if (now - it->begin < window) { ++it; continue; }
+        if (now - it->begin < window_s()) { ++it; continue; }
         charge(it->name);
         it = departed.erase(it);
     }
@@ -208,22 +225,24 @@ void tick(uint32_t world, void* avatar, const net::PlayerState* partner, double 
                     net::dist(game::position(body), peer.pos) <= reach;
         if (!near) w.near_since = -1;
         else if (w.near_since < 0) w.near_since = now;
-        bool saved = near && w.near_since + hold <= std::min(now, w.begin + window);
-        if (!saved && now - w.begin < window) continue;
+        bool saved = !w.gave_up && near && w.near_since + hold <= std::min(now, w.begin + window_s());
+        if (!saved && !w.gave_up && now - w.begin < window_s()) continue;
         w.active = false; // one host debit per knockout, even if both players expire on this frame
         Event result = saved ? Revived : Expired;
-        if (!saved) charge(w.name);
+        if (!saved) charge(w.name, w.gave_up);
         if (victim) send(victim, result, w.id);
         else resolve(result);
         if (saved) notice(w.name + " was revived.", -1);
     }
 }
 
+void give_up_now() { if (down()) local_give_up = true; } // tests and the console: coop.giveup
+
 std::string status()
 {
     if (down()) {
-        int sec = std::max(0, (int)std::ceil(window - (H->time_seconds() - local_start)));
-        return "Downed: " + std::to_string(sec) + " s for your partner to revive you";
+        int sec = std::max(0, (int)std::ceil(window_s() - (H->time_seconds() - local_start)));
+        return "Downed: " + std::to_string(sec) + " s for your partner to revive you (hold G to give up)";
     }
     if (has_peer && (peer.flags & net::PF_DOWNED))
         return "Revive " + S->name_of(peer.id) + ": stay close for 1.5 s";
