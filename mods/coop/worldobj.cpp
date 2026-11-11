@@ -257,6 +257,10 @@ static bool g_orn_model_fix = true;
 COOP_FIX("wobj.ornament_model", "BUG-9124", g_orn_model_fix,
          "creature: bones a partner used change to their used model here too (they no longer stay)");
 static uint32_t g_orn_models; // tests: next models applied for a partner's use
+static bool g_orn_gone_fix = true;
+COOP_FIX("wobj.ornament_gone", "BUG-9124", g_orn_gone_fix,
+         "creature: bones a partner dug up (no model left) disappear here too, as on the digger's screen");
+static uint32_t g_orn_removed; // tests: bones removed for a partner's dig
 static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves the last use (and the interact node the ornament)
 {
     uint8_t* r = orn_reward(o);
@@ -265,8 +269,17 @@ static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves t
     field<int>(r, 0x10) = 0;
     field<uint8_t>(r, 0x24) = 1;
     field<uint8_t>(o, 0xA3) = 0;
-    if (g_orn_model_fix && a_OrnUsed && thiscall<int>(a_OrnUsed, o)) // as the interact node does
-        g_orn_models++;
+    if (g_orn_model_fix && a_OrnUsed) {
+        if (thiscall<int>(a_OrnUsed, o)) // as the interact node does: the next (dug-up) model
+            g_orn_models++;
+        else if (g_orn_gone_fix) {
+            // BUG-9124 (2026-11-11, QA Samuth.spo bone 9188): with no model left the dig takes the bones away on the
+            // digger's screen (its model links cleared); here they stayed, looking diggable. Gone here too.
+            H->log(M, SK_INFO, "wobj: bones %p used by a partner have no model left: removed here (%u)", o, g_orn_removed + 1);
+            game::destroy_instance(o);
+            g_orn_removed++;
+        }
+    }
 }
 static bool orn_behind(uint32_t local, uint32_t host) { return orn_used(host) && !orn_used(local); }
 static void orn_apply(const Item& l, uint32_t) { orn_use(l.p); }
@@ -1103,6 +1116,18 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             n++;
         }
         H->out_printf(out, "end n=%d\n", n);
+        return 0;
+    }
+    if (!strcmp(a, "screen") && argc > 2) { // screen <object>: where it is on the screen (tests: click it as a player, BUG-9124)
+        void* o = (void*)strtoul(argv[2], nullptr, 16);
+        net::Vec3 p;
+        if (IsBadReadPtr(o, 0x40) || !game::object_position(o, p)) {
+            H->out_printf(out, "no such object\n");
+            return 1;
+        }
+        float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
+        int on = H->world_to_screen(w, sc);
+        H->out_printf(out, "screen %.0f %.0f on=%d\n", sc[0], sc[1], on);
         return 0;
     }
     if (!strcmp(a, "use") && argc > 2) { // use <ornament>: the avatar uses it the game's way (OrnamentUsed + 0xD3353638)

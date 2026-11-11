@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Creature: bones the other player digs up disappear on your screen too (they
+  stayed and looked diggable) (BUG-9124).
+
 ## [0.7.8-lineages52-dev] - 2026-11-11
 
 - Tribe / Civilization: a connected player who plays their own custom creature
