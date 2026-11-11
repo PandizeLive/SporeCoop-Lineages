@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages53-dev] - 2026-11-11
+
 - Creature: bones the other player digs up disappear on your screen too (they
   stayed and looked diggable) (BUG-9124).
 

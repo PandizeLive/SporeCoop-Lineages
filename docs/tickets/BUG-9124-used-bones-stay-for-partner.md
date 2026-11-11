@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev
 role: host
 versions: 0.7.4 to 0.7.8-lineages49-dev
-fixed_in:
+fixed_in: 0.7.8-lineages53-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8: a real dig (click the skeleton: `coop.wobj screen <ornament>` + `click x y`) on the host with the guest near; `coop.wobj list interactive_ornament` on both; guest log "removed here"
