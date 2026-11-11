@@ -2902,7 +2902,7 @@ The checks found, what they read, and how the mod answers them now:
   dmglog`, a ring of the last 48 hits through the hook: victim, attacker, type, caller, filtered / applied /
   direct). Damage type 3 in TakeDamage is the **charm** (mCharmDamage +0x1694 / mCharmTime +0x169C / mpCharmer
   +0x1698, reflection 0x1334790: 20 to charm, 50 for an epic, 60 s), not a charge's stun.
-* ✔ (runtime) The charge stun: `coop.rules charge <npc> 1` (SetTarget + PlayAbility of type 0x1F) on the host hit the
+* ✔ (runtime) The charge stun: `coop.prules charge <npc> 1` (SetTarget + PlayAbility of type 0x1F) on the host hit the
   puppet (type 2 0.5 hp) and sent kind 0; the guest's avatar then held stimulus 0x1000 for 3.0 s, counting down,
   and showed the stars (screenshot). CreatureStun called on the guest's avatar by hand does the same.
 * ✔ (runtime) Summon Flock: `coop.drama start 8` (the event kind 8 the ability's handler starts) put 4 creatures of
@@ -3005,7 +3005,7 @@ BUG-0584. GOG 2024, asm and Ghidra. Extends #creature-fruit-pool.
 
 P2 of docs/plan-0.7.8.md, BUG-0418 (umbrella), BUG-0501 / 0558 / 0496 / 0557. GOG 2024, Ghidra (tools/ghidra/q.sh)
 and lane 6. Follows #creature-player-rules; the code is in `mods/coop/player_rules.cpp` (MSG_PLAYER_RULE kind 2,
-`coop.rules roar | ufo | heal | meat`).
+`coop.prules roar | ufo | heal | meat`).
 
 ### The roar (BUG-0501, fixed)
 <a id="creature-roar-relay"></a>

@@ -4887,10 +4887,10 @@ P1 of 0.7.7 (docs/re/creature.md#creature-player-rules). Each test checks the gu
 
 | Test (suite) | What | Twin switch |
 |---|---|---|
-| coop_creature_stun.py (creature_stun) | the host's NPC plays its charge on the guest's puppet (`coop.rules charge <npc> <player>`: SetTarget + PlayAbility, the hit and the stun are the game's); the guest's avatar holds stimulus 0x1000; the guest's stun of a proxy stuns the host's NPC (`coop.rules stun <s> <id>`, as its own hit) | creature.stun_relay |
+| coop_creature_stun.py (creature_stun) | the host's NPC plays its charge on the guest's puppet (`coop.prules charge <npc> <player>`: SetTarget + PlayAbility, the hit and the stun are the game's); the guest's avatar holds stimulus 0x1000; the guest's stun of a proxy stuns the host's NPC (`coop.prules stun <s> <id>`, as its own hit) | creature.stun_relay |
 | coop_creature_air.py (creature_air) | a wild NPC bites the guest on the ground, then the guest's creature is kept 1.5 m up for 20 s (`coop.abilities lift`): no host melee hit lands while the guest's own game has it off the ground (`coop.hp dmglog`: `air=1`) | creature.air_immune |
-| coop_creature_flock.py (creature_flock) | the host's game starts its Summon Flock event (`coop.drama start 8`); on the guest every flock proxy answers vt 0xD4 friendly and wears the hearts (`coop.rules friendly <id>`) | creature.party_allies, npc.flock_hearts |
-| coop_creature_nest_ally.py (creature_nest_ally) | the host's record of a species becomes allied; the guest's herds of it get +0x191 (`coop.rules nests <inst> <type> <group>`), and lose it again | social.nest_ally |
+| coop_creature_flock.py (creature_flock) | the host's game starts its Summon Flock event (`coop.drama start 8`); on the guest every flock proxy answers vt 0xD4 friendly and wears the hearts (`coop.prules friendly <id>`) | creature.party_allies, npc.flock_hearts |
+| coop_creature_nest_ally.py (creature_nest_ally) | the host's record of a species becomes allied; the guest's herds of it get +0x191 (`coop.prules nests <inst> <type> <group>`), and lose it again | social.nest_ally |
 | coop_tribe_target_ring.py (tribe_target_ring) | the guest selects its members and orders an attack (`coop.tribe act 7`); its HUD's ring map holds a live ring under the enemy (`coop.tribe ring <id>`, the HUD's own lookup) | tribe.target_ring |
 
 * `coop.hp dmglog [clear]`: the last 48 hits through the creature TakeDamage hook (victim, attacker, amount, type,

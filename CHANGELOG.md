@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Creature: the connected player has a pack of their own. Their Summon Flock
+  now summons a flock that follows and fights for them, and they can recruit
+  allied creatures; the host's game runs that pack (BUG-9129).
+
 ## [0.7.8-lineages50-dev] - 2026-11-11
 
 - Creature: after the host migrates to a new nest, the connected player's

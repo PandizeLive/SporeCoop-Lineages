@@ -13,6 +13,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "guest_pack.h"
 #include "modes.h"
 #include "sporekit_game.hpp"
 
@@ -55,6 +56,8 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     if (kind < 9)
         g_last_event[kind] = ev;
     bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
+    // BUG-9129: a guest's summon is the host's (its Summon Flock goes to the host as a request)
+    tribe_attack = tribe_attack || (kind == 8 && guest_pack::enabled());
     if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) {
         if (g_refused[kind]++ < 5)
             H->log(M, SK_INFO, "drama: this game would start its own %s event: not on a guest, the host's world has "

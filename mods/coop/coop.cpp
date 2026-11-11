@@ -79,6 +79,7 @@
 #include "library.h"
 #include "partner_marker.h"
 #include "progress_debt.h"
+#include "guest_pack.h"
 #include "notify.h"
 #include "notify_text.h"
 #include "syncdbg.h"
@@ -2889,6 +2890,7 @@ void avatar_change_check()
     if (g_last_avatar) {
         forget_puppets();
         npc::on_world_change();
+        guest_pack::reset(); // BUG-9129
         nest::on_world_change();
         fields::on_world_change();
         wobj::on_world_change();
@@ -3407,6 +3409,7 @@ void on_frame(void*, int, void*)
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
+    guest_pack::tick(now);                      // BUG-9129
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
@@ -4104,6 +4107,7 @@ void end_session(EndPath path, bool cell)
     adventure::reset();
     creature_rescue::reset();
     progress_debt::reset(); // BUG-9119
+    guest_pack::reset();    // BUG-9129
     shared::on_session_end();
     library::on_session_end();
     wsync::on_session_end();
@@ -4576,6 +4580,7 @@ void setup_callbacks()
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t reason) {
         creature_rescue::on_player_leave(id); // old debt is detached from this reusable seat
+        guest_pack::on_player_leave(id);      // BUG-9129
         trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",
                     reason == 1 ? "timed out (no packets)" : "left or replaced by its rejoin");
         support::on_player_leave(id, reason); // its link statistics (diag_stats.cpp)
@@ -6240,6 +6245,22 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_JUMPING);
         };
         player_rules::init(H, M, pc);
+        guest_pack::Ctx gc; // BUG-9129
+        gc.sess = &g_sess;
+        gc.puppet_of = pc.puppet_of;
+        gc.notice = [](const std::string& t) { notice(t, -1); };
+        guest_pack::init(H, M, gc);
+        H->command_add(M, "coop.gpack", "coop.gpack [summon <guest> | recruit <guest> <npc id>] - the guests' packs the host runs (BUG-9129); summon / recruit: tests (host)",
+                       [](void*, int argc, const char* const* argv, SkOut* out) {
+                           if (argc > 2 && !strcmp(argv[1], "herd"))
+                               guest_pack::set_herd_fix(atoi(argv[2]) != 0);
+                           if (argc > 2 && !strcmp(argv[1], "summon"))
+                               H->out_printf(out, "summoned %d\n", guest_pack::summon((uint8_t)atoi(argv[2])));
+                           else if (argc > 3 && !strcmp(argv[1], "recruit"))
+                               H->out_printf(out, "recruit %d\n", (int)guest_pack::recruit((uint8_t)atoi(argv[2]), npc::host_npc((uint16_t)atoi(argv[3]))));
+                           H->out_printf(out, "%s", guest_pack::status().c_str());
+                           return 0;
+                       }, nullptr, SK_CMD_MAIN_THREAD);
     }
     { // BUG-0600: the fight's effects, sprints and voices of the host's members / NPCs on a guest's mirrors
         mirror_fx::Ctx mc;

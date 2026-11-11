@@ -29,6 +29,7 @@
 #include "world.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "guest_pack.h"
 #include "fields.h"
 #include "gamefixes.h"
 #include "dna_ledger.h"
@@ -676,7 +677,7 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.flags = (creature_hp::enemy_scaled(c) ? net::NF_SCALED_HP : 0) |
               (g_air_fix && !game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
-              (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
+              (game::pack_member(c) || guest_pack::member(c) ? net::NF_PACK : 0) | // BUG-0556 / BUG-9129: the party's packs
               (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
                    ? net::NF_SUMMONED
                    : 0) |
@@ -2177,6 +2178,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         game::apply_damage(npc, dmg, q.type, attacker);
         g_hits_applied++;
+        guest_pack::assist(from, npc); // BUG-9129: the guest's pack joins its fight
         break;
     }
     case net::MSG_DAMAGE: { // guest: the host says we were hit
@@ -2275,6 +2277,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || C.puppet_of(p.id) != c)
                 continue;
+            if (attacker && attacker != av && !game::is_puppet(attacker))
+                guest_pack::defend(p.id, attacker); // BUG-9129: the guest's pack defends it
             if (attacker && attacker != av && !game::is_puppet(attacker)) {
                 net::Damage d;
                 d.player = p.id;

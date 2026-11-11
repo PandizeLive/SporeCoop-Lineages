@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 #include "fixes.h"
+#include "guest_pack.h"
 #include "game.h"
 #include "modes.h"
 #include "npc.h"
@@ -301,6 +302,8 @@ bool host_party(void* c)
 {
     if (!c)
         return false;
+    if (guest_pack::member(c)) // BUG-9129: a guest's pack is the party's too
+        return true;
     if (skg::field<uint32_t>(c, game::kFlagsOff) & kPackBit)
         return true;
     void* herd = game::herd_of(c);

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "fixes.h"
+#include "guest_pack.h"
 #include "game.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
@@ -23,6 +24,8 @@ enum Kind : uint8_t {
     K_STUN_PLAYER = 0, // host -> guest {u8 player, f32 seconds}
     K_STUN_NPC = 1,    // guest -> host {u16 npc id, f32 seconds}
     K_ROAR = 2,        // guest -> host {u32 ability type}: the guest's roar / siren song, played by its puppet (BUG-0501)
+    K_SUMMON = 3,      // guest -> host {}: the guest's Summon Flock: a flock in the guest's pack (BUG-9129)
+    K_RECRUIT = 4,     // guest -> host {u16 npc id}: the guest recruited host NPC id into its pack (BUG-9129)
 };
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
@@ -232,7 +235,8 @@ typedef int(__cdecl* AbilityTick_t)(void*, int, int, int, int, uint32_t*);
 static AbilityTick_t o_AbilityTick;
 static uintptr_t a_PostStim, a_GoalStart, a_StimClear, a_GoalFind, a_GoalEnd, a_IsEpic;
 static uint32_t g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type;
-static constexpr uint32_t kRoar = 0x31;
+static constexpr uint32_t kRoar = 0x31, kSummon = 0x33;
+static uint32_t g_summon_sent, g_recruit_sent, g_recruit_got;
 static constexpr uint32_t kCreatureNoun = 0x18EB45Eu;
 
 static uint8_t* ability_ptr(void* c, int idx)
@@ -262,6 +266,13 @@ static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32
 {
     if (g_roar_fix && c && st && st[1] == 0 && is_guest() && c == game::avatar() && game::in_creature_stage()) {
         uint8_t* ab = ability_ptr(c, (int)st[0]);
+        if (ab && *(uint32_t*)(ab + 8) == kSummon && guest_pack::enabled()) {
+            // BUG-9129: the guest's Summon Flock: the host makes the flock (in this game its own drama event 8 is refused)
+            net::Writer w;
+            w.u8(K_SUMMON);
+            C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+            g_summon_sent++;
+        }
         if (ab && *(uint32_t*)(ab + 8) == kRoar) { // the first tick of the own roar: the host's game plays it too
             float range = *(float*)(ab + 0xA8) + *(float*)(ab + 0xF4), secs = *(float*)(ab + 0xA0);
             net::Writer w;
@@ -275,6 +286,28 @@ static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32
         }
     }
     return o_AbilityTick(c, a2, a3, a4, a5, st);
+}
+
+// BUG-9129: a guest's recruit (the end of a social game with an ally, 0xD9F7A0 -> cPosseSimulator_AddMember) is a
+// host NPC's proxy: it goes to the host as a request, the proxy stays out of this game's pack (and its saves).
+typedef bool(SK_THISCALL* AddMember_t)(void*, void*);
+static AddMember_t o_AddMember;
+static bool SK_THISCALL h_AddMember(void* posse, void* c)
+{
+    if (!c || !posse)
+        return false;
+    if (guest_pack::enabled() && is_guest() && c && npc::is_proxy(c)) {
+        uint16_t id = npc::id_of(c);
+        if (id != 0xFFFF) {
+            net::Writer w;
+            w.u8(K_RECRUIT);
+            w.u16(id);
+            C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+            g_recruit_sent++;
+        }
+        return true;
+    }
+    return o_AddMember(posse, c);
 }
 
 struct RoarQ {
@@ -466,6 +499,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         o_Stun(c, secs);
         g_stun_got_npc++;
         g_stun_last = secs;
+    } else if (kind == K_SUMMON) {
+        if (!r.ok() || from == 0 || !is_host())
+            return;
+        int n = guest_pack::summon(from);
+        if (n > 0 && C.sess)
+            H->log(M, SK_INFO, "player_rules: player %u's Summon Flock: %d creatures", from, n);
+    } else if (kind == K_RECRUIT) {
+        uint16_t id = r.u16();
+        if (!r.ok() || from == 0 || !is_host())
+            return;
+        g_recruit_got++;
+        guest_pack::recruit(from, npc::host_npc(id));
     } else if (kind == K_ROAR) {
         uint32_t t = r.u32();
         float range = r.f32(), secs = r.f32();
@@ -495,6 +540,9 @@ std::string status()
     out += b;
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));
+    out += b;
+    snprintf(b, sizeof b, "player_rules: guest pack summon_sent=%u recruit_sent=%u recruit_got=%u addmember_hook=%d\n", g_summon_sent,
+             g_recruit_sent, g_recruit_got, (int)(o_AddMember != nullptr));
     out += b;
     snprintf(b, sizeof b, "player_rules: roar fix=%d sent=%u got=%u played=%u heard=%u bad=%u last=0x%X hook=%d\n", (int)g_roar_fix,
              g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type, (int)(o_AbilityTick != nullptr));
@@ -670,7 +718,11 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_UfoTick, (void**)&o_UfoTick);
     if (uintptr_t a = H->sym("SporeCoop::BT_SpecialAbilityTick"))
         H->hook_create(M, (void*)a, (void*)h_AbilityTick, (void**)&o_AbilityTick);
-    H->command_add(M, "coop.rules", "coop.rules [stun <s> [npc id]] - the game's player rules carried between the games (P1, BUG-0554)",
+    if (uintptr_t a = H->sym("SporeCoop::cPosseSimulator_AddMember")) // BUG-9129
+        H->hook_create(M, (void*)a, (void*)h_AddMember, (void**)&o_AddMember);
+    // (named coop.prules: coop.cpp's campaign "coop.rules" is registered later and took the name, so these test
+    // subcommands were unreachable)
+    H->command_add(M, "coop.prules", "coop.prules [stun <s> [npc id] | roar <type hex> | friendly <id> | ...] - the game's player rules carried between the games (P1, BUG-0554)",
                    c_rules, nullptr, SK_CMD_MAIN_THREAD);
 }
 
