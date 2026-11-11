@@ -2158,3 +2158,5 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-9125 (Cell): meat a partner ate stays on the other screen at a huge size. Not reproduced with ambient meat;
   likely loot from a kill or a chunk bitten off a big cell.
 - BUG-9130 (Creature): Ctrl+Scroll's wider field of view is computed but not drawn.
+- BUG-9133 (Creature): after a fight, healing at a nest, the connected player hears a heal sound repeating. Not
+  reproduced in QA.
