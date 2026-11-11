@@ -3176,3 +3176,12 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   level has the same width and its own DNA. Read the arrow instead of computing the end.
 * ✔ Cell: linear, food S+0x1C / 1000 (204 food: the arrow at 458 = 231 + 0.204 x 1114).
 * The progress debt (BUG-9119) draws its red stretch back from the arrow.
+
+## The guest's home nest after a migration (2026-11-11, feat/lineages-47)
+<a id="creature-nest-migration-follow"></a>
+
+* ✔ CreatureGame_JoinNestHerd 0xD40C70 called from the mod (cdecl(cNest*)) on a guest moves its avatar into that
+  nest's herd at once: `game::nest_position(avatar)` reports the new nest, and the native respawn after a death
+  puts the creature there (QA Samuth.spo: (453.47 52.17 -221.05) next to the nest at (453.12 46.02 -223.02)).
+  No cinematic is needed; 0 faults. Used by BUG-9128 (nest.follow_home). The same call on the host simulates a
+  claim for tests (`coop.nest home x y z`).

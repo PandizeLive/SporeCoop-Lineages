@@ -65,7 +65,22 @@ COOP_FIX("nest.eggs_tribe", "BUG-0474", g_tribe_fix, "tribe: the host's eggs at 
 
 static bool egg_stage() { return game::in_creature_stage() || (g_tribe_fix && game::mode_id() == modes::kTribe); }
 
-constexpr uint8_t kKindSnap = 0, kKindEat = 1;
+constexpr uint8_t kKindSnap = 0, kKindEat = 1, kKindHome = 2; // 2: host -> guest, f32 x y z its home nest (BUG-9128)
+
+// ---------------------------------------------------------------- BUG-9128
+// A migration moves the avatar into the new nest's herd only when that game's own avatar reaches the new
+// nest with the migration under way (NestTick 0xD41510 -> CreatureGame_JoinNestHerd 0xD40C70). The host
+// leads it; the guest's game often never claims (its world came during CRG_SpeciesMigrate with state 1, or
+// its creature arrived later), so its avatar kept the old herd and respawned at the original nest. The
+// host now sends its home nest (1 Hz); a guest whose own home nest is elsewhere joins the herd of its own
+// copy of that nest (the save's nests are at the same places), without the claim's cinematic.
+// Off (`coop.fix nest.follow_home off`): each game keeps its own home nest.
+static bool g_home_fix = true;
+COOP_FIX("nest.follow_home", "BUG-9128", g_home_fix, "creature: a guest's home nest follows the host's after a migration (respawns there)");
+static uintptr_t a_JoinNestHerd;
+static net::Vec3 g_host_home;
+static double g_host_home_at = -1, g_home_try_at = -1;
+static uint32_t g_home_sent, g_home_joins, g_home_fails;
 constexpr int kMaxSnap = 20;           // eggs per snapshot (49 bytes each, one packet)
 constexpr float kEggRelevance = 110.f; // m around a guest (the NPCs' relevance)
 // Tribe (BUG-0474): a player is a pointer that roams the small map; the camera sees the nests far from it (lane 9:
@@ -290,7 +305,59 @@ static void host_tick(double now)
         }
         C.sess->send_unreliable_to(p.id, net::MSG_NEST, w);
         g_snaps_tx++;
+        net::Vec3 home;
+        void* av = game::avatar();
+        if (g_home_fix && game::in_creature_stage() && av && game::nest_position(av, home)) {
+            net::Writer h;
+            h.u8(kKindHome);
+            h.f32(home.x);
+            h.f32(home.y);
+            h.f32(home.z);
+            C.sess->send_unreliable_to(p.id, net::MSG_NEST, h);
+            g_home_sent++;
+        }
     }
+}
+
+// guest: join the herd of our own nest at the host's home when ours is elsewhere
+static void follow_home(double now)
+{
+    if (!g_home_fix || !a_JoinNestHerd || g_host_home_at < 0 || now - g_host_home_at > 5 || now - g_home_try_at < 10)
+        return;
+    void* av = game::avatar();
+    net::Vec3 mine;
+    if (!av || !game::in_creature_stage() || game::cinematic_playing() || game::health(av) <= 0)
+        return;
+    if (game::nest_position(av, mine) && net::dist(mine, g_host_home) < 15.f)
+        return; // the same nest
+    g_home_try_at = now;
+    struct Find { net::Vec3 at; void* nest = nullptr; float best = 15.f; } f{g_host_home};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto& f = *(Find*)p;
+            net::Vec3 q;
+            if (noun == kNestNoun && game::object_alive(o) && game::object_position(o, q)) {
+                float d = net::dist(q, f.at);
+                if (d < f.best) {
+                    f.best = d;
+                    f.nest = o;
+                }
+            }
+            return true;
+        },
+        &f);
+    if (!f.nest || IsBadReadPtr(f.nest, 0x130) || !field<void*>(f.nest, 0x128)) {
+        g_home_fails++;
+        H->log(M, SK_WARN, "nest: the host's home nest (%.0f %.0f %.0f) has no nest herd here", g_host_home.x, g_host_home.y,
+               g_host_home.z);
+        return;
+    }
+    cdecl_call<bool>(a_JoinNestHerd, f.nest);
+    net::Vec3 now_home;
+    const bool ok = game::nest_position(av, now_home) && net::dist(now_home, g_host_home) < 15.f;
+    (ok ? g_home_joins : g_home_fails)++;
+    H->log(M, ok ? SK_INFO : SK_WARN, "nest: our home nest follows the host's (%.0f %.0f %.0f): %s", g_host_home.x, g_host_home.y,
+           g_host_home.z, ok ? "joined its herd" : "the join did not take");
 }
 
 static void guest_tick(double now)
@@ -473,8 +540,10 @@ void tick(double now)
             host_tick(now);
         if (g_ground_fix && a_Surface && a_PlanetGet && game::in_creature_stage())
             ground_tick(now);
-    } else if (is_guest())
+    } else if (is_guest()) {
         guest_tick(now);
+        follow_home(now); // BUG-9128
+    }
     else if (!g_mirrors.empty())
         clear_mirrors();
 }
@@ -490,6 +559,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         on_snapshot(r, H->time_seconds());
     else if (kind == kKindEat && is_host())
         on_eat(from, r);
+    else if (kind == kKindHome && !is_host() && from == 0) { // BUG-9128
+        net::Vec3 h{r.f32(), r.f32(), r.f32()};
+        if (r.ok() && std::isfinite(h.x) && std::isfinite(h.y) && std::isfinite(h.z)) {
+            g_host_home = h;
+            g_host_home_at = H->time_seconds();
+        }
+    }
 }
 
 void on_session_end() { clear_mirrors(); }
@@ -712,6 +788,31 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "killed %d\n", k);
         return 0;
     }
+    if (!strcmp(a, "home")) { // home [x y z]: our home nest; with a point: join the herd of the nest nearest it (tests, BUG-9128)
+        void* av = game::avatar();
+        net::Vec3 h;
+        if (av && argc >= 5 && a_JoinNestHerd) {
+            struct Find { net::Vec3 at; void* nest = nullptr; float best = 1e9f; } f{{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])}};
+            game::for_each_object(
+                [](void* o, uint32_t noun, void* p) {
+                    auto& f = *(Find*)p;
+                    net::Vec3 q;
+                    if (noun == kNestNoun && game::object_alive(o) && game::object_position(o, q) && net::dist(q, f.at) < f.best && field<void*>(o, 0x128)) {
+                        f.best = net::dist(q, f.at);
+                        f.nest = o;
+                    }
+                    return true;
+                },
+                &f);
+            if (f.nest)
+                cdecl_call<bool>(a_JoinNestHerd, f.nest);
+        }
+        bool have = av && game::nest_position(av, h);
+        H->out_printf(out, "home nest %s (%.1f %.1f %.1f) host_home=(%.1f %.1f %.1f) age=%.1f sent=%u joins=%u fails=%u fix=%d\n",
+                      have ? "at" : "none", h.x, h.y, h.z, g_host_home.x, g_host_home.y, g_host_home.z,
+                      g_host_home_at < 0 ? -1.0 : H->time_seconds() - g_host_home_at, g_home_sent, g_home_joins, g_home_fails, (int)g_home_fix);
+        return 0;
+    }
     if (!strcmp(a, "objs")) {
         list_objs(out, argc > 2 ? (float)atof(argv[2]) : 30.f);
         return 0;
@@ -743,6 +844,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     C = ctx;
     a_NounGet = H->sym("Simulator::cGameNounManager::Get");
     a_CreateInstance = H->sym("Simulator::cGameNounManager::CreateInstance");
+    a_JoinNestHerd = H->sym("SporeCoop::CreatureGame_JoinNestHerd"); // BUG-9128
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     a_SetState = H->sym("SporeCoop::cEgg_SetState");
     a_Snap = H->sym("SporeCoop::cEgg_SnapToGround");

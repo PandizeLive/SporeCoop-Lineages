@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Creature: after the host migrates to a new nest, the connected player's
+  home moves there too, so they respawn at the new nest (BUG-9128).
+
 - Progress debt is now progression, not DNA: a death owes 10% of the stage's
   progress bar so far (Creature and Cell alike), so every death adds to it.
   Spendable DNA never changes (BUG-9119).
