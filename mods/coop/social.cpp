@@ -11,6 +11,7 @@
 #include "game.h"
 #include "net/validate.h"
 #include "npc.h"
+#include "progress_debt.h"
 #include "sporekit_game.hpp"
 #include "world.h"
 
@@ -767,6 +768,8 @@ static void apply_success(uint8_t player, uint16_t id)
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
         if (dna > 0 && dna < 10000)
+            dna = progress_debt::absorb(dna); // BUG-9119: a progress debt is repaid first
+        if (dna > 0 && dna < 10000)
             game::dna_add_raw(dna); // the host's pool, shared with everybody (MSG_DNA)
     }
     game::set_impressed(c, true);
@@ -1004,7 +1007,8 @@ void tick(double now)
         g_goal_owed.clear();
         for (auto& o : owed)
             if (goal_outcome(o.k) == o.outcome && host_goal_pay(o.k, o.outcome)) {
-                game::dna_add_raw(o.dna);
+                if (float left = progress_debt::absorb(o.dna); left > 0) // BUG-9119: the debt first
+                    game::dna_add_raw(left);
                 g_goal_owed_paid++;
                 if (C.feed)
                     C.feed(std::string(o.outcome == 6 ? "A species became our ally" : "A goal was reached") +
@@ -1123,7 +1127,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         }
         if (sane && goal_outcome(k) == outcome && game::avatar() && host_goal_pay(k, outcome)) {
-            game::dna_add_raw(dna);
+            if (float left = progress_debt::absorb(dna); left > 0) // BUG-9119: the debt first
+                game::dna_add_raw(left);
             if (C.feed)
                 C.feed(std::string(outcome == 6 ? "A species became our ally" : "A goal was reached") + ": +" +
                        std::to_string((int)(dna + 0.5f)) + " DNA");

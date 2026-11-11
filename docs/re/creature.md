@@ -3162,3 +3162,17 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   ~ inferred, the monster is a cinematic actor (a model of CRG_AvatarDied_SeaMonster's data), not an effect.
 * Not done: showing it on the partner's game needs that actor (the cinematic's model and animation) at the puppet
   without the cinematic's camera; the cinematic's data (its actors) was not read.
+
+## The HUD progress bar (2026-11-11, feat/lineages-47)
+<a id="creature-progress-bar"></a>
+
+* ✔ The bottom bar is HUD window 0x051B5478 in Creature and Cell; its fill window is 0x0652A628 (in
+  Creature five children of the same width, one per brain level). At 1440x1080 the green fill spans
+  x 237..1354, y 1051..1077 (Creature) and 231..1345 (Cell).
+* ✔ The fill's end is the zero-width window 0x051B5168 (the green arrow): x 596 at 317 DNA earned,
+  601 at 321 (Creature, Samuth.spo). cPlayer +0x10F0 / +0x10F4 = 317 / 1000.
+* ✔ The Creature bar is **not** linear in the earned DNA: at 317 a straight 317/1000 of the fill
+  would end at 591, and 4 DNA moved the arrow 5 px (1.25 px per DNA; 1.12 on average). Each brain
+  level has the same width and its own DNA. Read the arrow instead of computing the end.
+* ✔ Cell: linear, food S+0x1C / 1000 (204 food: the arrow at 458 = 231 + 0.204 x 1114).
+* The progress debt (BUG-9119) draws its red stretch back from the arrow.

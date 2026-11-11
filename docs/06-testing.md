@@ -5174,3 +5174,17 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 - `coop.giveup`: the downed player gives up (as holding G for 1 s does), in every stage.
 - `coop.adventure` prints the rescue line ("Downed: N s ..."); `coop.dna` the pack's DNA (10% is lost
   on a timeout or a give-up in Creature).
+
+## Progress debt (2026-11-11, feat/lineages-47)
+<a id="test-progress-debt"></a>
+
+- `coop.debt` on either game: the debt owed (host: its ledger; guest: the host's word), the stage's
+  progress, where the bar is (`bar=1 [...] edge=N`: the strip is drawn; 0: no HUD) and how often.
+- `coop.debt add <n>` (host): a debt as a timeout makes it, capped by the bar; `coop.debt clear`.
+- Creature: `coop.giveup down` + `coop.giveup` on the guest (30 m from the host) gives a debt of 10% of
+  the DNA, the DNA stays. `coop.dna gain <n>` (host or guest) is a reward through the game's hook: it
+  repays the debt first. `coop.dna local <n>` bypasses the hook (and the debt).
+- Cell: the respawn after `coop.giveup` adds 10% of the editor's DNA in food; meals repay it.
+- `coop.fix core.progress_debt off`: the old loss, for a failing run.
+- The game's death screen ("You were killed in battle") hides the HUD; a QA save left in it needs
+  `click 1411 1049` (the check mark) on each game before a test.

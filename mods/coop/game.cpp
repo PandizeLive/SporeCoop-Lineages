@@ -1776,6 +1776,14 @@ float evolution_bar()
     return p && readable((uint8_t*)p + 0x10F0, 4) ? *(float*)((uint8_t*)p + 0x10F0) : NAN;
 }
 
+float goal_total()
+{
+    if (mode_id() != modes::kCreature) return NAN;
+    void* nm = noun_manager();
+    void* p = nm && readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr;
+    return p && readable((uint8_t*)p + 0x10F4, 4) ? *(float*)((uint8_t*)p + 0x10F4) : NAN;
+}
+
 void dna_sync_raw(float total, float earned)
 {
     uintptr_t set = H->sym("Simulator::cCreatureGameData::SetEvolutionPoints");

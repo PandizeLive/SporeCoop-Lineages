@@ -8,6 +8,7 @@
 #include "game.h"
 #include "give_up.h"
 #include "modes.h"
+#include "progress_debt.h"
 #include "net/interp.h"
 
 namespace creature_rescue {
@@ -72,6 +73,17 @@ void charge(const std::string& name, bool gave_up = false)
 {
     if (game::mode_id() == modes::kScenario) { // no DNA in an adventure
         notice(name + (gave_up ? " gave up." : " was down too long."), -1);
+        return;
+    }
+    if (progress_debt::enabled()) {
+        // BUG-9119: nothing is taken away: the pack owes the progress instead (new DNA repays it first)
+        float debt = progress_debt::add(progress_debt::creature_cost(game::dna()));
+        char text[120];
+        if (debt > 0)
+            std::snprintf(text, sizeof text, " %s. Progress debt: %.0f DNA (new DNA repays it first).", gave_up ? "gave up" : "fell", debt);
+        else
+            std::snprintf(text, sizeof text, " %s.", gave_up ? "gave up" : "fell");
+        notice(name + text, -1);
         return;
     }
     float dna = game::dna(), cost = 0;

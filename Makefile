@@ -113,6 +113,8 @@ endif
 	$(B)/host/validate_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/dna_sync_tests tests/dna_sync_tests.cpp
 	$(B)/host/dna_sync_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/progress_debt_tests tests/progress_debt_tests.cpp
+	$(B)/host/progress_debt_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/chief_arrival_tests tests/chief_arrival_tests.cpp
 	$(B)/host/chief_arrival_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/adventure_sync_tests tests/adventure_sync_tests.cpp

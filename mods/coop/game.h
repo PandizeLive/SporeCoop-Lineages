@@ -266,6 +266,7 @@ void set_time_of_day(const net::Quat& q);
 float dna();
 void dna_add_raw(float delta);              // original AddEvolutionPoints, not reported
 float evolution_bar();
+float goal_total(); // cPlayer +0x10F4 mGoalProgressTotal: the progress bar's full value (Creature 1000), NAN outside Creature
 void dna_sync_raw(float total, float earned); // host-authoritative budget and earned progress
 // scale an earned award or return false to swallow it (BUG-0510 pace, Lineages campaign workload);
 // activity_reward: a hunt / ally / extinction / social reward of the Creature stage

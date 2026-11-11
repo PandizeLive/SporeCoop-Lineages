@@ -21,6 +21,7 @@
 
 #include "cell_logic.h"
 #include "dna_pace.h"
+#include "progress_debt.h"
 #include "view_centres.h"
 #include "game.h"
 #include "modes.h"
@@ -413,6 +414,8 @@ static uint8_t* puppet_cell(int id)
     return nullptr;
 }
 
+static std::string cell_debt(); // BUG-9119 (below)
+
 static void on_ko(int id, uint8_t state, float left, float hold)
 {
     Ko& k = g_ko[id];
@@ -439,8 +442,14 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     }
     else if (state == KO_REVIVED)
         effect(c, "cell_hatch_ice");
-    else if (state == KO_RESPAWNED)
+    else if (state == KO_RESPAWNED) {
         k.fx_at = k.since + 0.4; // after the puppet has moved next to its partner
+        if (is_host()) { // BUG-9119: a guest's cell respawned: the party's debt
+            std::string debt = cell_debt();
+            if (!debt.empty() && C.notice)
+                C.notice(debt.substr(2) + ".");
+        }
+    }
     if (state != KO_OUT && c)
         F<float>(c, kOpacity) = 1.f;
 }
@@ -483,6 +492,22 @@ static bool go_down(uint8_t* c)
     g_invuln_until = 0;
     stop_at(c, g_down_pos);
     return true;
+}
+
+// BUG-9119: a cell that respawned (nobody came, or it gave up) leaves the party a progress debt of
+// 10% of the editor's DNA, in food points; the host keeps it and new food repays it first. Returns
+// the notice's tail ("" without a debt).
+static std::string cell_debt()
+{
+    uint8_t* s = is_host() && in_cell() ? S() : nullptr;
+    if (!s || !progress_debt::enabled())
+        return {};
+    const int food = F<int32_t>(s, 0x1C);
+    const int cost = progress_debt::cell_cost(food, dna_for_food(food), F<int32_t>(s, 0x2C));
+    const float debt = progress_debt::add((float)cost);
+    if (debt <= 0)
+        return {};
+    return ". Progress debt: " + std::to_string((int)debt) + " food (new food repays it first)";
 }
 
 static void downed_tick(uint8_t* a, double now, double dt)
@@ -531,7 +556,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     effect(a, "cell_egg_L0_autohatch");
     send_ko(KO_RESPAWNED, 0, 0);
     if (C.notice)
-        C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
+        C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner) + cell_debt());
 }
 
 // the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
@@ -1097,13 +1122,19 @@ static int earned_food(int raw, bool plant)
     if (raw <= 0 || (!is_host() && !is_guest()) || !in_cell()) return raw;
     auto rules = world::rules_for_current();
     const uint32_t plant_percent = g_fix_plant_bonus && g_fix_extra_one ? rules.cell_plant_percent() : 100u;
-    if (rules.workload_percent() == 100 && plant_percent == 100) return raw;
+    // BUG-9119: while the party owes progress, every meal goes to the host, which repays the debt first
+    const bool owing = progress_debt::owing(modes::kCell);
+    const bool scaled = rules.workload_percent() != 100 || plant_percent != 100;
+    if (!scaled && !owing) return raw;
     if (is_guest()) return 0; // report the raw meal; only the host awards it
-    load_cell_credit(rules);
-    const int paid = g_cell_credit.award(raw,plant,rules,plant_percent);
-    (plant ? g_plant_raw : g_meat_raw) += unsigned(raw);
-    (plant ? g_plant_paid : g_meat_paid) += unsigned(std::max(0,paid));
-    return paid;
+    int paid = raw;
+    if (scaled) {
+        load_cell_credit(rules);
+        paid = g_cell_credit.award(raw,plant,rules,plant_percent);
+        (plant ? g_plant_raw : g_meat_raw) += unsigned(raw);
+        (plant ? g_plant_paid : g_meat_paid) += unsigned(std::max(0,paid));
+    }
+    return paid > 0 ? progress_debt::absorb_food(paid) : paid;
 }
 
 static void SK_CDECL h_AddFood(int amount, bool plant)
@@ -5742,6 +5773,14 @@ void set_spent_dna(int v)
 {
     if (uint8_t* s = in_cell() ? S() : nullptr)
         *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+}
+
+int dna_for_food(int food)
+{
+    if (!in_cell() || !a_DnaFor || food < 0 || food > 1000)
+        return -1;
+    using DnaFor_t = int(__fastcall*)(int);
+    return ((DnaFor_t)a_DnaFor)(food);
 }
 
 int editor_budget()

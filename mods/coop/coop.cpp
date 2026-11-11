@@ -78,6 +78,7 @@
 #include "lineage_cells.h"
 #include "library.h"
 #include "partner_marker.h"
+#include "progress_debt.h"
 #include "notify.h"
 #include "notify_text.h"
 #include "syncdbg.h"
@@ -335,6 +336,11 @@ bool on_dna(float& delta, bool activity_reward)
     if (g == dna_route::Gain::Local) {
         if (g_sess.role() == net::Role::Host && delta > 0 && g_mode == modes::kCreature && !campaign_scaled)
             delta = dna_pace_gain(delta); // BUG-0510: the host's own gain (after the goal card: those stay whole)
+        if (g_sess.role() == net::Role::Host && delta > 0 && g_mode == modes::kCreature) {
+            delta = progress_debt::absorb(delta); // BUG-9119: a progress debt is repaid first
+            if (delta <= 0)
+                return false; // all of it went to the debt: no DNA, the bar stays
+        }
         if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature)
             dna_host_gain(dna_ledger::g_credit.gain(delta, H->time_seconds()), game::dna());
         return true;
@@ -1128,8 +1134,11 @@ void host_away_tick(double now)
         auto o = dna_route::owed(g_away_dna_stage_fix, g_mode, stage_mode(g_mode), game::avatar() != nullptr, g_world,
                                  g_dna_owed_world, modes::kCreature);
         if (o == dna_route::Owed::Pay) {
-            dna_host_gain({dna_ledger::Cause::Owed, 0, g_dna_owed}, game::dna());
-            game::dna_add_raw(g_dna_owed);
+            float left = progress_debt::absorb(g_dna_owed); // BUG-9119: a progress debt first
+            if (left > 0) {
+                dna_host_gain({dna_ledger::Cause::Owed, 0, left}, game::dna());
+                game::dna_add_raw(left);
+            }
             feed("the DNA your partners earned meanwhile: +" + std::to_string((int)g_dna_owed));
             g_dna_owed = 0;
             g_dna_owed_paid++;
@@ -3397,6 +3406,7 @@ void on_frame(void*, int, void*)
     host_away_tick(now);
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
+    progress_debt::tick(g_mode, g_world, now); // BUG-9119
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
@@ -3791,6 +3801,8 @@ void on_overlay(void*, int, void*)
     if (build_id() == 0xDC04AEE5u) editor_depth::draw(); // BUG-9103
     coop_ui::draw_tooltip(); // BUG-9107
     modes::CellScope cell_scope; // BUG-0271
+    if (!g_menu_up)
+        progress_debt::draw(); // BUG-9119: the red stretch on the progress bar
     if (!g_overlay)
         return;
     int sw = 0, sh = 0;
@@ -4066,6 +4078,7 @@ void end_session(EndPath path, bool cell)
     world::reset_shares();
     adventure::reset();
     creature_rescue::reset();
+    progress_debt::reset(); // BUG-9119
     shared::on_session_end();
     library::on_session_end();
     wsync::on_session_end();
@@ -4248,6 +4261,10 @@ void setup_callbacks()
             creature_rescue::message(from, r);
             return;
         }
+        if (type == net::MSG_PROGRESS_DEBT) { // BUG-9119
+            progress_debt::message(from, r);
+            return;
+        }
         if (type == net::MSG_DIAG) { // support diagnostics: clock, marks, sync-check (diag_coop.h)
             support::on_message(from, r);
             return;
@@ -4313,9 +4330,13 @@ void setup_callbacks()
             float d = r.f32();
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
-                dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
-                game::dna_add_raw(d);
-                feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
+                float left = progress_debt::absorb(d); // BUG-9119: a progress debt is repaid first
+                if (left > 0) {
+                    dna_host_gain({dna_ledger::Cause::Earned, from, left}, game::dna());
+                    game::dna_add_raw(left);
+                }
+                feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA" +
+                     (left < d ? " (repays the progress debt)" : ""));
             } else if (g_dna_spend_fix && r.ok() && d < 0 && d > -100000) { // BUG-0466: a guest's own spend
                 g_dna_spends_got++;
                 if (add == dna_route::Add::Pay) {
@@ -6555,6 +6576,14 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
+    progress_debt::init(H, &g_sess, notice); // BUG-9119
+    H->command_add(M, "coop.debt", "coop.debt [add <n> | clear] - the party's progress debt (BUG-9119): what is owed, the bar; add / clear: tests (host)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string text;
+                       int rc = progress_debt::command(argc, argv, text);
+                       H->out_printf(out, "%s", text.c_str());
+                       return rc;
+                   }, nullptr, SK_CMD_MAIN_THREAD);
     adventure::init(H, M, &g_sess);
     H->command_add(M, "coop.giveup", "coop.giveup [down] - a downed player gives up now, as holding G does; down: a lethal hit on the own creature through the game's damage path (BUG-9118, tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
