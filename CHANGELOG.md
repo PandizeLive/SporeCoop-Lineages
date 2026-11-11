@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.3.6-lineages45-dev] - 2026-11-10
 
 - Cell parts are shared: a part any player picks up in the Cell stage is
   unlocked for everyone, and when you join, the parts either of you already
