@@ -2,9 +2,10 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages50-dev] - 2026-11-11
+
 - Creature: after the host migrates to a new nest, the connected player's
   home moves there too, so they respawn at the new nest (BUG-9128).
-
 - Progress debt is now progression, not DNA: a death owes 10% of the stage's
   progress bar so far (Creature and Cell alike), so every death adds to it.
   Spendable DNA never changes (BUG-9119).
@@ -13,7 +14,6 @@
 - Creature: being downed is visible: a red countdown for the downed player, a
   "Revive" line and a red arrow for the partner, and a "<name> is down!"
   message for everybody (BUG-9127).
-
 - Cell: a partner's respawn no longer blacks out your screen (BUG-9122).
 - Arrows to an off-screen partner (and map marks) point at them instead of
   straight down (BUG-9121).

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner request on 0.7.8-lineages47-dev (after BUG-9118)
 role: all
 versions: 0.7.8-lineages47-dev
-fixed_in: 0.7.8-lineages48-dev
+fixed_in: 0.7.8-lineages48-dev (progression-based cost: 0.7.8-lineages50-dev)
 branch: feat/lineages-47
 commits:
 tests: tests/progress_debt_tests.cpp; QA host 9 + guest 8, Samuth.spo (Creature) and Cellfive.spo (Cell), see Verification

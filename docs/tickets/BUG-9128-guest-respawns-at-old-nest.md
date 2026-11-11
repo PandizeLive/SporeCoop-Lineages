@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev
 role: guest
 versions: all
-fixed_in:
+fixed_in: 0.7.8-lineages50-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8: host `coop.nest home 453.12 46.02 -223.02` (joins that nest's herd, as a claim does), guest `coop.nest home`, guest `coop.giveup down` + `coop.giveup`, position after the respawn; nest.follow_home off / on

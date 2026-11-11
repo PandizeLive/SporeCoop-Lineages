@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev ("generally after we clear a nest or befriend one")
 role: all
 versions: all with teamplay regen
-fixed_in:
+fixed_in: 0.7.8-lineages50-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8 near each other, `coop.hp` sampled every ~1 s

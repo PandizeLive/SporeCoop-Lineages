@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev (Cell)
 role: all
 versions: 0.7.8-lineages49-dev
-fixed_in:
+fixed_in: 0.7.8-lineages50-dev
 branch: feat/lineages-47
 commits:
 tests: QA Cellfive.spo host 9 + guest 8, `coop.pool tp 60 25` on the guest, host screenshot with ui.offscreen_arrow off / on

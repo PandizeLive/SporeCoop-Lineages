@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev ("downed but not out doesn't display much; sometimes you die, sometimes not")
 role: all
 versions: all
-fixed_in:
+fixed_in: 0.7.8-lineages50-dev
 branch: feat/lineages-47
 commits:
 tests: QA Samuth.spo host 9 + guest 8, 28 m apart, `coop.giveup down` on the guest, screenshots of both

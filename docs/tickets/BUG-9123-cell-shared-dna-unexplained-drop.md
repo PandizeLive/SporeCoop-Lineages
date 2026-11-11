@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev ("the connected player saw 21 DNA, the host spent 21, it reduced theirs")
 role: guest
 versions: all
-fixed_in:
+fixed_in: 0.7.8-lineages50-dev
 branch: feat/lineages-47
 commits:
 tests: QA Cellfive.spo host 9 + guest 8, `coop.pool dna spend 5` on the host, guest log / feed
