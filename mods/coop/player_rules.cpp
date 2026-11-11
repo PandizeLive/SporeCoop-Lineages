@@ -126,13 +126,38 @@ static void* g_hit_attacker_fwd() { return g_hit_attacker; }
 
 static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
 
+// BUG-9132: the guest's Strike (ability 0x21: 6 points, the area effect kind 3) hurt a proxy without a TakeDamage of the
+// avatar on it, so nothing reached the host ("bite works, strike doesn't"). An own attack on a proxy that sent no hit
+// sends one now: the ability's points (+0x3C, what a bite reports: points 1 -> damage 1). Off: as before.
+static bool g_strike_fix = true;
+COOP_FIX("creature.guest_strike", "BUG-9132", g_strike_fix, "creature: a guest's own attack that hit a host creature without a forwarded hit (Strike) reaches the host");
+static uint32_t g_strike_sent, g_attacks_seen;
+bool own_attack_running() { return g_strike_fix && g_hit_attacker && g_hit_attacker == game::avatar(); }
 static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
     void* was = g_hit_attacker;
     uint32_t was_idx = g_hit_idx;
     g_hit_attacker = attacker;
     g_hit_idx = idx;
+    const bool own = is_guest() && attacker && attacker == game::avatar() && target && game::in_creature_stage();
+    const uint32_t sent_before = own ? npc::hits_sent_count() : 0;
     bool r = hit_body(attacker, target, idx, a4);
+    if (own) {
+        g_attacks_seen++;
+        void* victim = (uint8_t*)target - game::kCombatOff;
+        uint8_t* ab = (int)idx < skg::vcall<int>(attacker, 0xB0 / 4) ? skg::vcall<uint8_t*>(attacker, 0xB4 / 4, (int)idx) : nullptr;
+        const uint32_t type = ab && skg::readable(ab, 0x40) ? *(uint32_t*)(ab + 8) : 0;
+        const float points = ab && skg::readable(ab, 0x40) ? *(float*)(ab + 0x3C) : 0.f;
+        const bool sent = npc::hits_sent_count() != sent_before;
+        bool fwd = false;
+        if (g_strike_fix && !sent && npc::is_proxy(victim) && points > 0 && points < 1000)
+            fwd = npc::forward_hit(victim, points, 2);
+        g_strike_sent += fwd;
+        static unsigned logged;
+        if (logged++ < 40)
+            H->log(M, SK_INFO, "player_rules: own attack ability %u type 0x%X points %.2f on %p (proxy %d): %s", idx, type, points,
+                   victim, (int)npc::is_proxy(victim), sent ? "hit sent by the game's damage" : fwd ? "hit sent (BUG-9132)" : "no hit");
+    }
     g_hit_attacker = was;
     g_hit_idx = was_idx;
     return r;
@@ -545,6 +570,8 @@ std::string status()
     out += b;
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));
+    out += b;
+    snprintf(b, sizeof b, "player_rules: guest strike fix=%d attacks=%u forwarded=%u\n", (int)g_strike_fix, g_attacks_seen, g_strike_sent);
     out += b;
     snprintf(b, sizeof b, "player_rules: guest pack summon_sent=%u recruit_sent=%u recruit_got=%u addmember_hook=%d\n", g_summon_sent,
              g_recruit_sent, g_recruit_got, (int)(o_AddMember != nullptr));

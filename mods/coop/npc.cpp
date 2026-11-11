@@ -2215,6 +2215,24 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
 }
 
+uint32_t hits_sent_count() { return g_hits_sent; }
+
+bool forward_hit(void* proxy, float damage, int type)
+{
+    auto it = proxy ? g_proxy_of.find(proxy) : g_proxy_of.end();
+    if (!is_guest() || it == g_proxy_of.end() || !(damage > 0))
+        return false;
+    net::DamageReq q;
+    q.net_id = it->second;
+    q.damage = damage;
+    q.type = type;
+    net::Writer w;
+    q.write(w);
+    C.sess->send_reliable_to(0, net::MSG_DAMAGE_REQ, w);
+    g_hits_sent++;
+    return true;
+}
+
 bool damage_filter(void* c, float& damage, int type, void* attacker)
 {
     if (!g_enabled || !C.sess || !C.sess->connected())
@@ -2235,7 +2253,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
         if (it != g_proxy_of.end()) { // hit on a host NPC: the host applies it
             if (attacker == av && social::drop_social_hit(it->second))
                 return false; // BUG-0021: the social stance does not attack
-            if (attacker == av) {
+            // BUG-9132: the Strike's area hits on the creatures around its target come with no attacker
+            if (attacker == av || (!attacker && av && player_rules::own_attack_running())) {
                 net::DamageReq q;
                 q.net_id = it->second;
                 q.damage = damage;

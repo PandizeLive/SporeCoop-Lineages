@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Creature: the connected player's Strike now hurts the host's creatures in
+  full: its splash on the creatures around the target was dropped, so a
+  Strike that only splashed did nothing (BUG-9132).
+
 - Creature: meteors, rain storms and the UFO visit follow the host's world: the
   host's events show on the guest, and the guest's game no longer starts its
   own (nor its own night predator) (BUG-9131).
