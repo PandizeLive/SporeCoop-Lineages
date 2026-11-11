@@ -42,6 +42,8 @@ bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* lo
 // 0x5371F11 {avatar, 0, level}. Outside the frame (it shows the goal card). Unlocked count after.
 int find_part(int level);
 std::string status();
+// tests (BUG-0467): Cell slot `slot` collected in this game only, as 0xE5D7B0 does (2 and the mate button)
+std::string debug_cell_pick(int slot);
 // tests: "keys" the unlocked unlockable keys, "states" every state entry (key=state, u = IsUnlocked)
 std::string dump(const std::string& what);
 

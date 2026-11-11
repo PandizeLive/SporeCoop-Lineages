@@ -5729,10 +5729,19 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, MT);
-    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>|keys|states] - the collected creature parts as the trace's parts= field counts them; "
+    H->command_add(M, "coop.parts", "coop.parts [unlock <n>|find <level>|keys|states|cellpick <slot>] - the collected creature parts as the trace's parts= field counts them; "
+                   "cellpick <slot 0-12>: a Cell part collected in this game only (BUG-0467); in the Cell stage: the Cell slots; "
                    "unlock <n>: unlock n locked ones in this game only (tests: a player's unlock the other games miss); "
                    "find <level>: the game's own 'a part was found' (a skeleton's reward, BUG-0401); keys: the unlocked unlockable keys; states: every item state (BUG-0441)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 2 && !strcmp(argv[1], "cellpick")) { // tests (BUG-0467): a Cell part collected here
+                           SAY("%s\nsync: %s\n", parts::debug_cell_pick(atoi(argv[2])).c_str(), parts::status().c_str());
+                           return 0;
+                       }
+                       if (game::mode_id() == modes::kCell) { // the Cell stage's slots (BUG-0467)
+                           SAY("sync: %s\n", parts::status().c_str());
+                           return 0;
+                       }
                        std::vector<std::pair<uint32_t, uint32_t>> locked;
                        int n = 0, all = 0, done = 0;
                        uint32_t h = 0;

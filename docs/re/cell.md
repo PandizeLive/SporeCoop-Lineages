@@ -1503,3 +1503,15 @@ BUG-9109, BUG-9110, BUG-9111. GOG 2024 code (Steam copy), Windows QA, `coop.pool
   reload keeps the rules only once the planet is saved); `coop.pool mate button`, a click on the heart
   (721, 1018), `coop.pool mate tp` opens the cell editor; paint mode (776, 36), a pattern and a colour,
   the green check (1416, 1058) saves a new creation.
+
+## Cell parts shared by the party (2026-11-10, feat/lineages-45)
+<a id="cell-parts-shared"></a>
+
+BUG-0467. GOG 2024 code (Steam QA copy).
+* ✔ The Cell player's data S (cCellGame +0x5190; `cCellSerializableData::_ptr` was 0 while playing a
+  loaded game) holds 13 part slots S+0x34 + 4*part: 0 locked, 1 unlocked (as loaded from the save),
+  2 just collected (0xE5D7B0). S+0x68 / S+0x69 follow at once (the mating-call button).
+* A guest that loaded the host's world has the host's slots (the save carries them).
+* Writing 2 plus S+0x68 / S+0x69 = 1 shows the mating-call button at once (screenshot, guest); the
+  editor palette after such a write was not checked. The Collect mission counter (S+0x90..) is not
+  advanced by it.

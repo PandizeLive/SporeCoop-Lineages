@@ -158,6 +158,82 @@ static std::vector<Key> unlock_missing(const std::set<Key>& want)
     return done;
 }
 
+// ---------------------------------------------------------------- BUG-0467
+// The Cell stage keeps its collected parts apart from the Creature's items: 13 slots at the Cell
+// player's serializable data S+0x34 + 4*part (S = cCellGame +0x5190; 0 locked, 1 unlocked in a save,
+// 2 just collected: 0xE5D7B0 writes 2 when the own cell touches a part token, and S+0x68 / S+0x69 = 1,
+// the mating-call button; docs/re/cell.md 12). A part a guest picked up stayed in the guest's game
+// ("my guest just took a new piece in cell stage but I don't get it unlocked") and was gone at the
+// guest's next load of the host's world. The Cell slots now join the party's set as keys
+// {kCellKey, slot}: the host unlocks a guest's slot (2, and the mating-call button, as a pickup does),
+// every guest unlocks the host's set. On a join each game's slots are merged too: what either player
+// had is everyone's. `coop.fix parts.cell_shared off`: every game keeps its own Cell parts.
+static bool g_cell_fix = true;
+COOP_FIX("parts.cell_shared", "BUG-0467", g_cell_fix, "cell: the Cell parts a player collects are unlocked for the whole party (host-held union)");
+constexpr uint32_t kCellKey = 0xCE11BA57u; // Key.first of a Cell slot (no item key of the game uses it)
+constexpr uint32_t kCellSlots = 13;        // S+0x34 .. S+0x64; S+0x68 is the next field
+
+static uint8_t* cell_S()
+{
+    if (game::mode_id() != modes::kCell)
+        return nullptr;
+    uint8_t* g = modes::cell_game();
+    uint8_t* s = g && readable(g + 0x5190, 4) ? field<uint8_t*>(g, 0x5190) : nullptr;
+    return s && readable(s, 0x6C) ? s : nullptr;
+}
+
+static bool in_cell() { return g_cell_fix && cell_S() != nullptr; }
+
+// the unlocked Cell slots as keys
+static bool cell_census(std::vector<Key>& unlocked)
+{
+    uint8_t* s = cell_S();
+    if (!s)
+        return false;
+    for (uint32_t i = 0; i < kCellSlots; i++) {
+        int32_t v = field<int32_t>(s, 0x34 + 4 * i);
+        if (v > 0 && v < 16)
+            unlocked.push_back({kCellKey, i});
+    }
+    return true;
+}
+
+static std::vector<Key> cell_unlock_missing(const std::set<Key>& want)
+{
+    std::vector<Key> done;
+    uint8_t* s = cell_S();
+    if (!s)
+        return done;
+    for (auto& k : want) {
+        if (k.first != kCellKey || k.second >= kCellSlots)
+            continue;
+        int32_t& v = field<int32_t>(s, 0x34 + 4 * k.second);
+        if (v != 0)
+            continue;
+        v = 2;                       // as a collected part token
+        field<uint8_t>(s, 0x68) = 1; // and its mating-call button: the part can be used in the editor
+        field<uint8_t>(s, 0x69) = 1;
+        done.push_back(k);
+        g_applied++;
+    }
+    return done;
+}
+
+// this stage's unlocked keys (Cell slots or Creature items)
+static bool stage_census(std::vector<Key>& mine)
+{
+    if (in_cell())
+        return cell_census(mine);
+    int n, all;
+    uint32_t h;
+    return census(n, h, all, nullptr, &mine);
+}
+
+static std::vector<Key> stage_unlock(const std::set<Key>& want)
+{
+    return in_cell() ? cell_unlock_missing(want) : unlock_missing(want);
+}
+
 static void write_keys(net::Writer& w, uint8_t kind, uint8_t origin, uint32_t world, const Key* k, size_t n)
 {
     w.u8(kind);
@@ -183,31 +259,37 @@ static void host_send(uint8_t kind, uint8_t origin, const std::vector<Key>& keys
     } while (at < keys.size());
 }
 
-static std::string count_text(size_t n) { return n == 1 ? "a new creature part" : std::to_string(n) + " new creature parts"; }
+static std::string count_text(size_t n)
+{
+    const char* what = in_cell() ? "cell part" : "creature part";
+    return n == 1 ? std::string("a new ") + what : std::to_string(n) + " new " + what + "s";
+}
+
+static uint32_t g_announced_mode = 0; // host: the stage of g_announced (Cell slots and Creature items differ)
 
 static void host_tick(double now)
 {
     uint32_t world = C.world ? C.world() : 0;
     if (!world)
         return;
-    if (world != g_announced_world) { // another world: its own set, no news for the load's difference
+    uint32_t mode = game::mode_id();
+    if (world != g_announced_world || mode != g_announced_mode) { // another world or stage: its own set, no news
         g_announced.clear();
         g_origin.clear();
         g_announced_world = world;
+        g_announced_mode = mode;
         g_last_full = -100;
     }
     if (!g_pending.empty()) { // the guests' finds
         std::set<Key> want;
         for (auto& [k, o] : g_pending)
             want.insert(k);
-        for (auto& k : unlock_missing(want))
+        for (auto& k : stage_unlock(want))
             g_origin[k] = g_pending[k];
         g_pending.clear();
     }
     std::vector<Key> mine;
-    int n, all;
-    uint32_t h;
-    if (!census(n, h, all, nullptr, &mine))
+    if (!stage_census(mine))
         return;
     std::set<Key> now_set(mine.begin(), mine.end());
     bool first = g_announced.empty();
@@ -239,13 +321,11 @@ static void guest_tick(double now)
     uint32_t world = C.world ? C.world() : 0;
     if (!g_have_set || !world || world != g_host_world || !C.guest_in_host_world || !C.guest_in_host_world())
         return;
-    auto done = unlock_missing(g_host_set); // what the host's world has (also after our own reload)
+    auto done = stage_unlock(g_host_set); // what the host's world has (also after our own reload)
     if (!done.empty())
         H->log(M, SK_INFO, "parts: %zu part(s) of the party's set unlocked here", done.size());
     std::vector<Key> mine;
-    int n, all;
-    uint32_t h;
-    if (!census(n, h, all, nullptr, &mine))
+    if (!stage_census(mine))
         return;
     std::vector<Key> extra; // found here, not in the host's set yet: sent until the host's set has them
     if (now - g_last_found_tx < kResend)
@@ -271,7 +351,8 @@ void tick(double now)
 {
     if (!g_fix || !C.sess || !a_IsUnlocked || !a_UnlockPart)
         return;
-    if (game::mode_id() != modes::kCreature || !game::avatar() || now - g_last_poll < kPoll)
+    const bool creature = game::mode_id() == modes::kCreature && game::avatar();
+    if ((!creature && !in_cell()) || now - g_last_poll < kPoll) // BUG-0467: the Cell stage's parts too
         return;
     g_last_poll = now;
     if (is_host())
@@ -381,6 +462,20 @@ std::string dump(const std::string& what)
     return s + "\n";
 }
 
+std::string debug_cell_pick(int slot)
+{
+    uint8_t* s = cell_S();
+    if (!s)
+        return "not in the Cell stage";
+    if (slot < 0 || slot >= (int)kCellSlots)
+        return "slot 0-12";
+    int32_t before = field<int32_t>(s, 0x34 + 4 * slot);
+    field<int32_t>(s, 0x34 + 4 * slot) = 2;
+    field<uint8_t>(s, 0x68) = 1;
+    field<uint8_t>(s, 0x69) = 1;
+    return "cell slot " + std::to_string(slot) + ": " + std::to_string(before) + " -> 2";
+}
+
 std::string status()
 {
     char b[400];
@@ -389,7 +484,14 @@ std::string status()
              "rx_sets=%u rx_news=%u rx_found=%u applied=%u stale=%u refused=%u",
              g_fix ? 1 : 0, g_announced.size(), g_host_set.size(), g_host_world, g_have_set ? 1 : 0, g_pending.size(),
              g_tx_sets, g_tx_news, g_tx_found, g_rx_sets, g_rx_news, g_rx_found, g_applied, g_stale, g_refused);
-    return b;
+    std::string out = b;
+    if (uint8_t* s = cell_S()) { // BUG-0467: the Cell slots (0 locked, 1 unlocked, 2 just collected)
+        out += "\ncell_shared=" + std::to_string(g_cell_fix ? 1 : 0) + " cell_slots=";
+        for (uint32_t i = 0; i < kCellSlots; i++)
+            out += std::to_string(field<int32_t>(s, 0x34 + 4 * i));
+        out += " mate_button=" + std::to_string(field<uint8_t>(s, 0x69));
+    }
+    return out;
 }
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)

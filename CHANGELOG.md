@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Cell parts are shared: a part any player picks up in the Cell stage is
+  unlocked for everyone, and when you join, the parts either of you already
+  had are merged. Creature parts (bones, skeletons) were already shared
+  (BUG-0467).
+
 ## [0.7.3.6-lineages44-dev] - 2026-11-10
 
 - Combat adventures together: every goal is shared (destroy, defend and the
