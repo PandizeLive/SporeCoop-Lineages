@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- The Co-op window is tidier: labels sit beside their fields, rows are evenly
+  spaced, the difficulty has a proper field, ping never wraps, the lobby drops
+  the extra heading and lines that did not apply, and update messages are short
+  ("Lineages 48 is available") (BUG-9117).
+
 ## [0.7.8-lineages47-dev] - 2026-11-11
 
 - Creature editor depth cube: it now moves a part straight in and out of the

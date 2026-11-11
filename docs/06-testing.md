@@ -5152,3 +5152,15 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   two audits (0.25 s) in the last 3 s. A host snap shows as a large step (several m) just before; the lines of G2
   (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
   host NPC, a real desync. The gate and its window stay.
+
+## The co-op window's look (2026-11-11, feat/lineages-47)
+<a id="test-coop-window-polish"></a>
+
+- `coop.uistate 1` opens the window; `shot <png>` then a crop of 360,300..1080,840 (1440x1080) shows it
+  1:1 (window coordinates + 336,239 on screen).
+- New UI images: copy build/SporeCoop.package to the QA copy's Data and `coop.creations mount <path>`
+  right after launch, before the window is first opened (a mounted package is locked until exit).
+- `coop.update fake <version>`: the update line and button as if that version were out (BUG-9117).
+- Labels centre their text whatever alignment is set; coop_ui.cpp sizes them with measured character
+  widths (text_px). A new label that wraps or drifts: check its box against text_px plus 16 px a side.
+- The 10 fps QA games ping each other at about 100 ms: good for checking the 3-digit ping column.

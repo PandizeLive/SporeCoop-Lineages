@@ -89,6 +89,7 @@ struct Cache {
     uint32_t color = 0;
     int vis = -1;
     bool left = false; // left aligned label: the box is sized to the text (labels center their text)
+    bool right = false; // right aligned label: the box ends at box.x2 and is sized to the text
     Rect box;
     int enabled = -1;
 };
@@ -97,6 +98,11 @@ static int g_chat_scroll;            // chat lines scrolled up from the newest (
 constexpr size_t kChatCols = 70;     // letter cells of a chat line (680 px)
 
 // width of a text in the dialog font (average glyph width, measured at 1080p)
+// BUG-9117: labels sized by measured character widths, aligned beside their fields; even rows; the
+// difficulty field framed; the ping column wide enough; shorter update lines; a tidier lobby.
+// `coop.fix ui.polish off`: the 0.7.8-lineages47 layout's text boxes (the estimate below).
+static bool g_label_width_fix = true;
+COOP_FIX("ui.polish", "BUG-9117", g_label_width_fix, "ui: the co-op window's labels are sized to their text and aligned beside their fields");
 static float text_width(const std::string& t)
 {
     int n = 0;
@@ -105,10 +111,52 @@ static float text_width(const std::string& t)
     return n * 9.3f + 30;
 }
 
+static float text_px(const std::string& t, bool small_font);
+static std::map<Win, bool> g_small_font; // labels drawn with the button font (narrower)
+constexpr float kLabelMargin = 16.f;     // a label's inner margin on each side
 static void fit(Win w, const Cache& c)
 {
     Rect r = c.box;
-    r.x2 = std::min(r.x2, r.x1 + text_width(c.text));
+    if (!g_label_width_fix) {
+        r.x2 = std::min(r.x2, r.x1 + text_width(c.text));
+        sui::set_area(w, r);
+        return;
+    }
+    // the measured width plus the label's own inner margin (about 15 px a side: a box only as wide as
+    // the text wraps it), moved left by that margin so the text starts at the box's left edge
+    const float m = kLabelMargin;
+    r.x1 = c.box.x1 - m;
+    r.x2 = std::min(c.box.x2 + m, r.x1 + text_px(c.text, g_small_font.count(w) != 0) + 2 * m);
+    sui::set_area(w, r);
+}
+
+// The window's body font, measured on screen (2026-11-11, 1440x1080: "Port (UDP)" 92 px, "Password" 81,
+// "Seats" 46, "Transfer" 75): a width per character class, within about 3 px. The game's labels
+// centre their text whatever alignment they are given, so a label that has to end at a field's edge
+// gets a box exactly as wide as its text (plus kRightPad on each side).
+static float text_px(const std::string& t, bool small_font)
+{
+    float w = 0;
+    for (unsigned char ch : t) {
+        if ((ch & 0xC0) == 0x80) continue; // UTF-8 continuation
+        if (ch >= 0x80) { w += 10.f; continue; }
+        if (strchr("iljI!.,:;'|", ch)) w += 4.5f;
+        else if (ch >= '0' && ch <= '9') w += 11.5f; // "Hosting on UDP port 47839  -  2/2 players": 370 px
+        else if (strchr("rtf()[] -/", ch)) w += ch == ' ' ? 6.5f : 6.5f;
+        else if (strchr("mwMW%", ch)) w += 13.5f;
+        else if (strchr("OQDGHNUCA", ch)) w += 12.5f;
+        else if (ch >= 'A' && ch <= 'Z') w += 11.5f;
+        else w += 10.f;
+    }
+    w *= 1.03f; // a little room: a box short of its text wraps the text
+    return small_font ? w * 0.70f : w; // the button font: chat "* hosting on UDP port 47839" 176 px
+}
+static void fit_right(Win w, const Cache& c, bool small_font)
+{
+    // the text ends at box.x2: the box reaches one margin past it (the label centres its text)
+    Rect r = c.box;
+    r.x2 = c.box.x2 + kLabelMargin;
+    r.x1 = std::max(c.box.x1 - kLabelMargin, r.x2 - text_px(c.text, small_font) - 2 * kLabelMargin);
     sui::set_area(w, r);
 }
 
@@ -122,6 +170,8 @@ static void text(Win w, const std::string& t)
         sui::set_caption(w, t);
         if (c.left)
             fit(w, c);
+        else if (c.right)
+            fit_right(w, c, g_small_font.count(w) != 0);
     }
 }
 static void color(Win w, uint32_t argb)
@@ -305,11 +355,23 @@ static Win add_label(std::vector<Win>& page, const Rect& r, const std::string& t
     if (!w)
         return nullptr;
     page.push_back(w);
-    Cache c{t, argb, 1, align == sui::kAlignLeft, r};
+    Cache c{t, argb, 1, align == sui::kAlignLeft, align == sui::kAlignRight, r};
     if (c.left)
         fit(w, c);
+    else if (c.right)
+        fit_right(w, c, false);
     g_cache[w] = c;
     return w;
+}
+
+// a right-aligned label drawn with the smaller button font
+static void use_small_font(Win w)
+{
+    if (!w) return;
+    sui::set_font(w, D.font_button);
+    g_small_font[w] = true;
+    auto& c = g_cache[w];
+    if (c.right) fit_right(w, c, true);
 }
 
 static Win shade_danger_button(std::vector<Win>& page, Win button, const std::string& title)
@@ -951,7 +1013,8 @@ static void build_dialog()
     std::vector<Win> common;
     D.subtitle = add_label(common, {0, 70, kW, 96}, T("CO-OP", "КООПЕРАТИВ"), kGold, sui::kAlignCenter);
     // every page: which SporeCoop and game build run, and a report for bug reports
-    D.version = add_label(common, {40, 548, 437, 570}, A.version_line ? A.version_line() : "", kDim);
+    D.version = add_label(common, {40, 553, 437, 573}, A.version_line ? A.version_line() : "", kDim);
+    if (D.version) { sui::set_font(D.version, D.font_button); g_small_font[D.version] = true; } // a quiet footer line
     D.report_btn = add_button(common, "report", {545, 98, 720, 134}, T("Report Issue", "Сообщить об ошибке"),
                               do_report);
     D.report_caption = shade_danger_button(common, D.report_btn, T("Report Issue", "Сообщить об ошибке"));
@@ -993,9 +1056,10 @@ static void build_dialog()
             g_dirty = true;
         });
     }
-    add_label(P, {393, 179, 490, 204}, "Address", kWhite);
-    add_label(P, {393, 211, 490, 236}, "Port", kWhite);
-    add_label(P, {393, 243, 490, 268}, "Password", kWhite);
+    // field labels end beside their fields (the frames start at x 489)
+    add_label(P, {380, 177, 484, 205}, "Address", kWhite, sui::kAlignRight);
+    add_label(P, {380, 209, 484, 237}, "Port", kWhite, sui::kAlignRight);
+    add_label(P, {380, 241, 484, 269}, "Password", kWhite, sui::kAlignRight);
     const auto last_address = load_str("ui", "last_address", "");
     const auto last_port = last_address.rfind(':');
     D.addr_edit = add_edit(P, "address", {489, 177, 677, 205}, last_address.substr(0, last_port), 64, !panel);
@@ -1006,7 +1070,7 @@ static void build_dialog()
     privacy_button(P, "hideaddress", {678, 177, 718, 205}, D.addr_edit, false);
     privacy_button(P, "hidejoinport", {678, 209, 718, 237}, D.join_port, false);
     privacy_button(P, "hidejoinpassword", {678, 241, 718, 269}, D.join_password, true);
-    D.selected_info = add_label(P, {393, 273, 716, 295}, "", kDim);
+    D.selected_info = add_label(P, {402, 273, 712, 295}, "", kDim); // inside its box, off the border
     D.join_btn = add_button(P, "join", {393, 298, 533, 331}, "Join",
                             [] { do_join(sui::edit_text(D.addr_edit)); });
     add_button(P, "saveserver", {539, 298, 624, 331}, "Save", [] {
@@ -1033,10 +1097,12 @@ static void build_dialog()
     if (delete_caption) sui::set_caption(remove, "");
 
     add_label(P, {24, 336, 735, 366}, "Host Server", kGold, sui::kAlignCenter);
-    add_label(P, {36, 375, 136, 398}, "Port (UDP)", kWhite);
-    add_label(P, {36, 404, 136, 427}, "Password", kWhite);
-    add_label(P, {36, 433, 136, 456}, "Seats", kWhite);
-    add_label(P, {36, 462, 136, 485}, "Transfer", kWhite);
+    // one row every 29 px, 26 px tall, labels ending beside the fields (x 140); the seat and transfer
+    // buttons have the fields' height and span the field and its eye button (140 to 351)
+    add_label(P, {30, 373, 135, 399}, "Port (UDP)", kWhite, sui::kAlignRight);
+    add_label(P, {30, 402, 135, 428}, "Password", kWhite, sui::kAlignRight);
+    add_label(P, {30, 431, 135, 457}, "Seats", kWhite, sui::kAlignRight);
+    add_label(P, {30, 460, 135, 486}, "Transfer", kWhite, sui::kAlignRight);
     D.port_edit = add_edit(P, "port", {140, 373, 310, 399}, load_str("ui", "host_port", std::to_string(A.default_port).c_str()), 5, !panel);
     D.host_password = add_edit(P, "hostpassword", {140, 402, 310, 428}, "", 48, !panel);
     privacy_button(P, "hidehostport", {311, 373, 351, 399}, D.port_edit, false);
@@ -1044,39 +1110,44 @@ static void build_dialog()
     D.seats = std::clamp(atoi(load_str("ui", "new_founders", "2").c_str()), 1, 4);
     for (unsigned i = 0; i < 4; ++i) {
         const auto number = std::to_string(i + 1);
-        D.seat_btn[i] = add_button(P, ("seat" + number).c_str(), {140.f + i * 53, 430, 190.f + i * 53, 458},
+        D.seat_btn[i] = add_button(P, ("seat" + number).c_str(), {140.f + i * 54, 431, 189.f + i * 54, 457},
                                    number, [i] { D.seats = i + 1; g_dirty = true; });
     }
     for (unsigned i = 0; i < 2; ++i) {
-        D.transfer_btn[i] = add_button(P, i == 0 ? "optimal" : "fast", {140.f + i * 106, 459, 243.f + i * 106, 489},
+        D.transfer_btn[i] = add_button(P, i == 0 ? "optimal" : "fast", {140.f + i * 108, 460, 243.f + i * 108, 486},
                                        i == 0 ? "Optimal" : "Fast", [i] {
             if (A.set_paced_transfer) A.set_paced_transfer(i == 0);
             save_str("coop", "paced_world_transfer", i == 0 ? "1" : "0");
             g_dirty = true;
         });
     }
-    D.host_hint = add_label(P, {44, 492, 306, 532}, "", kDim);
+    D.host_hint = add_label(P, {50, 492, 304, 532}, "", kDim); // inside its box, off the border
     eye_button(P, "hidehostaddresses", {311, 491, 351, 531}, [] {
         D.show_host_addresses = !D.show_host_addresses;
         g_dirty = true;
     });
 
-    add_label(P, {393, 372, 531, 398}, "Difficulty", kGold);
-    D.scaling_edit = add_edit(P, "founderscaling", {540, 372, 595, 398}, load_str("ui", "new_scaling", "100"), 3);
-    if (Win unit = add_label(P, {604, 373, 718, 397}, "% per extra seat", kDim))
-        sui::set_font(unit, D.font_button);
+    // "Difficulty [ 100 ] % per extra seat": the field has the panel's field frame (painted in
+    // lineages_connect_panels.png at 536..601 x 372..398) like Port and Password
+    add_label(P, {393, 372, 531, 398}, "Difficulty", kGold, sui::kAlignRight);
+    D.scaling_edit = add_edit(P, "founderscaling", {537, 373, 600, 397}, load_str("ui", "new_scaling", "100"), 3, !panel);
+    if (Win unit = add_label(P, {606, 372, 718, 398}, "% per extra seat", kDim)) {
+        use_small_font(unit);
+        fit(unit, g_cache[unit]);
+    }
     constexpr const char* labels[] = {"Objective effort", "Enemy HP / damage", "Creature hunger drain",
                                       "City takeover resistance", "Civ military interval"};
     for (int i = 0; i < 5; ++i) {
         const float y = 400.f + i * 19;
-        Win label = add_label(P, {393, y, 614, y + 19}, labels[i], kDim);
-        D.difficulty_value[i] = add_label(P, {615, y, 712, y + 19}, "", kWhite, sui::kAlignRight);
-        if (label) sui::set_font(label, D.font_button);
-        if (D.difficulty_value[i]) sui::set_font(D.difficulty_value[i], D.font_button);
+        // a table: names from the left edge, values ending at the right edge
+        Win label = add_label(P, {400, y, 614, y + 19}, labels[i], kDim);
+        D.difficulty_value[i] = add_label(P, {615, y, 708, y + 19}, "", kWhite, sui::kAlignRight);
+        if (label) { use_small_font(label); fit(label, g_cache[label]); }
+        use_small_font(D.difficulty_value[i]);
     }
     D.host_btn = add_button(P, "host", {393, 497, 718, 534}, "Start Server", do_host);
     D.status = add_label(P, {40, 535, 503, 558}, "", kYellow);
-    D.update_btn = add_button(P, "update", {515, 536, 720, 576}, "", [] {
+    D.update_btn = add_button(P, "update", {515, 538, 718, 572}, "", [] {
         if (A.update_do) A.update_do();
         g_dirty = true;
     });
@@ -1089,8 +1160,8 @@ static void build_dialog()
     auto& L = D.page_lobby;
     if (Win panel = sui::image_window(root, sui::fnv("lineages_lobby_panels"), sui::fnv("sporecoop"), 34, 156))
         L.push_back(panel);
-    D.next_seats_edit = add_edit(L,"nextseats",{40,492,82,524},"",1);
-    D.queue_seats = add_button(L,"queueseats",{88,488,274,528},T("Next Seats","Места на этап"),[] {
+    D.next_seats_edit = add_edit(L,"nextseats",{40,496,82,528},"",1);
+    D.queue_seats = add_button(L,"queueseats",{88,493,274,531},T("Next Seats","Места на этап"),[] {
         auto value = sui::edit_text(D.next_seats_edit);
         if (value.size() != 1 || value[0] < '1' || value[0] > '4') {
             set_status(T("Enter 1 to 4 seats.","Укажите от 1 до 4 мест."),kRed,8);
@@ -1102,7 +1173,7 @@ static void build_dialog()
         g_dirty = true;
     });
     D.session = add_label(L, {40, 103, 530, 129}, "", kWhite);
-    D.invite_btn = add_button(L, "copyinvite", {475, 538, 720, 578}, T("Copy Host Address", "Копировать адрес"), [] {
+    D.invite_btn = add_button(L, "copyinvite", {475, 540, 720, 576}, T("Copy Host Address", "Копировать адрес"), [] {
         const auto addresses = A.invite ? A.invite() : std::string{};
         if (addresses.empty()) {
             set_status(T("No local address available", "Нет доступного адреса"), kYellow, 5);
@@ -1126,61 +1197,66 @@ static void build_dialog()
     });
     add_label(L, {40, 131, 380, 156}, T("Players", "Игроки"), kGold);
     add_label(L, {416, 131, 720, 156}, T("World & Session", "Мир и сессия"), kGold);
-    D.rules = add_label(L, {416, 165, 710, 188}, "", kDim);
+    D.rules = add_label(L, {422, 165, 710, 188}, "", kDim);
     D.transfer_mode = add_label(L, {416, 190, 710, 213}, "", kDim);
-    D.preview_status = add_label(L, {40, 529, 438, 548}, "", kDim);
+    D.preview_status = add_label(L, {40, 534, 438, 552}, "", kDim);
     for (int i = 0; i < 4; i++) {
         float y = 163.f + i * 30;
-        D.row_name[i] = add_label(L, {45, y, 185, y + 26}, "", kWhite);
-        D.row_stage[i] = add_label(L, {187, y, 320, y + 26}, "", kWhite);
-        D.row_ping[i] = add_label(L, {322, y, 374, y + 26}, "", kDim);
-        D.row_ready[i] = add_label(L, {375, y, 390, y + 26}, "", kDim);
+        // name and stage from the left, the ping ending at the column's right edge ("103 ms" never wraps)
+        D.row_name[i] = add_label(L, {45, y, 175, y + 26}, "", kWhite);
+        D.row_stage[i] = add_label(L, {178, y, 296, y + 26}, "", kWhite);
+        D.row_ping[i] = add_label(L, {298, y, 362, y + 26}, "", kDim, sui::kAlignRight);
+        D.row_ready[i] = add_label(L, {364, y, 382, y + 26}, "", kDim, sui::kAlignCenter);
+        use_small_font(D.row_ping[i]);
     }
-    D.world = add_label(L, {40, 292, 720, 316}, "", kYellow);
-    add_label(L, {40, 316, 720, 338}, T("Session Chat", "Чат сессии"), kGold);
-    for (int i = 0; i < 4; i++)
-        D.chat_lines[i] = add_label(L, {40, 338.f + i * 17, 720, 355.f + i * 17}, "", kWhite);
+    // the session's state line on its own row between the panels, centred (it read as part of the
+    // "Session Chat" heading below it; the chat box needs no heading)
+    D.world = add_label(L, {40, 298, 720, 330}, "", kYellow, sui::kAlignCenter);
+    for (int i = 0; i < 4; i++) { // the smaller font: four lines fit the box without overlapping
+        D.chat_lines[i] = add_label(L, {44, 340.f + i * 16.5f, 716, 356.5f + i * 16.5f}, "", kWhite);
+        if (D.chat_lines[i]) { sui::set_font(D.chat_lines[i], D.font_button); g_small_font[D.chat_lines[i]] = true; }
+    }
     std::vector<Win> arrows; // shown by refresh_lobby only when there is more to see
     D.chat_up = add_button(arrows, "chatup", {722, 337, 756, 367}, "^", [] { g_chat_scroll++; g_dirty = true; });
     D.chat_down = add_button(arrows, "chatdown", {722, 376, 756, 406}, "v", [] { g_chat_scroll--; g_dirty = true; });
     // the own creation of this stage: "My creature: Kirgle  < >"
-    D.creation = add_label(L, {40, 408, 560, 434}, "", kGold);
-    D.creation_prev = add_button(L, "cprev", {570, 404, 640, 434}, "<", [] {
+    D.creation = add_label(L, {40, 416, 560, 444}, "", kGold); // a row of its own under the chat box
+    D.creation_prev = add_button(L, "cprev", {570, 415, 640, 445}, "<", [] {
         if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
             A.civ_role_cycle(-1);
         else if (A.creation_cycle)
             A.creation_cycle(-1);
         g_dirty = true;
     });
-    D.jump_btn = add_button(L, "jump", {400, 404, 560, 434}, "", [] {
+    D.jump_btn = add_button(L, "jump", {400, 415, 560, 445}, "", [] {
         if (A.jump_do)
             A.jump_do();
         g_dirty = true;
     });
-    D.give_btn = add_button(L, "give", {570, 404, 720, 434}, "", [] {
+    D.give_btn = add_button(L, "give", {570, 415, 720, 445}, "", [] {
         if (A.give_do)
             A.give_do();
         g_dirty = true;
     });
     // 3 or 4 players: ">" picks the next other player as the recipient (BUG-0075)
-    D.give_next = add_button(L, "givenext", {520, 404, 560, 434}, ">", [] {
+    D.give_next = add_button(L, "givenext", {520, 415, 560, 445}, ">", [] {
         if (A.give_cycle)
             A.give_cycle();
         g_dirty = true;
     });
-    D.creation_next = add_button(L, "cnext", {650, 404, 720, 434}, ">", [] {
+    D.creation_next = add_button(L, "cnext", {650, 415, 720, 445}, ">", [] {
         if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
             A.civ_role_cycle(1);
         else if (A.creation_cycle)
             A.creation_cycle(1);
         g_dirty = true;
     });
-    D.space_btn = add_button(L, "space", {280, 488, 480, 528}, T("Space >", "Космос >"), [] {
+    D.space_btn = add_button(L, "space", {280, 493, 480, 531}, T("Space >", "Космос >"), [] {
         g_space_page = true;
         g_dirty = true;
     });
-    D.chat_edit = add_edit(L, "chatedit", {40, 438, 560, 470}, "", 120);
-    D.send_btn = add_button(L, "send", {570, 434, 720, 474}, T("Send", "Отправить"), do_send_chat);
+    D.chat_edit = add_edit(L, "chatedit", {40, 453, 560, 483}, "", 120);
+    D.send_btn = add_button(L, "send", {570, 451, 720, 485}, T("Send", "Отправить"), do_send_chat);
     D.ready_btn = add_button(L, "ready", {445, 249, 706, 285}, "", [] {
         A.set_ready(!A.ready());
         g_dirty = true;
@@ -1220,7 +1296,7 @@ static void build_dialog()
                    on ? kGreen : kYellow, 8);
         g_dirty = true;
     });
-    D.leave_btn = add_button(L, "leave", {500, 488, 720, 528}, "", [] {
+    D.leave_btn = add_button(L, "leave", {500, 493, 720, 531}, "", [] {
         A.leave();
         set_status(T("Left the session", "Вы вышли из игры"), kYellow, g_status_fix ? 5 : 0);
     });
@@ -1423,7 +1499,10 @@ static void refresh_lobby()
     text(D.transfer_mode, std::string(T("World Transfer: ", "Передача мира: ")) +
          (A.paced_transfer && A.paced_transfer() ? "Optimal" : "Fast"));
     std::string preview, update_button;
-    text(D.preview_status, A.update && A.update(preview, update_button) ? preview : "");
+    // the lobby names an update only when there is something to do ("Lineages is up to date" and the
+    // version under it were two more lines at the bottom of every lobby)
+    const bool has_update = A.update && A.update(preview, update_button);
+    text(D.preview_status, has_update && (!g_label_width_fix || (!preview.empty() && update_button != "Check for Updates")) ? preview : "");
     for (int i = 0; i < 4; i++) {
         bool have = i < (int)rows.size();
         const bool reserved = !have && static_cast<unsigned>(i) < seats;
@@ -1446,7 +1525,7 @@ static void refresh_lobby()
         text(D.row_name[i], n);
         color(D.row_name[i], p.me ? kGold : kWhite);
         text(D.row_stage[i], p.stage == "Galaxy menu" ? T("Galaxy", "Галактика") : p.stage);
-        text(D.row_ping[i], p.me ? "" : (p.ping_ms >= 0 ? std::to_string(p.ping_ms) + T("ms", "мс") : "?"));
+        text(D.row_ping[i], p.me ? "" : (p.ping_ms >= 0 ? std::to_string(std::min(p.ping_ms, 9999)) + T(" ms", " мс") : "?"));
         text(D.row_ready[i], p.ready ? "+" : "-");
         color(D.row_ready[i], p.ready ? kGreen : kDim);
     }
@@ -1494,7 +1573,9 @@ static void refresh_lobby()
     std::string gwhat, gto;
     int gn = A.give ? A.give(gwhat, gto) : 0;
     bool space = gwhat == "spice";
-    bool giving = A.give && !gto.empty() && (cl.empty() || space);
+    // only where there are units to give (Tribe, Civ, Space): at the galaxy menu, in Cell or Creature the
+    // line "Select your units to give them to a partner" meant nothing
+    bool giving = A.give && !gto.empty() && (!g_label_width_fix || !gwhat.empty()) && (cl.empty() || space);
     if (space) // the ship can't be changed in flight: the row is for the cargo
         cl = gn ? std::string(T("Spice in cargo: ", "Специи в трюме: ")) + std::to_string(gn)
                 : T("No spice in cargo to give", "В трюме нет специи");

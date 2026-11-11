@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cctype>
 #include <mutex>
 
 #include "../../updater/winupdate.h"
@@ -198,27 +199,43 @@ void tick()
     }
 }
 
+// A short name for a version on one line of the co-op window: "0.7.8-lineages48-dev" -> "Lineages 48"
+// (the full version made the update line wrap: "SporeCoop 0.7.8-lineages48-dev is available (you have
+// 0.7.8-lineages47-dev)"); other versions keep their number: "SporeCoop 0.7.9".
+static std::string short_name(const std::string& v)
+{
+    const auto at = v.find("lineages");
+    if (at != std::string::npos) {
+        size_t end = at + 8;
+        while (end < v.size() && isdigit((unsigned char)v[end])) ++end;
+        if (end > at + 8) return "Lineages " + v.substr(at + 8, end - at - 8);
+    }
+    return "SporeCoop " + v;
+}
+
 bool ui(std::string& line, std::string& button)
 {
     std::lock_guard<std::mutex> l(g_mu);
     switch (g_state) {
     case Available:
-        line = "SporeCoop " + g_rel.version + " is available (you have " + g_version + ")";
+        line = short_name(g_rel.version) + " is available";
         button = "Update";
         return true;
     case Downloading: {
         uint32_t got = g_got, total = g_total;
-        line = "Downloading SporeCoop " + g_rel.version + "... " +
-               (total ? std::to_string(got * 100ull / total) + " %" : std::to_string(got / 1024) + " KB");
+        line = "Downloading " + short_name(g_rel.version) + "... " +
+               (total ? std::to_string(got * 100ull / total) + "%" : std::to_string(got / 1024) + " KB");
         return true;
     }
     case Ready:
-        line = "SporeCoop " + g_rel.version + " is installed: restart Spore to use it";
+        line = short_name(g_rel.version) + " installed: restart Spore";
         return true;
-    case Failed:
-        line = "Update failed: " + g_err;
-        button = "Try again";
+    case Failed: {
+        std::string why = g_err.size() > 40 ? g_err.substr(0, 37) + "..." : g_err; // the log has it whole
+        line = "Update failed: " + why;
+        button = "Try Again";
         return true;
+    }
     case Checking:
         line = "Checking for updates...";
         return true;
@@ -265,6 +282,12 @@ std::string command(const std::string& arg)
     if (arg == "apply") {
         start_update();
         return "updating";
+    }
+    if (arg.rfind("fake ", 0) == 0) { // tests (the co-op window's look): pretend this version is out
+        std::lock_guard<std::mutex> l(g_mu);
+        g_rel.version = arg.substr(5);
+        g_state = Available;
+        return "pretending " + g_rel.version + " is available (nothing is downloaded until Update)";
     }
     static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed", "check failed"};
     std::lock_guard<std::mutex> l(g_mu);

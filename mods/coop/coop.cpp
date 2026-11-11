@@ -6992,7 +6992,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     autoupdate::init(H, M, COOP_VERSION);
     H->command_add(M, "coop.update", "coop.update [check | apply] - SporeCoop updates from GitHub releases",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
-                       SAY("%s", autoupdate::command(argc > 1 ? argv[1] : "").c_str());
+                       std::string arg = argc > 1 ? argv[1] : "";
+                       for (int i = 2; i < argc; ++i) arg += std::string(" ") + argv[i]; // "fake <version>"
+                       SAY("%s", autoupdate::command(arg).c_str());
                        return 0;
                    },
                    nullptr, MT);

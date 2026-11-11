@@ -731,3 +731,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9114](BUG-9114-adventure-host-creatures.md) | open | feature | Adventure | 2026-11-10 |  | Adventure creatures move differently in each game; the host should simulate them for everyone |
 | [BUG-9115](BUG-9115-guest-alpha-marks.md) | fixed | desync | Creature | 2026-11-10 |  | a guest does not see the host's nest alphas as alphas (and sees other creatures as alphas) |
 | [BUG-9116](BUG-9116-depth-cube-direction-and-size.md) | fixed | bug | Editor | 2026-11-11 |  | the editor depth cube pushes along the line from the spine, not straight in and out, and keeps one pixel size at every zoom |
+| [BUG-9117](BUG-9117-coop-window-polish.md) | fixed | bug | All | 2026-11-11 |  | co-op window looks unpolished (wrapping text, uneven rows, unframed difficulty, ping wraps, cluttered lobby) |
