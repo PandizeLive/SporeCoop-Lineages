@@ -3667,6 +3667,10 @@ void* player_species(uint8_t player)
 
 // Preserve only the two creation record types used by make_bundle(). Never mount a
 // received save attachment as an unrestricted Spore package.
+static bool g_founder_descs_fix = true;
+COOP_FIX("tribe.founder_parts", "BUG-9134", g_founder_descs_fix,
+         "tribe / civ: a guest's custom creature (with its part descriptions) can be archived as a founder; it gets its own village");
+
 static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::string& err)
 {
     net::Reader header(archive.data(), archive.size());
@@ -3680,14 +3684,40 @@ static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::
     net::Reader record_header(payload.data(), payload.size());
     record_header.u32(); record_header.u32(); record_header.u32();
     uint16_t count = record_header.u16();
-    if (!count || count > 2 || !unpack(payload, b) || !b.key.instance || !is_crt(b.key) ||
+    // BUG-9134: since the 0.7.8 merge a bundle also carries one description per part its model uses (BUG-0559,
+    // group kPartDescGroup, pack()): a custom creature had 2 + N records and every founder archive was refused
+    // ("Invalid or mismatched guest creature data"; only premade creatures, 0 records, passed). Off: 2 at most.
+    const unsigned max_records = g_founder_descs_fix ? 2u + 512u : 2u;
+    if (!count || count > max_records || !unpack(payload, b) || !b.key.instance || !is_crt(b.key) ||
         key != shared_instance(owner, fnv(payload.data(), payload.size()))) {
         err = "Invalid or mismatched guest creature data.";
+        // BUG-9134: which check failed (the owner's Tribe founder was never made)
+        Bundle d;
+        const bool unpacked = unpack(payload, d);
+        H->log(M, SK_WARN,
+               "creations: founder archive of player %u refused: records %u, unpacked %d, key %08X/%08X/%08X crt %d, archive key "
+               "%08X, expected %08X",
+               owner, count, (int)unpacked, d.key.instance, d.key.type, d.key.group, (int)(unpacked && is_crt(d.key)), key,
+               shared_instance(owner, fnv(payload.data(), payload.size())));
+        if (unpacked)
+            for (auto& rec : d.recs)
+                H->log(M, SK_WARN, "creations:   record %08X/%08X/%08X %u bytes", rec.key.instance, rec.key.type, rec.key.group,
+                       (unsigned)rec.data.size());
         return false;
     }
     bool model = false, meta = false;
     size_t used = 14; // original key, record count
+    std::vector<dbpf::Record> kept;
     for (auto& rec : b.recs) {
+        if (g_founder_descs_fix && rec.key.group == kPartDescGroup) {
+            // a part's description (BUG-0559): counted, not registered (the receiver's own parts answer)
+            if (rec.data.empty() || rec.data.size() > (64u << 10)) {
+                err = "Unexpected part description in guest creature archive.";
+                return false;
+            }
+            used += 16 + rec.data.size();
+            continue;
+        }
         if (rec.data.empty() || rec.key.instance != b.key.instance || rec.key.group != b.key.group ||
             (rec.key.type != kBem && rec.key.type != kMeta) || (rec.key.type == kBem ? model : meta)) {
             err = "Unexpected record in guest creature archive.";
@@ -3709,7 +3739,9 @@ static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::
         } else meta = true;
         used += 16 + rec.data.size();
         rec.key.instance = key;
+        kept.push_back(rec);
     }
+    b.recs = std::move(kept);
     if (used != payload.size()) { err = "Unexpected data after the guest creature records."; return false; }
     if (!model) {
         err = "Missing saved guest creature model.";

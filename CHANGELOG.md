@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Tribe / Civilization: a connected player who plays their own custom creature
+  gets their own village again (with their creature as chief). Since Lineages
+  46 the founding refused any custom creature (BUG-9134).
+
 ## [0.7.8-lineages51-dev] - 2026-11-11
 
 - Creature: the connected player's Strike now hurts the host's creatures in
