@@ -6,7 +6,7 @@ Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](h
 
 ## Playable today
 
-**Development build** `0.7.3.6-lineages45-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
+**Development build** `0.7.8-lineages46-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
 
 | Stage | What players have done together |
 | --- | --- |
@@ -56,6 +56,8 @@ Done in 43-dev: Foreign Creations (receive what partners got from others, off by
 Done in 44-dev: combat adventures together (every goal shared, anything destroyed is destroyed for everyone, the host's win or loss ends the mission for all, captains revive each other), and an Adventure partner is a captain of the right size instead of a name tag. Enemies still move separately in each game.
 
 Done in 45-dev: Cell parts are shared like Creature parts: a part anyone picks up is unlocked for everyone, and the parts either player already had are merged when you join.
+
+Done in 46-dev: built on SporeCoop 0.7.8 (upstream fixes for creature relations, the guest's social meter, roar, bones, NPC animations and crash guards), and alpha creatures are marked for guests.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

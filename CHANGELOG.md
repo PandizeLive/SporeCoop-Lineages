@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.8-lineages46-dev] - 2026-11-11
+
+- Built on SporeCoop 0.7.8: every upstream fix from 0.7.4 to 0.7.8 is in,
+  including creature relations (creatures no longer stay scared of a guest),
+  the guest's social game with the game's own meter and prompts (no instant
+  win), the guest's roar scaring the host's creatures, host-owned bones and
+  skeletons, NPC animations on the guest, sneaking, and many crash guards.
+- Alpha creatures are marked as alphas for guests too (BUG-9115).
+- Inside a Lineages campaign its own workload setting paces DNA and Cell food;
+  upstream's per-player pace applies only outside campaigns.
+- Lineages keeps its own Tribe tool sync for the founders' villages.
+
 ## [0.7.3.6-lineages45-dev] - 2026-11-10
 
 - Cell parts are shared: a part any player picks up in the Cell stage is
