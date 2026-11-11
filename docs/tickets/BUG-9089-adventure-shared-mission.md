@@ -116,3 +116,9 @@ intro; held defeat credits failing the mission; the death list resent with every
 Open: enemies' movement is each game's own (deaths, credits and the end are shared); missions started
 apart in time catch up by mirrored deaths; two PCs, 3-4 players and adventures from a Space campaign
 not tested yet.
+
+## 44-dev (2026-11-10, feat/adventure-bodies)
+
+Partner captain bodies are on by default (BUG-9113: the partner's scale, no spawn during the intro).
+Host-simulated creatures (BUG-9114) are in the build, off by default: the host's creatures do not
+strike a partner's body yet. Still open here: enemy movement per game, two PCs, 3-4 players.

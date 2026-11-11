@@ -43,6 +43,8 @@ static void creature_fill(void* av, net::PlayerState& st)
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
+    if (game::mode_id() == kScenario) // BUG-9113: the scenario scales each captain; the partner's body copies it
+        st.scale = game::scale(av);
 }
 
 static void* creature_spawn(const net::PlayerState& s, void* av)
@@ -146,9 +148,11 @@ static void creature_despawn(void* p)
 
 static float creature_tag(void* p) { return game::bounding_radius(p) * 1.3f + 0.3f; }
 
-// Experimental until act changes, teardown and captain model ownership pass.
-static bool g_adventure_bodies = false;
-COOP_FIX("adventure.captain_bodies", "BUG-9089", g_adventure_bodies, "adventure: scenario-bound partner captain bodies (experimental)");
+// On from 44 (BUG-9113): the body has the partner's captain scale, comes once the mission plays and
+// survived act changes, a finished mission and leaving it (docs/re/space.md#space-adventure-partner-bodies).
+// Off: the partner is drawn as a name tag at its network position (43).
+static bool g_adventure_bodies = true;
+COOP_FIX("adventure.captain_bodies", "BUG-9113", g_adventure_bodies, "adventure: a partner is a captain body in this game (off: a name tag)");
 struct AdventureBody { void* avatar; uint32_t serial; };
 static std::unordered_map<void*,AdventureBody> g_adventure_body_ids;
 
@@ -169,8 +173,25 @@ static void* adventure_spawn(const net::PlayerState& s, void* av)
     *(int*)((uint8_t*)p+0x1C)=-2;
     game::puppet_register(p);
     game::teleport(p,s.pos,s.rot);
+    // BUG-9113: a spawned creature has its species' scale (1.58 for a captain the scenario drew at 2.09):
+    // the partner's own captain scale, else this game's captain's (the scenario scales captains alike)
+    game::set_scale(p,s.scale>0 ? s.scale : game::scale(av));
     g_adventure_body_ids[p]={av,game::object_serial(p)};
     return p;
+}
+
+bool adventure_body_ready()
+{
+    auto play=adventure_play();
+    return g_adventure_bodies && play && *(int*)(play+0x90)==3;
+}
+
+static void adventure_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
+{
+    // the partner's scale arrives with its states (BUG-9113); a body spawned before it came is corrected
+    if (s.scale>0 && std::fabs(game::scale(p)-s.scale)>0.01f*s.scale)
+        game::set_scale(p,s.scale);
+    creature_drive(p,s,ds,now);
 }
 
 static bool adventure_alive(void* p)
@@ -1207,7 +1228,7 @@ static const Adapter kAdapters[] = {
     // BUG-9003: the scenario initializes its cast on act changes. A regular Creature-stage
     // animal crashed SetCurrentAct. The scenario-bound body prototype is opt-in.
     {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill,
-     adventure_spawn, creature_drive, adventure_despawn, creature_tag, adventure_alive},
+     adventure_spawn, adventure_drive, adventure_despawn, creature_tag, adventure_alive},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 

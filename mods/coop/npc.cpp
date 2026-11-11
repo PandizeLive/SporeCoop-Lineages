@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "adventure.h"
 #include "view_centres.h"
 #include "modes.h"
 #include "tribe.h"
@@ -260,7 +261,8 @@ void set_partner_targets(bool on) { g_partner_targets = on; }
 
 static void* ai_target(void* c)
 {
-    if (!g_enabled || !g_partner_targets || !is_host() || !game::in_creature_stage())
+    // BUG-9114: in an Adventure too, once the host simulates the scenario's creatures for everyone
+    if (!g_enabled || !g_partner_targets || !is_host() || !(game::in_creature_stage() || adventure::partners_targetable()))
         return nullptr;
     void* av = game::avatar();
     auto prev = g_ai_target.find(c);
@@ -1650,6 +1652,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
     if (attacker && attacker == av && creature_rescue::down() && c != av)
         return false;
     if (is_guest()) {
+        if (adventure::guest_damage(c, damage, type, attacker))
+            return false; // BUG-9114: an Adventure creature the host simulates (the host applies the captain's hits)
         auto it = g_proxy_of.find(c);
         if (it != g_proxy_of.end()) { // hit on a host NPC: the host applies it
             if (attacker == av && social::drop_social_hit(it->second))

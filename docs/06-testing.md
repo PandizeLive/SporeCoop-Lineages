@@ -4275,3 +4275,18 @@ BUG-9089. Fresh DuoQA profiles (the state reader asserts "duoqa" in the save pat
 - Clicking a character the own captain hides does nothing: stand aside (6-9 m, 45 degrees) and click
   its projected point from `coop.targets objs`.
 - Results screen: Done is window 07C79948.
+
+## Windows QA at 10 fps from launch (2026-11-10, feat/adventure-bodies)
+<a id="test-windows-qa-fps-cap"></a>
+
+- Two uncapped 1440x1080 QA games lag the owner's PC (they were closed by the owner). The QA copy's
+  `mods/sporekit.ini` has `frame_ms=100`: every QA game runs at 10 fps from launch, menus included.
+  `frame.limit` overrides it until restart; do not raise it.
+- At 10 fps a `wait.frames N` waits 3x longer than at 30: wait in seconds in scripts that click.
+- `adventure_start.py` and the "another adventure" steps above start from the Galactic Adventures panel;
+  from the plain galaxy screen click Galactic Adventures (92,246) first.
+- `coop.adventure actors [radius] [player]` lists scenario creatures (id, class, position, health, key,
+  posse flag) around the captain or a partner's body; on a guest the key is the host creature it
+  follows. Pair the two games' lists by key for an exact position compare (BUG-9114).
+- `coop.adventure hit <class> [damage]`: this captain's hit on the nearest creature of that class
+  through the damage filter.

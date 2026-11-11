@@ -96,6 +96,7 @@ enum MsgType : uint8_t {
     MSG_CIV_INFLUENCE = 69, // host native religious followers and meter; civ_influence.h
     MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
     MSG_LIBRARY = 71, // optional CAP_LIBRARY persistent creation PNG exchange
+    MSG_ADVENTURE_ACTORS = 72, // unreliable host -> guest: scenario creatures' states (adventure_sync.h ActorBatch, BUG-9114)
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
 };
@@ -394,6 +395,7 @@ struct PlayerState {
     uint32_t mode = 0;    // game mode id (Creature 0x1654C01, Space 0x1654C05, ...)
     uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
     AdventureGate gate;   // optional Duo extension for a single move-to objective
+    float scale = 0;      // optional (Adventure, BUG-9113): the captain's own scale; 0 = not sent
 
     void write(Writer& w) const
     {
@@ -408,6 +410,8 @@ struct PlayerState {
         if (gate.visit || gate.credit) {
             w.u32(gate.visit); w.u32(gate.act); w.u32(gate.target); w.u32(gate.credit);
         }
+        if (scale > 0) // after the gate: a reader that only knows the gate ignores 4 or 20 bytes left
+            w.f32(scale);
     }
     bool read(Reader& r)
     {
@@ -420,8 +424,13 @@ struct PlayerState {
         species = r.u32();
         mode = r.u32(); world = r.u32();
         gate = {};
-        if (r.left() == 16)
+        scale = 0;
+        if (r.left() == 16 || r.left() == 20)
             gate = {r.u32(), r.u32(), r.u32(), r.u32()};
+        if (r.left() == 4) {
+            float s = r.f32();
+            scale = s > 0.01f && s < 100.f ? s : 0.f; // a creature's scale; anything else is not one
+        }
         return r.ok();
     }
 };

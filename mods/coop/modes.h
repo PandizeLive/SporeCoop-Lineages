@@ -45,6 +45,7 @@ net::Vec3 entity_pos(const Adapter* a, void* e);
 const Adapter* for_mode(uint32_t mode);
 bool adventure_progress(int& act, int& state, int& completed);
 uint8_t* adventure_play();
+bool adventure_body_ready(); // partner bodies on and the mission playing (no body during the intro)
 // the species a remote player's creature puppet is built from (its own creation), nullptr = local
 extern void* (*g_species_for_player)(uint8_t player);
 // the model a remote player's cell (kind 1) / spaceship (kind 2) puppet uses; false = the local one

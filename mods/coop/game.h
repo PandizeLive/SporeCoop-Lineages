@@ -204,6 +204,9 @@ void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 // During the swap avatar() still returns the real avatar.
 using AiTargetPicker = void* (*)(void* npc);
 void set_ai_target_picker(AiTargetPicker fn);
+// true: this creature's AI does not tick here (another game simulates it; BUG-9114 Adventure enemies)
+using AiSkip = bool (*)(void* npc);
+void set_ai_skip(AiSkip fn);
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
 void set_swap_guard(bool on);    // tests (off: no undo)

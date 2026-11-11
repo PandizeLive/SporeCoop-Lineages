@@ -4,10 +4,13 @@
 #include <map>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <windows.h>
+#include "driver.h"
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
+#include "net/interp.h"
 #include "sporekit_game.hpp"
 
 namespace adventure {
@@ -151,6 +154,8 @@ void kill(void* o, uint32_t noun)
     ++mirrored_kills;
 }
 
+bool creatures_by_key(); // BUG-9114 (below)
+
 void poll(double now)
 {
     if (now<poll_at) return;
@@ -189,16 +194,175 @@ void poll(double now)
         if (host) to_guests(p); else send(0,p);
         ++deaths_out;
     }
-    // what another game saw die: the same objects die here (any alive one of that id)
+    // what another game saw die: the same objects die here (any alive one of that id). BUG-9114: while the
+    // host simulates the creatures, a creature's death is the host's and reaches a guest by its key
+    // (guest_drive): "any one of that id" killed a living lookalike (soldiers of one marker share an id)
+    const bool by_key=creatures_by_key();
     for (auto& [id,want]:deaths_wanted) {
         uint32_t have=deaths_local[id];
         for (auto& [o,noun]:q.alive) {
             if (have>=want) break;
+            if (by_key && noun==kCreatureNoun) continue;
             if (object_id(o)!=id || !killed_here.insert({o,game::object_serial(o)}).second) continue;
             kill(o,noun);
             ++have; // counted as a death by the next poll
         }
     }
+}
+
+// ---- BUG-9114: the host's game simulates the scenario's creatures ----
+// Before, every game ran its own copy of each enemy, ally and character: deaths, credits and the end
+// were shared (BUG-9089) but movement was not, and each game's enemies only saw their own captain (the
+// partner was a name tag). With partner bodies (adventure.captain_bodies) the host's creatures pick the
+// nearest captain, the host's or a partner's body (npc.cpp ai_target, as in the Creature stage), and
+// their hits on a body reach that partner (MSG_DAMAGE). A guest's scenario creatures have no AI of their
+// own: they follow the host's states (positions, facing, health), and the guest captain's hits on them
+// go to the host, which applies them. `coop.fix adventure.enemies off`: each game simulates its own (44).
+// OFF by default in 44: the host's creatures choose a partner's body as their target (npc partner_picks)
+// but never strike it, so a guest whose creatures follow the host was never hurt by them (only by
+// buildings). Positions, health, deaths by key and corpses were verified (docs/re/space.md#space-adventure-host-creatures).
+bool g_fix_enemies = false;
+COOP_FIX("adventure.enemies", "BUG-9114", g_fix_enemies,
+         "adventure: the host's game moves the scenario's creatures for everyone, they attack partners' bodies, guests' hits go to the host");
+void* (*body_of)(uint8_t player);
+constexpr double kStreamEvery = 0.1, kFullEvery = 1.0, kActorTimeout = 5.0;
+struct HostActor { void* obj; uint32_t id; net::Vec3 pos; float health; };
+std::unordered_map<uint32_t,HostActor> host_actors; // host: key (object serial) -> its creature
+double stream_at, full_at;
+unsigned batches_out, actors_out, hits_in, hits_applied, hits_stale;
+struct GuestActor {
+    void* obj = nullptr; uint32_t serial = 0, id = 0;
+    net::SnapshotBuffer buf; drive::State drv;
+    double rx = 0; bool dead = false, corpse = false;
+};
+std::unordered_map<uint32_t,GuestActor> guest_actors; // guest: host key -> this game's creature
+std::unordered_map<void*,uint32_t> guest_key_of;     // guest: creature -> host key
+bool guest_driving;                                   // guest: scenario creatures follow the host now
+unsigned batches_in, unpaired_now, hits_out, damage_dropped;
+
+bool enemies_on()
+{
+    return g_fix_enemies && g_fix_combat && session && session->connected() && nonce && current_play &&
+           host_run && modes::adventure_body_ready();
+}
+
+bool creatures_by_key() { return enemies_on(); }
+
+bool scenario_creature(void* o, void* av)
+{
+    return o && o!=av && !game::is_puppet(o) && object_id(o);
+}
+
+void host_stream(double now)
+{
+    if (now<stream_at) return;
+    stream_at=now+kStreamEvery;
+    const bool full=now>=full_at;
+    if (full) full_at=now+kFullEvery;
+    struct Q { std::vector<std::pair<void*,uint32_t>> list; void* av; } q{{},game::avatar()};
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto q=(Q*)u;
+        if (noun==kCreatureNoun && scenario_creature(o,q->av)) q->list.push_back({o,object_id(o)});
+        return true;
+    },&q);
+    std::unordered_map<uint32_t,HostActor> next;
+    std::vector<ActorBatch> out;
+    ActorBatch b; b.mission=mission; b.run=host_run; b.time_ms=GetTickCount();
+    for (auto [o,id]:q.list) {
+        uint32_t key=game::object_serial(o);
+        if (!key || next.count(key)) continue;
+        net::Vec3 p=game::position(o), v=game::velocity(o);
+        net::Quat r=game::orientation(o);
+        Actor a; a.key=key; a.id=id;
+        a.pos[0]=p.x; a.pos[1]=p.y; a.pos[2]=p.z;
+        a.rot[0]=r.x; a.rot[1]=r.y; a.rot[2]=r.z; a.rot[3]=r.w;
+        a.vel[0]=v.x; a.vel[1]=v.y; a.vel[2]=v.z;
+        a.health=game::health(o); a.max_health=game::max_health(o);
+        a.flags=(game::is_dead(o) || !game::object_alive(o)) ? kActorDead : 0;
+        auto prev=host_actors.find(key);
+        // what did not move or change is sent once a second (a guest that joins late learns it too)
+        bool changed=prev==host_actors.end() || net::dist(prev->second.pos,p)>0.05f ||
+                     std::fabs(prev->second.health-a.health)>0.01f || drive::speed(v)>0.05f;
+        next[key]={o,id,p,a.health};
+        if ((!full && !changed) || !a.sane()) continue;
+        b.actors.push_back(a);
+        if (b.actors.size()==kMaxActorsPerBatch) { out.push_back(b); b.actors.clear(); }
+    }
+    if (!b.actors.empty()) out.push_back(b);
+    host_actors=std::move(next);
+    for (const auto& batch:out) {
+        net::Writer w; batch.write(w);
+        for (auto player:session->players())
+            if (player.id && player.id<visitors.size() && visitors[player.id])
+                session->send_unreliable_to(player.id,net::MSG_ADVENTURE_ACTORS,w);
+        ++batches_out; actors_out+=unsigned(batch.actors.size());
+    }
+}
+
+// guest: the host's states drive this game's copy of each creature (the partner puppets' driving)
+void guest_drive(double now)
+{
+    struct Q { std::vector<std::pair<void*,uint32_t>> list; void* av; } q{{},game::avatar()};
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto q=(Q*)u;
+        if (noun==kCreatureNoun && scenario_creature(o,q->av) && game::object_alive(o)) q->list.push_back({o,object_id(o)});
+        return true;
+    },&q);
+    std::unordered_map<void*,uint32_t> present;
+    for (auto [o,id]:q.list) present[o]=id;
+    for (auto it=guest_actors.begin(); it!=guest_actors.end();) {
+        auto& g=it->second;
+        bool gone=g.obj && (!present.count(g.obj) || game::object_serial(g.obj)!=g.serial);
+        if (gone) { guest_key_of.erase(g.obj); g.obj=nullptr; }
+        if (now-g.rx>kActorTimeout) { if (g.obj) guest_key_of.erase(g.obj); it=guest_actors.erase(it); continue; }
+        ++it;
+    }
+    unpaired_now=0;
+    for (auto& [key,g]:guest_actors) {
+        net::PlayerState s;
+        if (g.buf.empty() || !g.buf.sample(now,s)) continue;
+        if (!g.obj) {
+            // the same scenario object here: the nearest one of its id not driven yet (ids repeat when
+            // the adventure spawns several creatures from one marker)
+            float best=12.f; void* pick=nullptr;
+            for (auto [o,id]:q.list) {
+                if (id!=g.id || guest_key_of.count(o)) continue;
+                float d=net::dist(game::position(o),s.pos);
+                if (d<best || !pick) { best=d; pick=o; }
+            }
+            if (!pick) { ++unpaired_now; continue; }
+            g.obj=pick; g.serial=game::object_serial(pick); g.drv=drive::State{}; guest_key_of[pick]=key;
+        }
+        void* o=g.obj;
+        if (game::is_dead(o)) { // a corpse lies where the host's lies (it died where this game had it)
+            if (!g.corpse) {
+                *(net::Vec3*)((uint8_t*)o+game::kVelOff)={0,0,0};
+                game::teleport(o,s.pos,s.rot);
+                g.corpse=true;
+            }
+            continue;
+        }
+        if (g.dead) { // the host's creature died: exactly this one dies here (its corpse is placed next frame)
+            if (killed_here.insert({o,g.serial}).second) kill(o,kCreatureNoun);
+            continue;
+        }
+        g.drv.drawn=game::position(o);
+        drive::path_update(g.drv,s.pos,now);
+        net::Vec3 vel=s.vel;
+        if (drive::speed(vel)<=0.3f) vel=drive::path_velocity(g.drv); // moves carried by an animation
+        if (drive::speed(vel)>0.3f && net::dist(game::position(o),s.pos)<8.f) {
+            drive::walk_place(o,s.pos,s.rot,vel,g.drv,now);
+        } else {
+            drive::walk_end(o,s.pos,g.drv,now);
+            drive::step(o,s.pos,s.rot,vel,g.drv,now,0,true,4.f);
+        }
+        if (s.health>0) game::set_health(o,s.health); // the host's health (the guest's own hits went there)
+    }
+}
+
+bool ai_skip(void* c)
+{
+    return guest_driving && scenario_creature(c,game::avatar());
 }
 
 // Keep values only: an act transition can rebuild both goal and actor lists.
@@ -331,6 +495,12 @@ void work(void*)
     observed_act=act; observed_completed=completed;
     bool host=session->role()==net::Role::Host;
     if (g_fix_combat && (host || host_run) && *(int*)(play+0x90)==3) poll(H->time_seconds()); // only while it plays
+    const bool shared_creatures=enemies_on() && *(int*)(play+0x90)==3; // BUG-9114
+    guest_driving=!host && shared_creatures;
+    if (shared_creatures) {
+        if (host) host_stream(H->time_seconds());
+        else guest_drive(H->time_seconds());
+    }
     if (!host && H->time_seconds()>=hello_at) {
         auto p=packet(Hello,nonce); p.sequence=applied;
         send(0,p); hello_at=H->time_seconds()+1;
@@ -373,6 +543,7 @@ void init(const SkHost* host, SkMod* mod, net::Session* s)
     auto set=H->sym("Simulator::cScenarioPlayMode::SetState");
     if (!set || H->hook_create(M,(void*)set,(void*)set_state,(void**)&o_SetState)!=0)
         H->log(M,SK_ERROR,"adventure: mission end hook unavailable");
+    game::set_ai_skip(ai_skip); // BUG-9114
 }
 
 void reset()
@@ -382,6 +553,109 @@ void reset()
     observed_act=observed_completed=-1;
     known.clear(); spatial_ids.clear(); killed_here.clear(); deaths_local.clear(); deaths_wanted.clear(); deaths_told.clear();
     applied_objects.clear(); host_outcome=0; host_ending=false; poll_at=0;
+    host_actors.clear(); guest_actors.clear(); guest_key_of.clear(); guest_driving=false; stream_at=full_at=0;
+    unpaired_now=0;
+}
+
+void set_body_lookup(void* (*fn)(uint8_t player)) { body_of=fn; }
+
+bool partners_targetable()
+{
+    uint8_t* play;
+    return session && session->role()==net::Role::Host && enemies_on() && live(play) && *(int*)(play+0x90)==3;
+}
+
+// guest (BUG-9114): a hit on a scenario creature the host simulates. The captain's own hits go to the
+// host (its health comes back with the states); others (this game's leftovers) are dropped.
+bool guest_damage(void* c, float damage, int type, void* attacker)
+{
+    void* av=game::avatar();
+    if (!guest_driving || !scenario_creature(c,av)) return false;
+    auto it=guest_key_of.find(c);
+    if (attacker && attacker==av && it!=guest_key_of.end() && damage>0 && damage<1e6f) {
+        auto p=packet(Hit,nonce); p.object=object_id(c); p.key=it->second; p.damage=damage;
+        p.damage_type=uint32_t(type)<256 ? uint32_t(type) : 0;
+        send(0,p);
+        ++hits_out;
+    } else
+        ++damage_dropped;
+    return true;
+}
+
+void actors_message(uint8_t from, net::Reader& r)
+{
+    ActorBatch b;
+    if (!original || !session || session->role()==net::Role::Host || from!=0 || !b.read(r) ||
+        b.mission!=mission || !host_run || b.run!=host_run || !g_fix_enemies) return;
+    const double now=H->time_seconds();
+    ++batches_in;
+    for (const auto& a:b.actors) {
+        auto it=guest_actors.find(a.key);
+        if (it==guest_actors.end()) {
+            if (guest_actors.size()>=1024) continue;
+            it=guest_actors.emplace(a.key,GuestActor{}).first;
+        }
+        auto& g=it->second;
+        if (g.id && g.id!=a.id) { if (g.obj) guest_key_of.erase(g.obj); g=GuestActor{}; } // a reused host object
+        g.id=a.id; g.rx=now; g.dead=(a.flags&kActorDead)!=0;
+        net::PlayerState s;
+        s.time_ms=b.time_ms;
+        s.pos={a.pos[0],a.pos[1],a.pos[2]};
+        s.rot={a.rot[0],a.rot[1],a.rot[2],a.rot[3]};
+        s.vel={a.vel[0],a.vel[1],a.vel[2]};
+        s.health=a.health; s.max_health=a.max_health;
+        g.buf.push(s,now);
+    }
+}
+
+std::string actors(float radius, int around_player)
+{
+    struct Q { std::string out; net::Vec3 me; float r; void* av; unsigned n; } q{{},{},radius,game::avatar(),0};
+    if (q.av) q.me=game::position(q.av);
+    if (around_player>=0 && body_of) { // around a partner's body instead
+        void* b=body_of(uint8_t(around_player));
+        if (!b) return "no body of that player here\n";
+        q.me=game::position(b);
+    }
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto q=(Q*)u;
+        if (noun!=kCreatureNoun || !scenario_creature(o,q->av) || !game::object_alive(o)) return true;
+        net::Vec3 p=game::position(o);
+        if (net::dist(p,q->me)>q->r || q->n>=200) return true;
+        // key: the host's object (the host: its own serial; a guest: the host object it follows, 0 none)
+        uint32_t key=0;
+        if (session && session->role()==net::Role::Host) key=game::object_serial(o);
+        else if (auto it=guest_key_of.find(o); it!=guest_key_of.end()) key=it->second;
+        char b[180];
+        snprintf(b,sizeof b,"actor %08X class=%d pos=(%.2f %.2f %.2f) hp=%.1f dead=%d key=%08X posse=%d d=%.0f\n",object_id(o),
+                 *(int*)((uint8_t*)o+0x1C),p.x,p.y,p.z,game::health(o),(int)game::is_dead(o),key,
+                 (int)game::pack_member(o),net::dist(p,q->me));
+        q->out+=b; ++q->n;
+        return true;
+    },&q);
+    return q.out;
+}
+
+// tests: this game's captain hits the nearest live creature of a scenario class (a player's hit: through
+// the damage filter, a guest's goes to the host)
+std::string debug_hit(uint32_t cls, float damage)
+{
+    struct Q { uint32_t cls; void* best; float d; net::Vec3 me; void* av; } q{cls,nullptr,1e9f,{},game::avatar()};
+    if (!q.av) return "no captain";
+    q.me=game::position(q.av);
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto q=(Q*)u;
+        if (noun!=kCreatureNoun || !scenario_creature(o,q->av) || *(uint32_t*)((uint8_t*)o+0x1C)!=q->cls ||
+            !game::object_alive(o) || game::is_dead(o)) return true;
+        float d=net::dist(game::position(o),q->me);
+        if (d<q->d) { q->d=d; q->best=o; }
+        return true;
+    },&q);
+    if (!q.best) return "no live creature of that class";
+    float before=game::health(q.best);
+    game::hit(q.best,damage,0,q.av);
+    char b[128]; snprintf(b,sizeof b,"hit %08X %.0f m away: hp %.1f -> %.1f here",object_id(q.best),q.d,before,game::health(q.best));
+    return b;
 }
 
 net::AdventureGate outgoing() { return {}; } // Legacy tail remains wire-compatible.
@@ -416,11 +690,17 @@ std::string debug_kill(uint32_t cls)
 
 std::string status()
 {
-    char b[300];
+    char b[640];
+    unsigned paired=0;
+    for (auto& [k,g]:guest_actors) paired+=g.obj!=nullptr;
     snprintf(b,sizeof b,"adventure: run=%08X journal=%u applied=%u held=%u objects=%u deaths_out=%u deaths_in=%u "
-             "mirrored_kills=%u failures_held=%u outcomes_out=%u host_outcome=%d",
+             "mirrored_kills=%u failures_held=%u outcomes_out=%u host_outcome=%d\n"
+             "creatures: shared=%d host_actors=%u batches_out=%u actors_out=%u hits_in=%u hits_applied=%u hits_stale=%u "
+             "guest_driving=%d guest_actors=%u paired=%u unpaired=%u batches_in=%u hits_out=%u damage_dropped=%u",
              host_run,(unsigned)journal.size(),applied,credits_held,(unsigned)known.size(),deaths_out,deaths_in,
-             mirrored_kills,blocked_failures,outcomes_out,host_outcome);
+             mirrored_kills,blocked_failures,outcomes_out,host_outcome,
+             (int)enemies_on(),(unsigned)host_actors.size(),batches_out,actors_out,hits_in,hits_applied,hits_stale,
+             (int)guest_driving,(unsigned)guest_actors.size(),paired,unpaired_now,batches_in,hits_out,damage_dropped);
     return b;
 }
 
@@ -446,6 +726,17 @@ void message(uint8_t from, net::Reader& r)
             local.push_back(p.goal);
     } else if (host && p.kind==Death && p.run==host_run && visitors[from]==p.visitor && g_fix_combat) {
         auto& w=deaths_wanted[p.object]; w=std::max(w,p.deaths); ++deaths_in;
+    } else if (host && p.kind==Hit && p.run==host_run && visitors[from]==p.visitor && g_fix_enemies) {
+        // BUG-9114: a guest's captain hit this creature in the guest's game: it is hit here, by its body
+        ++hits_in;
+        auto it=host_actors.find(p.key);
+        void* o=it!=host_actors.end() && it->second.id==p.object ? it->second.obj : nullptr;
+        if (!o || !game::creature_listed(o) || game::object_serial(o)!=p.key || !game::object_alive(o) || game::is_dead(o)) {
+            ++hits_stale;
+            return;
+        }
+        game::apply_damage(o,p.damage,int(p.damage_type),body_of ? body_of(from) : nullptr);
+        ++hits_applied;
     } else if (!host && !from && p.visitor==nonce) {
         if (p.kind==Welcome) {
             if (host_run && host_run!=p.run) { applied=0; incoming.clear(); }

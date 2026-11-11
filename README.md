@@ -6,7 +6,7 @@ Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](h
 
 ## Playable today
 
-**Development build** `0.7.3.6-lineages43-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
+**Development build** `0.7.3.6-lineages44-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
 
 | Stage | What players have done together |
 | --- | --- |
@@ -52,6 +52,8 @@ Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (
 Done in 42-dev: a depth cube in the Creature editor pushes details and weapons into the body or pulls them out; received creations have their own Lineages Cache tab; Share Onward lets you allow hosts to pass your creations on; and the co-op window's buttons have short tooltips.
 
 Done in 43-dev: Foreign Creations (receive what partners got from others, off by default) replaces Share Onward; player cells (the host's older ones, the lobby's, and with Foreign Creations the rest of the host's Cache) swim in the Cell stage as native creatures, about one in four spawns, and follow their mouth's diet; part-dropping species keep their look; the host switches it in the lobby (Player Cells). Cell crowding: one extra predator per group from three seats on, placed clear of other cells, and plant food is worth 25% more meanwhile.
+
+Done in 44-dev: combat adventures together (every goal shared, anything destroyed is destroyed for everyone, the host's win or loss ends the mission for all, captains revive each other), and an Adventure partner is a captain of the right size instead of a name tag. Enemies still move separately in each game.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

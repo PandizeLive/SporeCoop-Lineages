@@ -309,12 +309,16 @@ static bool g_swap_guard = true;      // coop.npc swapguard off: no restore afte
 COOP_FIX("npc.swapguard", "BUG-0110", g_swap_guard, "creature: a fault in the NPC AI tick does not leave the puppet as the avatar");
 static bool g_swap_fault_test = false; // tests: the next swapped tick leaves like a fault would
 void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
+static AiSkip g_ai_skip;
+void set_ai_skip(AiSkip fn) { g_ai_skip = fn; }
 uint32_t ai_swaps() { return g_ai_swaps; }
 
 static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 {
     if (is_puppet(self))
         return; // remote players drive their puppets, no local AI
+    if (g_ai_skip && g_ai_skip(self))
+        return; // the host's game simulates it, its states drive it here (BUG-9114)
     void* t = g_ai_picker && !g_swap_real ? g_ai_picker(self) : nullptr;
     void* nm = t ? cdecl_call<void*>(a_NounGet) : nullptr;
     void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;

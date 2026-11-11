@@ -148,6 +148,19 @@ static void test_buffer()
     s.write(away);
     Reader ar(away.data.data(), away.size());
     CHECK(t2.read(ar) && t2.gate.visit == 42 && t2.gate.act == 1 && t2.gate.target == 1210 && t2.gate.credit == 35);
+    CHECK(t2.scale == 0);
+    // BUG-9113: the Adventure captain's scale, alone and after the gate
+    s.scale = 2.093f;
+    Writer sc;
+    s.write(sc);
+    Reader rsc(sc.data.data(), sc.size());
+    CHECK(t2.read(rsc) && t2.gate.visit == 42 && t2.scale > 2.09f && t2.scale < 2.1f);
+    s.gate = {};
+    Writer sc2;
+    s.write(sc2);
+    Reader rsc2(sc2.data.data(), sc2.size());
+    CHECK(t2.read(rsc2) && t2.gate.visit == 0 && t2.scale > 2.09f && t2.scale < 2.1f);
+    s.scale = 0;
     Reader old_state(w2.data.data(), w2.size());
     CHECK(t2.read(old_state) && !t2.gate.visit && !t2.gate.credit);
     // shared resource message payload (u8 id, f64)

@@ -2404,3 +2404,37 @@ BUG-9089. GOG 2024 code (Steam copy), two games on one PC, City Assault and Adve
   guests; a guest's own 6 is held.
 * An object that leaves the object list unhurt was removed by the adventure (a load, an act): not a
   death. A run where one game loaded while the other played counted 134 false deaths before this rule.
+
+## Adventure partner bodies (2026-11-10, feat/adventure-bodies)
+<a id="space-adventure-partner-bodies"></a>
+
+BUG-9113. GOG 2024 code (Steam QA copy), instances 9 + 8.
+* ✔ The scenario scales each captain itself: `GetScale` 2.093 in Bahaha 500 Desert Time Trials, 2.000
+  in City Assault (bounding radius 3.16 / 2.88). A body spawned from the partner's species keeps the
+  species' scale (1.585 / 1.576 for that 2.093 captain): about 75 %, the "too small" of the prototype.
+* The partner's own captain scale travels on its player state (optional trailing float); the body uses
+  it. Both captains here were the same random species, so a size that depends on the species was not
+  seen; the value sent is the partner's own either way.
+* No body during the intro (play state not 3): the body comes when the mission plays.
+* With bodies: a finished race (state 5 on both), both results screens and Done back to the galaxy
+  menu, two full City Assault missions: 0 faults. The body has health 300/300 mirrored from the
+  partner (creature_hp).
+
+## Host-simulated Adventure creatures (2026-11-10, feat/adventure-bodies)
+<a id="space-adventure-host-creatures"></a>
+
+BUG-9114 (switch `adventure.enemies`, off in 44).
+* City Assault has about 85 scenario creatures (noun 18EB45E with a scenario marker): classes 1026 /
+  1027 (two armies, 94 / 102 hp), 1083 / 1141 / 1152 (city defenders, 22-208 hp), 1069 / 1096 / 1145
+  (50000 hp, characters near the start). Soldiers spawned from one marker share the object id
+  (`object_id` = marker + class), so an id names a group, not a creature; the host object's serial
+  (+0x24) is the key.
+* ✔ Skipping `NPCTickAI` for a guest's scenario creatures and driving them from the host's states keeps
+  them within 1.3 m (p90) of the host's, health equal; at 10 fps on both games.
+* ✔ A death mirrored "any alive one of that id" (BUG-9089 rule) killed living lookalikes once both
+  games had several of one id; with the host simulating, a creature's death goes by key.
+* ✘ The host's creatures choose a partner body as "the player" for their AI tick (npc `ai_target`,
+  partner_picks counted) but no strike on the body was seen in 2+ minutes beside enemies: the
+  scenario's attack choice is probably not the behaviour tree's avatar (not analysed yet).
+* The guest captain's hits on hit-forwarded creatures were not exercised (the mission ended first).
+* The allied army wins City Assault by itself in about 3 minutes: a test has that long.

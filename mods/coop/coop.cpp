@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.3.6-lineages43-dev"
+#define COOP_VERSION "0.7.3.6-lineages44-dev"
 #endif
 
 #include <winsock2.h>
@@ -697,6 +697,8 @@ void drive_puppet(Remote& r, double now)
     }
     if (!g_adapter->spawn) // Adventure draws the peer from its network position.
         return;
+    if (!r.puppet && g_mode == modes::kScenario && !modes::adventure_body_ready())
+        return; // BUG-9113: the intro plays: the body comes with the mission (not "failed to show" each try)
     if (!r.puppet) {
         r.puppet = g_adapter->spawn(s, g_local);
         if (!r.puppet) {
@@ -3638,6 +3640,10 @@ void setup_callbacks()
             adventure::message(from,r);
             return;
         }
+        if (type == net::MSG_ADVENTURE_ACTORS) { // BUG-9114
+            adventure::actors_message(from, r);
+            return;
+        }
         if (type == net::MSG_CREATURE_RESCUE) {
             creature_rescue::message(from, r);
             return;
@@ -4287,8 +4293,13 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
         int act, state, completed;
         if (modes::adventure_progress(act, state, completed))
             SAY("\nact_index=%d play_state=%d goals_completed=%d", act, state, completed);
-        for (const auto& [id, r] : g_remotes)
+        SAY("\nscale=%.3f radius=%.2f", game::scale(av), game::bounding_radius(av));
+        for (const auto& [id, r] : g_remotes) {
             SAY("\npartner %u: %s", (unsigned)id, puppet_why(r, H->time_seconds()));
+            if (r.puppet && game::object_alive(r.puppet)) // tests: the partner's body against the own captain
+                SAY(" scale=%.3f radius=%.2f hp=%.1f/%.1f", game::scale(r.puppet), game::bounding_radius(r.puppet),
+                    game::health(r.puppet), game::max_health(r.puppet));
+        }
     }
     SAY("\ngame_name '%s'", modes::raw_world_name().c_str()); // BUG-0258: CurrentGameName as is
     return 0;
@@ -5626,10 +5637,24 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
     adventure::init(H, M, &g_sess);
-    H->command_add(M, "coop.adventure", "coop.adventure - the shared mission's counters (BUG-9089)",
+    adventure::set_body_lookup([](uint8_t player) -> void* { // BUG-9114: a partner's body in this game
+        auto it = g_remotes.find(player);
+        return it != g_remotes.end() && it->second.puppet && game::object_alive(it->second.puppet) ? it->second.puppet : nullptr;
+    });
+    H->command_add(M, "coop.adventure", "coop.adventure [kill <class> | hit <class> [damage] | actors [radius m]] - the shared mission's counters (BUG-9089, BUG-9114)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 2 && !strcmp(argv[1], "kill")) { // tests: a kill in this game only
                            H->out_printf(out, "%s", adventure::debug_kill((uint32_t)strtoul(argv[2], nullptr, 10)).c_str());
+                           return 0;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "hit")) { // tests: this captain's hit (a guest's goes to the host)
+                           H->out_printf(out, "%s", adventure::debug_hit((uint32_t)strtoul(argv[2], nullptr, 10),
+                                                                        argc > 3 ? (float)atof(argv[3]) : 10.f).c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "actors")) { // tests: scenario creatures near this captain
+                           H->out_printf(out, "%s", adventure::actors(argc > 2 ? (float)atof(argv[2]) : 120.f,
+                                                                      argc > 3 ? atoi(argv[3]) : -1).c_str());
                            return 0;
                        }
                        H->out_printf(out, "%s\n%s", adventure::status().c_str(), creature_rescue::status().c_str());

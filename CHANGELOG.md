@@ -1,12 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.3.6-lineages44-dev] - 2026-11-10
 
 - Combat adventures together: every goal is shared (destroy, defend and the
   rest), anything one player destroys is destroyed for everyone, and the host's
   success or failure ends the mission for all. A downed captain can be revived
   by a partner within 10 seconds, or gets back up beside them; the mission fails
   only if every captain is down (BUG-9089).
+- Adventure partners are real captains now, the same size as your own, instead
+  of a floating name tag (BUG-9113).
+- Enemies in an Adventure still move separately in each game. Host-run enemy
+  movement is in this build but switched off until enemies can attack a
+  partner (BUG-9114).
 
 ## [0.7.3.6-lineages43-dev] - 2026-11-10
 
