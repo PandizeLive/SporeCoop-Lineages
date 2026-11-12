@@ -3542,11 +3542,6 @@ static void late_capital_tick(const std::string& planet, void* home, const found
         next.identity = joiners[plan.joiner].identity;
         next.key = creations::player_key(next.player, creations::kCreature);
         next.who = C.sess->name_of(next.player);
-        // the creature's records go into the planet first: every game loading it can build the nation's citizens
-        if (!creations::archive_guest_model(next.player, planet, error)) {
-            late_site_tell(next.who + ": " + error, false);
-            return;
-        }
     } else { // the Tribe roster's seat (found_next_capital checked its species)
         next.identity = tribal.entries[plan.seat].player;
         next.key = {looks.current((size_t)plan.seat), 0x2B978C46, 0x40626200};
@@ -3578,6 +3573,11 @@ static void late_capital_tick(const std::string& planet, void* home, const found
     case civ_seats::SiteState::Unknown: late_site_tell("the city site manager's counts look wrong; no capital founded", false); return;
     case civ_seats::SiteState::NoSite: late_site_tell("No free city site is left for " + next.who + "'s capital.", true); return;
     case civ_seats::SiteState::Ready: break;
+    }
+    // a late joiner's creature records go into the planet first: every game loading it can build the nation's citizens
+    if (next.player != civ_seats::kNobody && !creations::archive_guest_model(next.player, planet, error)) {
+        late_site_tell(next.who + ": " + error, false);
+        return;
     }
     next.before = founder_city_list(cities, home);
     const uint8_t bit = uint8_t(1u << plan.seat);
