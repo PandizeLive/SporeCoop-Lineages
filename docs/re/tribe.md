@@ -3372,3 +3372,23 @@ the first four return addresses into the game's code: the creator of every effec
   4 of 4 (out/lab/20261105-135946, 2 runs); off 4 of 15 (only the animation effects' C656EAF8) and 0 of 4
   (out/lab/20261105-140001).
 * ~ NPCs of the Creature stage go through the same path (npc::id_of / npc::proxy); not tested there.
+
+## The automatic founders wait for the partner's settled own creature (2026-11-11, feat/lineages-47)
+<a id="tribe-founder-settle"></a>
+
+BUG-9137, `tribe.founder_settle`. Windows QA, a copy of the owner's save in profile DuoQAJiffHost.
+
+* ✔ (owner's log) A partner that rejoins while the host is still in another world reports the creature it played there
+  first: the host's own creation, sent by key without records (creations.cpp share_own: `b.key = hk`). Its own creature
+  for the Tribe world came 11 s after the host's arrival, 2 s after the first founding try (5 s tick). The DUO1 roster
+  then bound seat 1 to the host's creation; village_commander() found nobody (`coop.tribe`: commander=254).
+* ✔ (QA) The partner's chosen creature (`coop.creations choose creature <key>` in the Galaxy menu) was reset by the
+  join into the host's world: `mine creature: 00000000` until chosen again in Tribe.
+* Now: the founding waits 15 s after the world was entered and 10 s after the partner's creature last changed
+  (creations::player_key_changed_at), and refuses a partner creature that is one of the host's own creations sent
+  without records (creations::plays_host_creation). A roster whose seat 1 species is in the host's My Creations and has
+  no outfit gets the partner's settled own creature as an outfit (wrong_founder_tick: archive, record_outfit seat 1,
+  Tribe_SetSpeciesProfile on the 14 slots + SetSpeciesProfile on the members, checkpoint reload). QA: repair 12 s after
+  the creature arrived, commander=1 after the reload; a new founding with the host's creation: refused with the switch
+  on, went on to the site search with it off.
+* `coop.tribe` (host) prints `commander= founder_guest= outfit_guest= founder_repairs=`.

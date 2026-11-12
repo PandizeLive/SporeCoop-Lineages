@@ -5203,3 +5203,28 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 - `coop.ui where 0437A960` (Audio page): a rect when shown, `none` when the dialog vanished (BUG-9120).
 - A control we add to a Spore dialog that switches pages by command id must not keep command 0: the
   dialog's own frame has id 0.
+
+## Windows QA: real input and the owner's save copies (2026-11-11, feat/lineages-47)
+<a id="testing-windows-real-input"></a>
+
+* The console `click`, `drag`, `wheel` and `key` commands move the real mouse and keyboard of the Windows PC that runs
+  the QA games. Do not run them while somebody uses that PC; console-only checks (`coop.prules play`, `coop.social goto`,
+  the logs, `shot <png>`) do not.
+* A broken campaign of a player can be reproduced on a copy: a new profile `SporeKit-<name>` with the player's
+  `Games\Game0`, `EditorSaves.package`, `Pollination.package` and `Planets.package` copied in (read-only on the player's
+  files). A save name with a space loads with `coop.load Game0 \"Jiff Peanutbutter.spo\"` from PowerShell.
+
+## Two PCs over Tailscale: TITAN hosts, the MSI joins (2026-11-11, feat/lineages-47)
+<a id="testing-two-pc-msi"></a>
+
+* The MSI runs its Steam Spore with the build under test (stripped coop.dll / sporekit.dll copied over SSH) in a
+  profile of its own (`-sporekit-profile:MSIGuest`); a scheduled task starts it in the logged-on desktop session
+  (a game started from the SSH shell itself has no desktop). Its console is reached through an SSH tunnel
+  (local 47850 -> MSI 127.0.0.1:47800).
+* TITAN hosts with QA instances (`coop.host 47839 Host 4` for more than two players: the default is two seats) and
+  the MSI joins TITAN's Tailscale address. With a QA guest on TITAN too, that is a 3-player session.
+* What ran this way: Cell respawn fade (BUG-9122, screenshots' mean brightness on the watching games), Creature FoV
+  (BUG-9130, screenshot differences on the MSI), Tribe founder repair on a copy of an owner's save (BUG-9137),
+  befriending by real input on the MSI (BUG-9136), world-transfer timing with `net.pacing` (BUG-9098), the player
+  identity across a rejoin under a new network id (BUG-9135).
+* Pitfall: after a header change build with FORCE=1; a partial build crashed both guests at the next hot reload.

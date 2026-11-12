@@ -2158,3 +2158,16 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 - BUG-9130 (Creature): Ctrl+Scroll's wider field of view is computed but not drawn.
 - BUG-9133 (Creature): after a fight, healing at a nest, the connected player hears a heal sound repeating. Not
   reproduced in QA.
+
+## Tribe / Civ: with three or more players no partner gets a village of their own (2026-11-11, owner report 0.7.8-lineages53-dev)
+
+* The automatic founders run only with exactly two players (tribe.cpp auto_founders_tick, civ.cpp founder_tick); the
+  roster save format holds two founders and about 40 places assume one partner. With 3 players nothing happens and no
+  message is shown. Workaround: Tribe and Civ with two players. Needs a persistent player identity first (network ids
+  are reused, a custom creature's shared key contains the owner id).
+* Ticket: BUG-9135.
+
+## Cell: a partner's respawn still looks like this player's own respawn (2026-11-11, owner report 0.7.8-lineages53-dev)
+
+* Reopened after the Lineages 50 fix (no autohatch effect on the partner's puppet): the owner's screen still acts as if
+  they respawn when a partner respawns (3-player session). Not reproduced on Windows QA yet. Ticket: BUG-9122.
