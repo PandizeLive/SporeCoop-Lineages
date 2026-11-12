@@ -5227,4 +5227,7 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   (BUG-9130, screenshot differences on the MSI), Tribe founder repair on a copy of an owner's save (BUG-9137),
   befriending by real input on the MSI (BUG-9136), world-transfer timing with `net.pacing` (BUG-9098), the player
   identity across a rejoin under a new network id (BUG-9135).
-* Pitfall: after a header change build with FORCE=1; a partial build crashed both guests at the next hot reload.
+* Pitfall (fixed 2026-11-12): a header change built without FORCE=1 crashed both guests at the next hot reload;
+  tools/build_windows.sh now rebuilds every object whose included headers changed.
+* The tools: tools/qa_win/ (qa.py console with the QA-copy and tunnel guards, launch.ps1, msi.ps1, respawn_fade.py,
+  social_hits.py); see tools/qa_win/README.md. Test games run at 5 FPS in 800x600 windows unless a test needs a size.
