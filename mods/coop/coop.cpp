@@ -2942,8 +2942,8 @@ void avatar_change_check()
         wobj::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
-            party::on_world_change(); // roadmap 0b
-            home_nests::on_world_change();
+        party::on_world_change(); // roadmap 0b (every world change)
+        home_nests::on_world_change();
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
             civ::on_world_change(); // BUG-0059
     }
