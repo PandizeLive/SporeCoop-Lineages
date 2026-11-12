@@ -46,6 +46,8 @@ Design rules that follow from it, for the co-op work now:
 | 10 | The player cap stays at 4 in the menus; difficulty stays per seat for now (it must become per party for the MMO goal: per-seat scaling does not work at 10-20 players). Data structures hold 8 seats (founders::kMaxSeats). |
 | 11 | Tests: up to 3 test games on the owner's PC (5 FPS, small windows unless a test needs a size, e.g. Adventures; console only, never the owner's mouse) plus the MSI over Tailscale; real clicks only on the MSI. |
 | 12 | The live Civ test may click in the test host's game window on the owner's PC, once, while the owner is away (owner, 2026-11-12: "1A"). |
+| 14 | A late joiner without a creature of their own (owner, 2026-11-12: "1B ... make it clean and seamless; if not possible, 1A"): Tribe: their village is founded at once with a stand-in that looks like the host's creature (a re-keyed copy, so every per-seat rule holds), caught up, and switches to their own creature in place (the outfit path, no villager replaced) when they make one. Civ (no clean species change known): 1A: the creature editor first; meanwhile a blurred view (the host's, an AI's or their home's camera) with a progress ring and short steps ("Catching up to Host...", "Matching tools...", "Buildings are rising...", "Final touches..."). Research: docs/re/tribe.md#tribe-late-joiners (stand-in notes to add with the build). |
+| 15 | The owner calls the reserved seats "Player Slots" in every text; the lobby has an Apply button; no Send World button (the world goes out by itself). |
 | 13 | The host can raise the reserved seats in the middle of a stage (the Co-op window's Set Seats, `coop.seats N now`); the difficulty of the extra seats applies at once. Fewer seats still apply from the next stage; Space keeps "from the next Space load" (owner, 2026-11-12: "2A"). |
 
 ## Health check (2026-11-12)
@@ -108,6 +110,14 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
   the creature editor at once and prepare the site and catch-up meanwhile (the home appears about 15 s after they
   save; existing creations stay as a shortcut), B found the home at once with the host's creature and swap every
   villager afterwards, C keep the choice row with the editor button beside it.
-* The Tribe -> Civ graduation test with four founder villages (phase 5): needs a Tribe save with five objectives.
-  Asked 2026-11-12: run the lab's scripted raids on the test host window (about an hour of clicks), test it in the
-  owner's next co-op game, or wait.
+* The Tribe -> Civ graduation test with four founder villages (phase 5), owner 2026-11-12 "2A, be smart": on a fresh
+  copy of the Jiff save four founder villages came back in a minute (seat 1 bound with `coop.tribe bind_founder 1 2`),
+  but the shortcuts to five wins failed: five totem pieces (Totem_AddSegment) plus the player's progress at 5 / 5
+  (cPlayer +0x10F0) do not make History offer the next stage; an NPC village made with `coop.tribe npc_tribe` and its
+  hut destroyed with the host's faction (cTribeHut_TakeDamage) counts as no win. The game offers Civ only after a native
+  win through its goal path (a target chosen by TribeGoalUI_SelectTarget, raided by ordered villagers:
+  tools/tests/duo_tribe_campaign.py). Asked again 2026-11-12.
+* BUG-9143: loading a save with fewer player slots than players connected ends the session. Asked 2026-11-12: raise
+  the loaded save's slots automatically, ask the host, or keep.
+* "Give To <player>" (the owner read it as a sync button for late joiners): it gives the selected units to that
+  player. Asked 2026-11-12: keep it (clearer wording), or remove it.

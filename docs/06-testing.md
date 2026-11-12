@@ -5243,3 +5243,12 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
     no founder roster). Good for late capitals (docs/re/civ.md#civ-late-capital); its first minutes show the Civ
     tutorial's captions on the host (the game time stands still until they are clicked away).
   * A changed profile is restored from the copies kept before the test (scratchpad backups of 2026-11-12).
+* Tribe -> Civ shortcuts that do NOT work (2026-11-12, feat/lineages-47): Totem_AddSegment x5 and cPlayer +0x10F0 set to
+  +0x10F4 (5 / 5): History shows no next stage; an NPC village from `coop.tribe npc_tribe` destroyed by
+  cTribeHut_TakeDamage with the host's faction: no win counted. A bad address passed to a `call` (0x8 from a parsing
+  slip) crashed the test host (crash-20261112-091232-i9: read of 0x00000008): check every pointer a script passes.
+* A fresh copy of the owner's Jiff save (profile DuoQAJiffGrad, difficulty set to 0% in the copy's .duo-seats for five
+  rivals) gets four founder villages in about a minute: `coop.seats 4 now`, the three guests join, `coop.tribe
+  bind_founder 1 <player>` for the old partner seat. The older DuoQAJiffHost copy is worn out (4 idle hours of co-op
+  epics: one villager per village, then the host's hut destroyed). DuoQAClythHost's Clyth is a prototype whose host hut
+  does not belong to the host's village (partners are never founded there).
