@@ -753,5 +753,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9136](BUG-9136-guest-social-sent-as-hit.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages54-dev | Creature: a partner's social ability reaches the host as a bite, so friendly creatures fight partners and cannot be befriended |
 | [BUG-9137](BUG-9137-founder-stale-guest-creature.md) | fixed | bug | Tribe | 2026-11-11 | 0.7.8-lineages54-dev | Tribe: the partner's village is founded with the host's creature the partner played a moment before |
 | [BUG-9138](BUG-9138-tribe-a-partner-who-plays-the-host-s-species-sto.md) | open | bug | Tribe | 2026-11-12 |  | Tribe: a partner who plays the host's species stops the founding of every partner after them, without a message |
-| [BUG-9140](BUG-9140-tools-tickets-py-new-fails-on-windows-it-imports.md) | open | tooling | All | 2026-11-12 |  | tools/tickets.py new fails on Windows: it imports fcntl |
 | [BUG-9139](BUG-9139-win-tests-the-founder-seat-and-party-file-tests.md) | fixed | test | Civ | 2026-11-12 | unreleased | win_tests: the founder-seat and party file tests never run in the full (lab) run |
+| [BUG-9140](BUG-9140-tools-tickets-py-new-fails-on-windows-it-imports.md) | fixed | tooling | All | 2026-11-12 | unreleased | tools/tickets.py new fails on Windows: it imports fcntl |
