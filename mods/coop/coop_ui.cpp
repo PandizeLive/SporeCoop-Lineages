@@ -334,6 +334,7 @@ struct Dialog {
     Win session = nullptr, world = nullptr, chat_edit = nullptr, send_btn = nullptr;
     Win invite_btn = nullptr, rules = nullptr, transfer_mode = nullptr, preview_status = nullptr;
     Win ready_btn = nullptr, share_btn = nullptr, leave_btn = nullptr, leave_caption = nullptr, onward_btn = nullptr, cells_btn = nullptr;
+    Win create_btn = nullptr; // BUG-9135 phase 4: a late joiner's new creature (tribe.late_create_editor)
     Win row_name[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
@@ -1286,6 +1287,13 @@ static void build_dialog()
                    on ? kGreen : kYellow, 8);
         g_dirty = true;
     });
+    // BUG-9135 roadmap phase 4: a partner in Tribe without a creature of their own makes one (in the vote's Ready place)
+    D.create_btn = add_button(L, "createcreature", {445, 249, 706, 285}, T("Create New Creature", "Создать существо"), [] {
+        if (!A.create_creature) return;
+        A.create_creature();
+        set_status(T("Opening the creature editor...", "Открывается редактор существ..."), kYellow, 5);
+        open(false);
+    });
     // BUG-9111: the host's Player Cells setting, beside Send World (placed by refresh_lobby)
     D.cells_btn = add_button(L, "playercells", {445, 224, 706, 256}, "", [] {
         if (!A.lineage_cells || !A.set_lineage_cells) return;
@@ -1530,6 +1538,14 @@ static void refresh_lobby()
         color(D.row_ready[i], p.ready ? kGreen : kDim);
     }
     std::string wl = A.world_line ? A.world_line() : "";
+    // BUG-9135 roadmap phase 4: a partner in Tribe without a village of their own (tribe.late_prompt)
+    const int late = A.late_prompt ? A.late_prompt() : 0;
+    if (wl.empty() && g_status.empty() && late == 1)
+        wl = T("You have no village: you play one of the host's creatures. Choose your own below.",
+               "У вас нет деревни: вы играете существом хоста. Выберите своё ниже.");
+    else if (wl.empty() && g_status.empty() && late == 2)
+        wl = T("You play your own creature: the host founds your village with it shortly.",
+               "Вы играете своим существом: хост скоро создаст с ним вашу деревню.");
     int share_why = share_blocked();
     if (wl.empty() && g_status.empty() && share_why) // BUG-0597: a host alone can play now
         wl = share_why == 1 && rows.size() <= 1
@@ -1553,7 +1569,15 @@ static void refresh_lobby()
     int ck = 0, cown = 0;
     bool hint = false; // the creation row says how to get a choice: it may take the arrows' room
     std::string cname, cl;
-    if (A.creation && A.creation(ck, cname, cown)) {
+    if (late && A.creation && A.creation(ck, cname, cown)) { // the creature selector asks for their own creature
+        if (cown <= 0) {
+            cl = T("No creatures of your own yet: make one in a creature editor", "Своих существ пока нет: создайте его в редакторе");
+            hint = true;
+        } else
+            cl = std::string(late == 1 ? T("Choose your own creature for this game: ", "Выберите своё существо для этой игры: ")
+                                       : T("Your creature for this game: ", "Ваше существо в этой игре: ")) +
+                 (cname.empty() ? std::string(T("none yet", "пока нет")) : cname);
+    } else if (A.creation && A.creation(ck, cname, cown)) {
         cl = ck == 1 ? T("My cell: ", "Моя клетка: ") : ck == 2 ? T("My ship: ", "Мой корабль: ") : T("My creature: ", "Моё существо: ");
         bool me_host = A.role() == 1;
         if (!cname.empty())
@@ -1615,6 +1639,7 @@ static void refresh_lobby()
     show(D.creation_next, can);
     show(D.ready_btn, vote);
     text(D.ready_btn, A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
+    show(D.create_btn, late && !vote && !host && A.create_creature_offered && A.create_creature_offered());
     show(D.share_btn, host);
     // BUG-9111: the host's rows: Send World, Player Cells, Foreign Creations (or the vote's Ready)
     const bool cells = host && A.lineage_cells;

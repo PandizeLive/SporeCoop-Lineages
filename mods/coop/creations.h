@@ -66,6 +66,14 @@ double player_key_changed_at(uint8_t player, Kind k);
 bool plays_host_creation(uint8_t player, Kind k);
 // BUG-9137 (host): the creature key is one of the host's own creations (My Creations)
 bool host_owns(uint32_t creature_instance);
+// BUG-9135 roadmap phase 4 (guest): this player plays a creature of their own My Creations (what share_own sends with
+// its records), not the host's species, one of the host's creations or "the world's own"
+bool plays_own_creature();
+// BUG-9135 roadmap phase 4 (guest, tribe.late_create_editor): the creature editor opened from Tribe for a new creature;
+// back in this Tribe world, the newest own creation it saved becomes this player's creature (as after a Creature
+// editor). cancel: the request did not reach the game.
+void begin_new_creature();
+void cancel_new_creature();
 bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
 // Register only validated creature resources belonging to this planet before the native load.
 bool restore_guest_model(const std::string& planet, std::string& err);

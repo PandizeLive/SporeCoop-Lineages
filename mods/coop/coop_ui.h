@@ -62,6 +62,12 @@ struct Api {
     // world's own), how many own creations of that kind exist; false = not shown. cycle: -1 / +1
     std::function<bool(int& kind, std::string& name, int& own)> creation;
     std::function<void(int)> creation_cycle;
+    // BUG-9135 roadmap phase 4 (Tribe, tribe::late_prompt): this player has no village of their own; 1 they play no
+    // creature of their own (the creation row asks them to choose one), 2 their own creature is chosen (the village
+    // comes); 0 no prompt. create_creature_offered: the "Create New Creature" button (tribe.late_create_editor)
+    std::function<int()> late_prompt;
+    std::function<bool()> create_creature_offered;
+    std::function<void()> create_creature;
     // tribe / civilization: how many own units are selected (what: "member", "vehicle", "city"),
     // the partner they would go to; give_do gives them
     std::function<int(std::string& what, std::string& to)> give;

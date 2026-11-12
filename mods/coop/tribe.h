@@ -24,6 +24,8 @@ struct Ctx {
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
     std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
+    // host: the player's last state says they play in this world now (not loading it, not in the menu); BUG-9135
+    std::function<bool(uint8_t player)> here;
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing
@@ -59,6 +61,13 @@ std::string village_food_line(); // cached for the HUD, no game pointers needed
 std::string village_birth_line(); // native configured food cost
 std::string village_tool_line(int kind); // native price and host campaign unlocks
 std::string performance_line(); // recent host performance state for guest controls/HUD
+// BUG-9135 roadmap phase 4 (decision 4, tribe.late_prompt; docs/re/tribe.md#tribe-late-joiners):
+// guest: this player is in the host's Tribe world with no village of their own (tribe_late::Prompt): 0 no prompt, 1 they
+// play no creature of their own (one of the host's creatures): the Co-op window asks them to choose their own, 2 their
+// own creature is chosen and the host founds their village (the selector stays for a change)
+int late_prompt();
+// host: why a connected partner has no village yet, for the Co-op window's status line ("" = nobody waits)
+std::string founding_wait_line();
 // BUG-0588, BUG-0594: this game is in the end of Tribe (docs/re/tribe.md#tribe-civ-transition): back from the City Hall editor
 // (the player tribe has no food mat any more, +0x260 = 0). From the City Hall on the game takes the player village and
 // the animals out of the world (totem pole and food mat destroyed, every animal at (0, 0, 0)) for the Civ stage; a

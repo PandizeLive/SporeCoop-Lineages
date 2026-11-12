@@ -3034,6 +3034,21 @@ void begin_tribal_outfit()
     if (!g_chosen[kCreature] && !g_campaign_entry.empty() && !g_campaign_creature.instance)
         g_campaign_creature = g_tribal_outfit_previous;
 }
+// BUG-9135 roadmap phase 4: the Tribe world a late joiner's new-creature editor was opened from (0: none)
+static uint32_t g_new_creature_world;
+void begin_new_creature()
+{
+    g_new_creature_world = modes::current_world();
+    g_adopt_until = 0;
+}
+void cancel_new_creature() { g_new_creature_world = 0; }
+bool plays_own_creature()
+{
+    if (!C.sess || C.sess->role() != net::Role::Client) return false;
+    if (g_pre_editor_fix && g_chosen[kCreature] && !g_choice[kCreature].instance) return false; // "the world's own"
+    const Option o = mine(kCreature);
+    return o.key.instance && own_option(kCreature, o.key);
+}
 static bool journal_tribal_choice()
 {
     if (!g_outfit_ack) return true;
@@ -3109,7 +3124,9 @@ static bool adopt_after_editor(double now)
         }
     }
     bool tribal = g_tribal_outfit_world && g_tribal_outfit_world == modes::current_world() && m == modes::kTribe;
-    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell || tribal)) {
+    // BUG-9135 roadmap phase 4: back in Tribe from a late joiner's new-creature editor (tribe.late_create_editor)
+    const bool late = !tribal && g_new_creature_world && g_new_creature_world == modes::current_world() && m == modes::kTribe;
+    if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell || tribal || late)) {
         g_adopt_until = now + 30;
         g_adopt_kind = m == modes::kCell ? kCell : kCreature;
         g_adopt_read = 0;
@@ -3117,10 +3134,14 @@ static bool adopt_after_editor(double now)
     g_prev_mode = m;
     if (now > g_adopt_until) {
         if (tribal && g_adopt_until) { tribe::finish_own_outfit(false); g_tribal_outfit_world = 0; }
+        if (late && g_adopt_until) {
+            g_new_creature_world = 0;
+            if (C.feed) C.feed("No new creature was saved. Choose your own creature in the Co-op window (F9).");
+        }
         return false;
     }
-    Key a = tribal ? mine(kCreature).key : g_adopt_kind == kCell ? cell_key() : avatar_species_key();
-    if (!a.instance)
+    Key a = tribal || late ? mine(kCreature).key : g_adopt_kind == kCell ? cell_key() : avatar_species_key();
+    if (!a.instance && !late) // a late joiner may play no creature yet: nothing old to keep
         return true; // not yet: do not apply the old one meanwhile
     if (g_pre_editor_fix && C.sess->role() == net::Role::Client) {
         // BUG-0278: a guest takes over only what the editor saved: the newest own creation that was
@@ -3148,6 +3169,10 @@ static bool adopt_after_editor(double now)
             return false;
         }
         g_adopt_until = 0;
+        if (late) {
+            g_new_creature_world = 0;
+            if (C.feed) C.feed("Your new creature is your creature for this game. Your village follows in a few seconds.");
+        }
         if (tribal && !journal_tribal_choice()) {
             tribe::finish_own_outfit(false);
             g_tribal_outfit_world = 0;
@@ -3620,6 +3645,7 @@ void on_session_end()
     g_campaign_place = 0;
     g_campaign_creature = {};
     g_campaign_entry.clear();
+    g_new_creature_world = 0; // BUG-9135 phase 4
     g_own_told.clear(); // BUG-0345: the notice again in the next session
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per

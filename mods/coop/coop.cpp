@@ -1518,6 +1518,49 @@ bool open_own_editor(uint32_t editor_id)
     return r;
 }
 
+// BUG-9135 roadmap phase 4 (decision 4): a late joiner in Tribe without a creature of their own makes a new one in the
+// creature editor (CreatureEditorExtraLarge 0x465C50BA, no creation key), opened from the Co-op window. Back in this
+// Tribe world the newest own creation it saved is their creature (creations::begin_new_creature) and the host founds
+// their village with it. Not yet run in a game (the editor without a creation key from Tribe, the host's checkpoints
+// while a guest edits): off by default, docs/re/tribe.md#tribe-late-joiners.
+static bool g_late_create_editor = false;
+COOP_FIX("tribe.late_create_editor", "BUG-9135", g_late_create_editor,
+         "tribe: a partner without a creature of their own can make a new one in the creature editor from the Co-op window (unverified, off by default)");
+unsigned game_busy();
+bool mode_switch_pending();
+static bool late_create_offered()
+{
+    return g_late_create_editor && g_sess.role() == net::Role::Client && g_mode == modes::kTribe && tribe::late_prompt() != 0;
+}
+// outside the frame (editors create D3D resources)
+static std::string open_new_creature_editor()
+{
+    if (!late_create_offered()) return "A new creature can be made here only while you have no village of your own.";
+    uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit");
+    if (!ctor || !submit) return "The creature editor is not available on this game build.";
+    if (game_busy() || mode_switch_pending() || world::load_queued()) return "The game is busy. Try again in a moment.";
+    void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    if (!req) return "The creature editor could not be opened.";
+    skg::thiscall<void*>(ctor, req);
+    skg::field<uint32_t>(req, 0xC) = 0x465C50BAu; // CreatureEditorExtraLarge
+    skg::field<uint32_t>(req, 0x10) = 0;          // no creation: a new creature
+    skg::field<uint32_t>(req, 0x14) = 0;
+    skg::field<uint32_t>(req, 0x18) = 0;
+    creations::begin_new_creature();
+    g_vote_bypass = true; // the player's own editor, no vote
+    g_own_editor = true;  // the part-list error is waived as in the own editor (h_BlockingErrors)
+    const bool r = skg::cdecl_call<bool>(submit, req);
+    g_vote_bypass = false;
+    if (!r) {
+        g_own_editor = false;
+        creations::cancel_new_creature();
+        return "The creature editor could not be opened.";
+    }
+    LOG("late joiner: the creature editor for a new creature was requested (tribe.late_create_editor)");
+    notice(g_name + " is making a creature of their own in the editor", -1);
+    return "Make your creature, save it, then leave the editor: it becomes your creature for this game.";
+}
+
 // the simulator's mode switcher has a switch pending (+0x28: a load, the quit to the menu, an editor)
 bool mode_switch_pending()
 {
@@ -5552,6 +5595,8 @@ std::string ui_world_line()
                          : (g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().mode : 0);
     if (host_mode == modes::kEdit || host_mode == modes::kEditor)
         return g_sess.name_of(0) + " is evolving the species in the editor: everybody gets the new body";
+    if (g_sess.role() == net::Role::Host && g_mode == modes::kTribe) // BUG-9135 phase 4: a partner without a village
+        if (std::string line = tribe::founding_wait_line(); !line.empty()) return line;
     if (g_sess.role() == net::Role::Host && g_sess.players().size() > 1 && !(g_adapter && g_local))
         return "Load or start a game: the guests get your world automatically";
     if (g_sess.role() == net::Role::Client && g_sess.connected() && !g_adapter)
@@ -5840,7 +5885,9 @@ void init_ui()
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
     a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {
-        if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace))
+        // BUG-9135 phase 4: in Tribe for a partner without a village of their own (tribe.late_prompt)
+        const bool late = g_mode == modes::kTribe && tribe::late_prompt() != 0;
+        if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace || late))
             return false;
         creations::Kind k = g_mode == modes::kCell ? creations::kCell
                             : g_mode == modes::kSpace ? creations::kUfo : creations::kCreature;
@@ -5849,6 +5896,14 @@ void init_ui()
         name = o.name;
         own = (int)creations::options(k).size();
         return true;
+    };
+    a.late_prompt = [] { return g_mode == modes::kTribe ? tribe::late_prompt() : 0; };
+    a.create_creature_offered = late_create_offered;
+    a.create_creature = [] {
+        H->run_outside_frame([](void*) {
+            const std::string said = open_new_creature_editor();
+            feed(said);
+        }, nullptr);
     };
     a.creation_cycle = [](int dir) {
         creations::Kind k = g_mode == modes::kCell ? creations::kCell : creations::kCreature;
@@ -6907,6 +6962,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.feed = feed;
     trc.notice = [](const std::string& t) { notice(t, -1); };
     trc.host_away = [] { return host_absent_for(Absent::Tribe); }; // BUG-0151, BUG-0231
+    trc.here = [](uint8_t player) { // BUG-9135 phase 4
+        auto it = g_remotes.find(player);
+        return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
     identity::init(H, M, &g_sess); // BUG-9135
