@@ -3688,3 +3688,20 @@ BUG-9153 step 2, switch `tribe.own_player_village`. Follows docs/re/tribe.md#tri
 * Seen on the way: the host's purchase refusals were shown on the host's screen only; now sent to the buyer
   (MSG_NOTICE). The guest's game raised the profile achievement "Deja Vu" while swapped (harmless). An idle host's
   village starved (food 0, members dying): not related to the swap (the host's game is never swapped).
+
+## The party's food: a share of each delivery, gifts between party villages (2026-11-12, feat/lineages-47)
+<a id="tribe-party-food"></a>
+
+BUG-9154, owner decision 2P, switch `tribe.food_share`.
+* ✔ (live) Deliveries are rises of a founder village's native store on the host (shared::tribe_food, the bundles at tribe
+  +0x20C): a delivery of 9.24 into the guest's village and of 5.0 later; nothing else raised a store in 20 minutes of an
+  idle host. The share writes with mirror_village_food (the game's "+N" over the food mat shows for 1 or more).
+* ✔ (live) A guest's game offers no Gift on a party member's village: neither a right nor a left press on the host's hut
+  (social stance, villagers selected) reached DoActionForObjects, and the left press opened no panel. The host's
+  village on a guest's game is the former player tribe (BUG-9153): it has no NPC controller. The mod's right press
+  (mouse.cpp set_tribe_input, within 9 m of the hut) sends CMD_ACTION 9 on that village.
+* ✔ (live) The game's gift price is 10 food here (TribeTuning 0xFD444753, gift_cost).
+* ? The host's own native Gift on a guest's village (an NPC tribe on the host's game) is taken in h_DoActionForObjects
+  (action 9 on a founder village) without running the game's gift; not seen live (clicks on the owner's PC).
+* Seen on the way: C.notice on the host goes to every player (the host relays it); a host-only line is notify::show.
+  A villager card press on the guest did not select its villager this time (it did on 2026-11-12 earlier, BUG-9152).

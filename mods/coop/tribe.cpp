@@ -27,6 +27,8 @@
 #include "modes.h"
 #include "mouse.h"
 #include "shared.h"
+#include "party_food.h"
+#include "notify.h"
 #include "npc.h"
 #include "savestrip.h"
 #include "space_ext.h"
@@ -84,6 +86,7 @@ static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.h
 static void* g_persp_host;
 static void* g_own_village; // guest: its own village (members it owns outside the host's), refreshed by guest_tick (BUG-9152)
 static bool g_own_player = true; // tribe.own_player_village (BUG-9153, the switch below)
+static bool g_food_share = true; // tribe.food_share (BUG-9154, the switch with party_gift)
 static void* native_player_tribe()
 {
     void* nm = game::noun_manager();
@@ -1374,6 +1377,8 @@ static bool own_rack_purchase(void* tribe, unsigned kind, void* tool)
 }
 static void ring_order(int action, void* target, const std::vector<uint16_t>& ids); // BUG-0570
 
+static int seat_of_village(void* t, void* home);          // BUG-9154 (below)
+static bool party_gift(uint8_t from, int from_seat, int to_seat);
 // cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) - every
 // order on an object goes through it; on guests the order goes to the host instead
 using DoActionForObjects_t = int(SK_THISCALL*)(void*, void*, int, void*, void*);
@@ -1385,6 +1390,15 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
         return o_DoActionForObjects(self, vec, action, target, prop);
     }
     if (!is_guest() || game::mode_id() != modes::kTribe) {
+        // BUG-9154: the host's own Gift on a partner's village moves the food (the game's gift is for other tribes)
+        if (is_host() && active() && game::mode_id() == modes::kTribe && action == 9 && g_food_share && target &&
+            founder_seats()) {
+            const int to_seat = seat_of_village(target, player_tribe());
+            if (to_seat > 0) {
+                party_gift(0, 0, to_seat);
+                return 0;
+            }
+        }
         if (is_host() && game::mode_id() == modes::kTribe) {
             char lb[96];
             snprintf(lb, sizeof lb, "action=%d n=%d obj=%p noun=%X", action,
@@ -2824,6 +2838,115 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
                  C.sess->name_of(to));
 }
 
+// ---- BUG-9154: the party's food (owner decision 2P) ----
+// A quarter of every delivery into a present player's village goes to the other present players' villages, split
+// evenly, each at least 1 food (party_food.h); the gatherer keeps three quarters. The host sees deliveries as rises of a
+// founder village's native food store (its own villagers' gathering, hunting, fishing, raids), checked 4 times a
+// second against a baseline the mod's own changes move with them (shares, gifts, purchases charge on their own and
+// read as a fall). A gift with the game's own Gift (social stance, right-click a party member's village) moves the
+// game's gift price from the giver's village to theirs at once, both told. `coop.fix tribe.food_share off`: as before
+// (no share; gifts to party villages refused).
+COOP_FIX("tribe.food_share", "BUG-9154", g_food_share,
+         "tribe: a quarter of each delivery split among the partners (at least 1 each), food gifts between party villages");
+static std::array<void*, founders::kMaxSeats> g_share_village{};
+static std::array<double, founders::kMaxSeats> g_share_base{};
+static uint32_t g_share_world, g_shares, g_party_gifts;
+static double g_share_given, g_share_created;
+static bool intact_village(void* t);
+static bool tell_buyer(uint8_t from, const char* reason);
+static void notice_to(uint8_t player, const std::string& text)
+{
+    if (player == 0) { notify::show(text, "info"); return; } // the host only (C.notice goes to every player)
+    if (player >= 0xFE || !net::is_player(*C.sess, player)) return;
+    net::Writer w;
+    w.str8(text);
+    C.sess->send_reliable_to(player, net::MSG_NOTICE, w);
+}
+static void share_moved(void* village, double delta) // a change of ours: not a delivery
+{
+    for (size_t seat = 0; seat < g_share_village.size(); ++seat)
+        if (g_share_village[seat] == village) g_share_base[seat] += delta;
+}
+static void food_share_tick(double now)
+{
+    static double at;
+    if (now - at < 0.25) return;
+    at = now;
+    const size_t seats = founder_seats();
+    if (!g_food_share || seats < 2) return;
+    if (g_share_world != modes::current_world()) {
+        g_share_world = modes::current_world();
+        g_share_village.fill(nullptr);
+    }
+    std::array<double, founders::kMaxSeats> food{};
+    std::vector<int> here;
+    for (size_t seat = 0; seat < seats && seat < food.size(); ++seat) {
+        void* v = founder_village((int)seat);
+        double f = 0;
+        if (!v || !intact_village(v) || player_of_seat((int)seat) >= 0xFE || !shared::tribe_food(v, f)) {
+            g_share_village[seat] = nullptr;
+            continue;
+        }
+        if (g_share_village[seat] != v) { // a village new to the share: its food so far is not a delivery
+            g_share_village[seat] = v;
+            g_share_base[seat] = f;
+            continue;
+        }
+        food[seat] = f;
+        here.push_back((int)seat);
+    }
+    for (int seat : here) {
+        const double gathered = food[seat] - g_share_base[seat];
+        if (gathered < party_food::kDelivery) {
+            if (gathered < 0) g_share_base[seat] = food[seat]; // eaten or spent
+            continue;
+        }
+        const int partners = (int)here.size() - 1;
+        const auto s = party_food::split(gathered, partners);
+        if (partners <= 0 || s.each <= 0) { g_share_base[seat] = food[seat]; continue; }
+        food[seat] = g_share_base[seat] + s.keep;
+        shared::mirror_village_food(g_share_village[seat], food[seat]);
+        g_share_base[seat] = food[seat];
+        for (int p : here) if (p != seat) {
+            food[p] += s.each;
+            shared::mirror_village_food(g_share_village[p], food[p]);
+            g_share_base[p] += s.each;
+        }
+        ++g_shares;
+        g_share_given += s.each * partners;
+        g_share_created += party_food::created(gathered, partners);
+    }
+}
+// a gift of food from seat `from_seat`'s village to seat `to_seat`'s (asked by player `from`)
+static bool party_gift(uint8_t from, int from_seat, int to_seat)
+{
+    void* giver = founder_village(from_seat);
+    void* to = founder_village(to_seat);
+    int price = 0;
+    double gf = 0, tf = 0;
+    if (!giver || !to || giver == to || !gift_cost(price) || !shared::tribe_food(giver, gf) || !shared::tribe_food(to, tf))
+        return from ? tell_buyer(from, "That gift could not be given just now.") : false;
+    if (!party_food::can_gift(gf, price)) {
+        const std::string text = "Your village needs " + std::to_string(price) + " food for a gift.";
+        if (from) return tell_buyer(from, text.c_str());
+        notice_to(0, text);
+        return false;
+    }
+    shared::mirror_village_food(giver, gf - price);
+    shared::mirror_village_food(to, tf + price);
+    share_moved(giver, -price);
+    share_moved(to, price);
+    ++g_party_gifts;
+    ++g_cmds_done;
+    const uint8_t to_player = player_of_seat(to_seat);
+    const std::string giver_name = C.sess->name_of(from);
+    notice_to(to_player, giver_name + " gave your village " + std::to_string(price) + " food.");
+    notice_to(from, "You gave " + (to_player < 0xFE ? C.sess->name_of(to_player) : std::string("your partner")) +
+                        "'s village " + std::to_string(price) + " food.");
+    H->log(M, SK_INFO, "tribe: party gift of %d food, seat %d -> seat %d (BUG-9154)", price, from_seat, to_seat);
+    return true;
+}
+
 static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
 {
     uint8_t kind = r.u8(), n = r.u8();
@@ -2972,6 +3095,13 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
         return;
     }
     int gift_price = 0;
+    if (village_orders && gift && g_food_share && target && sender_seat >= 0) { // BUG-9154: a party member's village
+        const int to_seat = seat_of_village(target, player_tribe());
+        if (to_seat >= 0 && to_seat != sender_seat) {
+            if (!party_gift(from, sender_seat, to_seat)) g_cmds_rejected++;
+            return;
+        }
+    }
     if (village_orders && gift) {
         auto tribes = all_tribes();
         if (!target || std::find(tribes.begin(), tribes.end(), target) == tribes.end() ||
@@ -3875,9 +4005,14 @@ static void mirror_drive(GMember& g, double now)
     mirror_step(g, pos, rot, vel, now, age);
 }
 
+static bool party_gift_input(unsigned message, uintptr_t, int x, int y); // BUG-9154 (below)
 static void guest_tick(double now)
 {
     static double own_village_at;
+    if (g_persp_host) { // BUG-9154: the right press on a party member's hut
+        mouse::install(H->game_window());
+        mouse::set_tribe_input(party_gift_input);
+    }
     if (now - own_village_at > 0.5) { // BUG-9152
         own_village_at = now;
         g_own_village = local_play() ? nullptr : own_village_now();
@@ -6619,6 +6754,50 @@ static const char* request_performance(const Target& target)
     return "Performance requested.";
 }
 
+// BUG-9154: a guest's game offers no Gift on a party member's village (no action comes from a right press on its hut,
+// left or right, social stance or not: seen 2026-11-12 on the MSI); the game's own gesture for other tribes is the right
+// press in the social stance with villagers selected. That press on a party member's hut (within 9 m of it) sends the
+// gift order (CMD_ACTION 9 on that village: party_gift on the host) and the game does not get it.
+static bool g_gift_press;
+static uint32_t g_gift_presses;
+static bool party_village_here(void* t)
+{
+    if (!t || t == g_own_village) return false;
+    if (t == g_persp_host) return true;
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner < 0xFE && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) == t) return true;
+    return false;
+}
+static bool party_gift_input(unsigned message, uintptr_t, int x, int y)
+{
+    if (message == WM_RBUTTONUP) {
+        const bool ours = g_gift_press;
+        g_gift_press = false;
+        return ours;
+    }
+    if (message != WM_RBUTTONDOWN || !g_food_share || !g_own_player || !g_persp_host || !active() || !is_guest() ||
+        local_play() || ui_mode() != 0)
+        return false;
+    const auto ids = guest_village_ids(true);
+    net::Vec3 at;
+    if (ids.empty() || !modes::planet_at_pixel(x, y, at)) return false;
+    void* best = nullptr;
+    float nearest = 9.f;
+    for (void* t : all_tribes()) {
+        if (!party_village_here(t)) continue;
+        void* hut = F<void*>(t, 0x368);
+        net::Vec3 p;
+        if (!hut || !game::object_alive(hut) || !game::object_position(hut, p)) continue;
+        const float d = net::dist(p, at);
+        if (d < nearest) { nearest = d; best = t; }
+    }
+    if (!best) return false;
+    send_cmd(CMD_ACTION, ids, 9, encode_target(best), {});
+    g_gift_press = true;
+    ++g_gift_presses;
+    return true;
+}
+
 static void march_click(double now)
 {
     if (!g_march_until) return;
@@ -6974,6 +7153,7 @@ void tick(double now)
         founder_rescue_tick(now);
         g_give_up_now = false;
         host_tick(now);
+        food_share_tick(now); // BUG-9154
         combat_tick(now);
         load_six_trial();
         outfit_tick(now);
@@ -7101,6 +7281,7 @@ static void forget_world_tables()
     g_founder_rescues = {};
     g_own_village = nullptr; // BUG-9152: a world change frees the old villages
     g_persp_host = nullptr;  // BUG-9153: the game's own teardown let go of both villages
+    g_share_village.fill(nullptr); // BUG-9154
     g_rack_asked = {};
     g_remote_rescues = {};
     g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
@@ -8294,6 +8475,20 @@ std::string debug(const std::vector<std::string>& a)
         auto planet = world::current_game_key();
         if (!founders::can_record(planet, roster, err) || !creations::archive_guest_model(guest, planet, err)) return err;
         return founders::record(planet, roster, err) ? founders::describe(roster) : err;
+    }
+    if (a.size() == 1 && a[0] == "foodshare") { // BUG-9154: the party's food share (host)
+        char b[200];
+        snprintf(b, sizeof b, "party food: share=%d shares=%u given=%.2f created=%.2f gifts=%u presses=%u", (int)g_food_share,
+                 g_shares, g_share_given, g_share_created, g_party_gifts, g_gift_presses);
+        std::string out = b;
+        for (size_t seat = 0; seat < founder_seats() && seat < g_share_village.size(); ++seat) {
+            double f = -1;
+            if (g_share_village[seat]) shared::tribe_food(g_share_village[seat], f);
+            snprintf(b, sizeof b, "\n  seat %u: player=%u food=%.2f base=%.2f", (unsigned)seat, (unsigned)player_of_seat((int)seat),
+                     f, g_share_base[seat]);
+            out += b;
+        }
+        return out;
     }
     if (a.size() == 1 && a[0] == "perspective") { // BUG-9153
         char b[256];

@@ -15,6 +15,7 @@ static bool (*g_fov_wheel)(int);
 static bool (*g_graphics_input)(unsigned, uintptr_t, int, int);
 static bool (*g_list_input)(unsigned, uintptr_t, int, int);
 static bool (*g_depth_input)(unsigned, uintptr_t, int, int);
+static bool (*g_tribe_input)(unsigned, uintptr_t, int, int); // BUG-9154: right presses on a party member's hut
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
 static volatile int g_mx = -1, g_my = -1; // the last mouse move over the game window (client pixels)
@@ -51,6 +52,13 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
             if (m->hwnd != g_wnd)
                 MapWindowPoints(m->hwnd, g_wnd, &p, 1);
             if (g_depth_input(m->message, m->wParam, p.x, p.y))
+                m->message = WM_NULL;
+        }
+        if (g_tribe_input && ours(m->hwnd) && (m->message == WM_RBUTTONDOWN || m->message == WM_RBUTTONUP)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            if (g_tribe_input(m->message, m->wParam, p.x, p.y))
                 m->message = WM_NULL;
         }
         if (g_graphics_input && ours(m->hwnd) &&
@@ -97,6 +105,7 @@ void install(const void* game_window)
 }
 
 void set_fov_wheel(bool (*handler)(int delta)) { g_fov_wheel = handler; }
+void set_tribe_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_tribe_input = handler; }
 void set_graphics_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_graphics_input = handler; }
 void set_list_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_list_input = handler; }
 void set_depth_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_depth_input = handler; }

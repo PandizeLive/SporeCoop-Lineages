@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Tribe: the party shares its food. A quarter of every delivery into a
+  player's village goes to the other players' villages, split evenly, each at
+  least 1 food; the gatherer keeps three quarters. Food can be given to a party
+  member's village: in the social stance, with your villagers selected,
+  right-click their hut (10 food, the game's gift price) (BUG-9154).
 - Tribe: the Co-op window's "Village >" page is gone: a connected player plays
   their own village with the game's own controls. Their game now treats their
   village as theirs: the food counter, the villager cards, the hut's Add Baby and

@@ -171,7 +171,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save |
 | 2N | Space: the home of a player or party that leaves a planet others still share | owner's idea: the planet stays protected with one home city that every player's own game shows as their own (their personal empire's home); checked first, fallback a free first colony as the home |
 | 2O | Parties: several parties in one session now, or the session stays one party for now | A, later: the session stays one party; no friend list yet |
-| 2P | Tribe: a share of the food each player collects for the partners | open |
+| 2P | Tribe: a share of the food each player collects for the partners | owner: 25% of each delivery split among the partners in the game, each at least 1 food (even when that is more than was gathered: a party bonus); built 2026-11-12 with food gifts to party villages (BUG-9154, live on two PCs) |
 
 Next free ID: 2Q.
 
