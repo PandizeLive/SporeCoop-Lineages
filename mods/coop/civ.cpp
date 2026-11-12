@@ -71,6 +71,17 @@ static int g_local_seat = -1;           // guest: the seat this game plays (civ_
 static double g_seats_refresh_at;
 static uint8_t g_founder_spawned_seats; // host: the seats whose capital was requested in this world (bit per seat)
 static bool g_founder_share_due;        // host: a capital was bound; the world goes out once no other one is founding
+// Roadmap phase 4 (owner decisions 4, 5; BUG-9135): a partner without a nation (a late joiner, or a Tribe roster seat
+// whose capital was not founded before NPC nations appeared) gets one capital at the next free native site, also
+// once NPC nations exist, caught up to the host's capital (its buildings and turrets). civ_seats.h late_*,
+// docs/re/civ.md#civ-late-capital. Needs civ.multi_founders. Off: a partner without a Tribe seat gets no capital, and
+// none is founded once NPC nations exist (as before).
+static bool g_late_capital = true;
+COOP_FIX("civ.late_capital", "BUG-9135", g_late_capital,
+         "civ: a partner without a nation gets one capital, caught up to the host's capital, also once NPC nations exist");
+static bool g_late_requested;   // host: a late capital was requested and has not appeared yet
+static bool g_late_spawning;    // host: the late founding's own SpawnNextCity call is running
+static uint32_t g_late_deferred; // host: native foundings deferred while a late capital was on its way
 
 // ---- layout (docs/re/civ.md) ----
 // game addresses that are not functions (vtable, return addresses): resolved by name in init()
@@ -86,6 +97,7 @@ constexpr uintptr_t kCityPos = 0x124, kCitySpecialty = 0x540, kCitySlots = 0x43C
 constexpr uint8_t kShared = 0xFD; // a city everybody may use (the capital while cities < players)
 constexpr uintptr_t kCivCities = 0x9C;
 constexpr uintptr_t kNationSpecies = 0x268, kCitySpecies = 0x658;
+constexpr uintptr_t kExSites = 0xAC, kExSitesLeft = 0xB0; // cCivExpansion: all sites, sites not founded yet
 constexpr uint32_t kMsgActivated = 0x287259F6, kBtnLand = 0x62D6902, kBtnWater = 0x62D6908, kBtnAir = 0x62D690F,
                    kBtnPlanner = 0x62D5618, kBuildingType = 0x0E9CB8BA;
 
@@ -1749,6 +1761,13 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
         g_cities_blocked++;
         return false; // both callers ignore the result
     }
+    // Roadmap phase 4: while a late capital is on its way, the host's planet tick founds no other city (its next
+    // try comes with its own timer), so the new city is the only one that was not there before
+    // (civ_seats::new_city_since). The instant founding of a stage shortcut still passes.
+    if (g_late_requested && !g_late_spawning && !instant && is_host() && game::mode_id() == modes::kCiv) {
+        g_late_deferred++;
+        return false;
+    }
     bool r = o_SpawnNextCity(ex, instant, who);
     if (r && is_host() && game::mode_id() == modes::kCiv && !who && !instant) {
         net::Writer w;
@@ -3137,6 +3156,7 @@ static std::vector<civ_seats::City> founder_city_list(const std::vector<void*>& 
         c.home = country && country == home;
         c.blank = country && pol_of(city) == pol_of(country) && !F<creations::Key>(city, kCitySpecies).instance &&
                   !F<creations::Key>(country, kNationSpecies).instance;
+        c.id = (uint64_t)(uintptr_t)city; // the late founding tells its new city by the object (phase 4)
         out.push_back(c);
     }
     return out;
@@ -3204,13 +3224,36 @@ static void bind_founder_identities(const std::string& planet)
                (unsigned)ids[index]);
 }
 
+// Roadmap phase 4: the late capital being founded (one at a time): requested -> appeared and bound -> caught up
+enum class LatePhase : uint8_t { Idle, Requested, Bound };
+static struct LateFounding {
+    LatePhase phase = LatePhase::Idle;
+    int seat = -1;
+    uint8_t player = civ_seats::kNobody; // the late joiner (kNobody: a Tribe roster seat, founded for its founder)
+    uint64_t identity = 0;
+    creations::Key key{};
+    std::string who;                     // for the log and the notices
+    std::vector<civ_seats::City> before; // the live cities when the founding was requested
+    unsigned waited = 0;                 // founder ticks (2 s of running game each) since the request
+    void* capital = nullptr;             // bound: the new capital and its political id
+    uint32_t faction = 0;
+} g_late;
+static bool g_late_stalled; // this world: a late capital could not be bound; no further one until the world changes
+static std::map<uint64_t, civ_seats::LateWhy> g_late_told; // per partner: the reason last logged (and told)
+static std::string g_late_site_told;
+static uint32_t g_late_founded, g_late_built, g_late_turrets;
+static unsigned g_late_pending_ticks; // founder ticks in a row with a founded city still on its way
+
 // The next partner seat of the Tribe roster without a capital gets one: SpawnNextCity, then (the appearance is
 // asynchronous) the only new blank nation is bound to the seat. One seat at a time, in seat order.
-enum class FoundStep { Idle, Busy, Bound };
+// Late (roadmap phase 4, civ.late_capital): NPC nations exist (the late capital founds this seat, told apart by its
+// object), or a late capital is being founded.
+enum class FoundStep { Idle, Busy, Bound, Late };
 static FoundStep found_next_capital(const std::string& planet, void* home, const founders::Roster& tribal,
                                     const founders::Roster current, // a copy: g_founder_nations changes below
                                     const founders::Outfits* outfits, const std::string& outfit_error)
 {
+    if (g_late_capital && g_late.phase != LatePhase::Idle) return FoundStep::Late;
     const int seat = civ_seats::next_capital_seat(current.seats(), tribal.seats());
     if (seat < 0) return FoundStep::Idle;
     if (!outfits) { founder_report(outfit_error); return FoundStep::Idle; }
@@ -3232,6 +3275,7 @@ static FoundStep found_next_capital(const std::string& planet, void* home, const
         // Only while every city is the host's or a seated founder's: never repurpose an established NPC city, and the
         // new nation is the only unknown one (before: only from the native graduation's single capital).
         if (!civ_seats::only_founder_cities(list, current)) {
+            if (g_late_capital) return FoundStep::Late; // roadmap phase 4: the late capital founds this seat
             founder_report("The partner capital was not reserved before other nations appeared."); return FoundStep::Idle;
         }
         void* expansion = skg::cdecl_call<void*>(a_ExpansionGet);
@@ -3276,9 +3320,289 @@ static FoundStep found_next_capital(const std::string& planet, void* home, const
     return FoundStep::Bound;
 }
 
+// ---- Roadmap phase 4 (owner decisions 4, 5): the late capital (civ_seats.h late_*, docs/re/civ.md#civ-late-capital) ----
+static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay);
+
+// the connected partners as the late-capital rules see them (ids: their network ids, in the same order)
+static std::vector<civ_seats::Joiner> late_joiners(std::vector<uint8_t>& ids)
+{
+    std::vector<civ_seats::Joiner> out;
+    for (const auto& p : C.sess->players()) {
+        if (p.id == C.sess->my_id()) continue;
+        civ_seats::Joiner j;
+        j.party_seat = party::seat_of_player(p.id);
+        j.identity = identity::of(p.id);
+        const auto key = creations::player_key(p.id, creations::kCreature);
+        j.species = key.instance;
+        j.own_creature = key.instance && !creations::plays_host_creation(p.id, creations::kCreature);
+        j.species_ready = key.instance && creations::player_species(p.id) && creations::key_known(key);
+        j.nation_seat = party::founder_seat_of(g_founder_nations, p.id, founder_legacy_match);
+        out.push_back(j);
+        ids.push_back(p.id);
+    }
+    return out;
+}
+
+// a partner's status, logged when it changes; the ones a player must act on (or cannot change) are told to everybody
+static void late_tell(uint8_t player, uint64_t identity, civ_seats::LateWhy why)
+{
+    using W = civ_seats::LateWhy;
+    const uint64_t key = identity ? identity : 0xFF00000000000000ull | player;
+    auto it = g_late_told.find(key);
+    if (it != g_late_told.end() && it->second == why) return;
+    const bool first = it == g_late_told.end();
+    g_late_told[key] = why;
+    if (first && why == W::HasNation) return; // a founder as before: nothing to say
+    const std::string name = C.sess->name_of(player);
+    H->log(M, SK_INFO, "civ late capital: %s (player %u) %s", name.c_str(), (unsigned)player, civ_seats::late_why_text(why));
+    if (!C.notice) return;
+    if (why == W::NoOwnCreature)
+        C.notice(name + " plays the host's species: no capital of their own until they create a creature.");
+    else if (why == W::SeatsFull)
+        C.notice(name + " gets no capital of their own: every founder seat is taken.");
+    else if (why == W::SharedSpecies)
+        C.notice(name + " plays a species another nation already has: no capital of their own.");
+}
+
+static void late_site_tell(const std::string& text, bool notice)
+{
+    if (text == g_late_site_told) return;
+    g_late_site_told = text;
+    H->log(M, SK_INFO, "civ late capital: %s", text.c_str());
+    if (notice && C.notice) C.notice(text);
+}
+
+// the late founding ends without a capital (the seat's request is withdrawn, the NPC hold released)
+static void late_give_up(const std::string& why, bool stall)
+{
+    H->log(M, SK_WARN, "civ late capital: %s: no capital for %s (seat %d)%s", why.c_str(), g_late.who.c_str(), g_late.seat,
+           stall ? "; no further late capital in this world" : "");
+    if (g_late.seat >= 0 && g_late.seat < (int)founders::kMaxSeats && g_late.phase == LatePhase::Requested)
+        g_founder_spawned_seats &= uint8_t(~(1u << g_late.seat));
+    g_late = {};
+    g_late_requested = false;
+    g_late_stalled |= stall;
+}
+
+// a city's building slots (cCity +0x43C, stride 0x18: +4 occupant, +0xC position): position and whether it is free
+struct LateSlot {
+    net::Vec3 pos;
+    bool free;
+};
+static std::vector<LateSlot> late_slots(void* city)
+{
+    std::vector<LateSlot> out;
+    uint8_t* b = F<uint8_t*>(city, kCitySlots);
+    uint8_t* e = F<uint8_t*>(city, kCitySlots + 4);
+    for (int k = 0; b && e > b && b + (k + 1) * 0x18 <= e && k < 64; ++k) {
+        const float* p = (const float*)(b + k * 0x18 + 0xC);
+        out.push_back({{p[0], p[1], p[2]}, F<void*>(b + k * 0x18, 4) == nullptr});
+    }
+    return out;
+}
+// a city's intact buildings of the catch-up types (house, factory, entertainment) with their slots
+static std::vector<civ_seats::Building> late_buildings(void* city)
+{
+    std::vector<civ_seats::Building> out;
+    uint8_t* b = F<uint8_t*>(city, kCitySlots);
+    uint8_t* e = F<uint8_t*>(city, kCitySlots + 4);
+    for (void* bl : vec_of((uint8_t*)city + kCityBuildings)) {
+        const uint32_t noun = game::noun_id(bl);
+        if (!type_for_noun(noun) || F<int>(bl, kBuildingState) == 2) continue; // a ruin is not copied
+        int slot = -1;
+        for (int k = 0; b && e > b && b + (k + 1) * 0x18 <= e && k < 64 && slot < 0; ++k)
+            if (F<void*>(b + k * 0x18, 4) == bl) slot = k;
+        out.push_back({noun, slot});
+    }
+    return out;
+}
+
+static void late_catch_up(void* home);
+// Requested: the new city appeared? Bind it: the roster (CIV2: the late seat has its player's identity), the
+// nation's species; then the catch-up (Bound until it ran: the city planner may hold the capital for a while).
+static void late_bind(const std::string& planet, void* home, const founders::Roster& tribal)
+{
+    const auto cities = all_cities();
+    const uint32_t faction = civ_seats::new_city_since(g_late.before, founder_city_list(cities, home), g_founder_nations);
+    if (!faction) {
+        if (++g_late.waited >= 30) late_give_up("its city did not appear within 60 s", false); // 30 ticks of 2 s
+        return;
+    }
+    if (faction == civ_seats::kAmbiguous) {
+        late_give_up("the new city could not be told apart (another new city, or it has a species)", true); return;
+    }
+    void* capital = nullptr;
+    for (void* city : cities) if (pol_of(city) == faction) capital = city;
+    void* nation = capital ? F<void*>(capital, kCityCiv) : nullptr;
+    if (!nation) return; // its nation is still being made
+    if (g_late.seat != (int)civ_seats::late_seat(g_founder_nations)) {
+        late_give_up("the founder seats changed meanwhile", true); return;
+    }
+    founders::Roster next = g_founder_nations;
+    if (!next.seats())
+        next.entries[0] = {F<creations::Key>(home, kNationSpecies).instance, pol_of(home),
+                           tribal.seats() ? tribal.entries[0].player : identity::own()};
+    next.entries[g_late.seat] = {g_late.key.instance, pol_of(nation), g_late.identity};
+    std::string error;
+    if (!founders::record(planet, next, error, founders::Stage::Civilization)) { late_give_up(error, true); return; }
+    F<creations::Key>(nation, kNationSpecies) = g_late.key;
+    g_founder_nations = next;
+    g_combat_roster_ready = true;
+    g_late_requested = false; // the planet tick may found again
+    refresh_founder_seats();
+    g_late.capital = capital;
+    g_late.faction = faction;
+    g_late.phase = LatePhase::Bound;
+    g_late_founded++;
+    const auto at = city_pos(capital);
+    auto own = vec_of((uint8_t*)home + kCivCities);
+    H->log(M, SK_INFO, "civ late capital: seat %d (%s) capital %08X at (%.0f %.0f %.0f), %.0f m from the host's capital; "
+           "roster written", g_late.seat, g_late.who.c_str(), faction, at.x, at.y, at.z,
+           own.empty() ? -1.0 : (double)net::dist(at, city_pos(own[0])));
+    // its first buildings came with it (the appearance makes them at once): the catch-up now, then one save or share
+    late_catch_up(home);
+}
+
+// Bound: the capital gets the host capital's buildings (the game's planner sequence, free) and turrets
+// (City_AddTurret, the next free wall slot) it lacks; then the world is saved or shared (decision 5: the host's
+// capital, not its empire; money is shared already, the nation's tech and unlocks follow campaign_tick).
+static void late_catch_up(void* home)
+{
+    void* capital = g_late.capital;
+    const auto cities = all_cities();
+    if (!capital || std::find(cities.begin(), cities.end(), capital) == cities.end() || pol_of(capital) != g_late.faction) {
+        H->log(M, SK_WARN, "civ late capital: seat %d's capital changed before its catch-up; nothing built", g_late.seat);
+        g_late = {};
+        share_founders();
+        return;
+    }
+    if (planner_holds(capital)) return; // the city planner holds it: next tick
+    auto own_cities = vec_of((uint8_t*)home + kCivCities);
+    void* host_capital = own_cities.empty() ? nullptr : own_cities[0];
+    size_t wanted = 0, built = 0, turrets_wanted = 0, turrets = 0;
+    if (host_capital && host_capital != capital) {
+        auto slots = late_slots(capital);
+        size_t free = 0;
+        for (const auto& s : slots) free += s.free;
+        const auto plan = civ_seats::catch_up_buildings(late_buildings(host_capital), late_buildings(capital), free);
+        wanted = plan.size();
+        for (const auto& b : plan) {
+            net::Vec3 at = city_pos(capital);
+            bool placed = false;
+            if (b.slot >= 0 && b.slot < (int)slots.size() && slots[b.slot].free) {
+                at = slots[b.slot].pos; // the host's layout where that slot is free
+                placed = true;
+            }
+            for (size_t k = 0; k < slots.size() && !placed; ++k)
+                if (slots[k].free) {
+                    at = slots[k].pos;
+                    placed = true;
+                }
+            if (!placed) break;
+            if (build_in_city(capital, b.noun, at, false)) built++;
+            slots = late_slots(capital); // SnapBuildingToSlot took the free slot nearest `at`
+        }
+        turrets_wanted = civ_seats::catch_up_turrets(vec_of((uint8_t*)host_capital + kCityTurrets).size(),
+                                                     vec_of((uint8_t*)capital + kCityTurrets).size());
+        for (size_t i = 0; i < turrets_wanted && a_AddTurret && o_AddTurret; ++i) {
+            if (!o_AddTurret(capital)) break; // no free wall slot
+            turrets++;
+        }
+    }
+    g_late_built += (uint32_t)built;
+    g_late_turrets += (uint32_t)turrets;
+    H->log(M, SK_INFO, "civ late capital: seat %d (%s) caught up with the host's capital: %zu of %zu buildings, %zu of %zu "
+           "turrets", g_late.seat, g_late.who.c_str(), built, wanted, turrets, turrets_wanted);
+    if (C.notice)
+        C.notice(g_late.who + " has a capital of their own now, caught up with the host's capital.");
+    g_late = {};
+    share_founders(); // the roster, the new nation and its buildings reach every partner (saved when the host is alone)
+}
+
+// Host, outside the frame, every founder tick (2 s): one late capital at a time. `tribal_blocked`: the Tribe roster's
+// next seat could not be founded the usual way (NPC nations exist): this path founds it.
+static void late_capital_tick(const std::string& planet, void* home, const founders::Roster& tribal,
+                              const founders::Outfits& looks, bool tribal_blocked)
+{
+    if (!g_late_capital || g_late_stalled) return;
+    if (g_late.phase == LatePhase::Requested) { late_bind(planet, home, tribal); return; }
+    if (g_late.phase == LatePhase::Bound) { late_catch_up(home); return; }
+    std::vector<uint8_t> ids;
+    const auto joiners = late_joiners(ids);
+    const auto host_key = F<creations::Key>(home, kNationSpecies);
+    std::vector<civ_seats::LateWhy> why;
+    const auto plan = civ_seats::late_capital(g_founder_nations, tribal, looks, host_key.instance, joiners, &why);
+    for (size_t i = 0; i < joiners.size(); ++i) late_tell(ids[i], joiners[i].identity, why[i]);
+    if (plan.seat < 0 || (plan.joiner < 0 && !tribal_blocked)) return; // nothing, or the usual founding's turn
+    LateFounding next;
+    next.seat = plan.seat;
+    std::string error;
+    if (plan.joiner >= 0) {
+        next.player = ids[plan.joiner];
+        next.identity = joiners[plan.joiner].identity;
+        next.key = creations::player_key(next.player, creations::kCreature);
+        next.who = C.sess->name_of(next.player);
+        // the creature's records go into the planet first: every game loading it can build the nation's citizens
+        if (!creations::archive_guest_model(next.player, planet, error)) {
+            late_site_tell(next.who + ": " + error, false);
+            return;
+        }
+    } else { // the Tribe roster's seat (found_next_capital checked its species)
+        next.identity = tribal.entries[plan.seat].player;
+        next.key = {looks.current((size_t)plan.seat), 0x2B978C46, 0x40626200};
+        next.who = "partner seat " + std::to_string(plan.seat);
+    }
+    // the roster this founding will write must be acceptable before a city is founded for it (a placeholder for the
+    // new nation's political id, which the founding gives)
+    founders::Roster check = g_founder_nations;
+    if (!check.seats())
+        check.entries[0] = {host_key.instance, pol_of(home), tribal.seats() ? tribal.entries[0].player : identity::own()};
+    check.entries[plan.seat] = {next.key.instance, 0xFFFFFFFEu, next.identity};
+    if (!next.key.instance || !founders::can_record(planet, check, error, founders::Stage::Civilization)) {
+        late_site_tell(next.who + ": " + (error.empty() ? std::string("no species") : error), false);
+        return;
+    }
+    void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
+    if (!ex || !skg::readable(ex, kExSitesLeft + 4)) return;
+    const auto cities = all_cities();
+    const auto sites = civ_seats::site_state(F<int>(ex, kExSites), F<int>(ex, kExSitesLeft), cities.size());
+    g_late_pending_ticks = sites == civ_seats::SiteState::Pending ? g_late_pending_ticks + 1 : 0;
+    switch (sites) {
+    case civ_seats::SiteState::Pending:
+        // a city is on its way (it appears within seconds): it must appear first. A count that stays ahead for 30 s
+        // of running game is a founding the world never finished (a save between the founding and the appearance):
+        // founded anyway, the new city is still told apart by its object.
+        if (g_late_pending_ticks < 15) return;
+        late_site_tell("the site manager counts a city that never appeared; founding anyway", false);
+        break;
+    case civ_seats::SiteState::Unknown: late_site_tell("the city site manager's counts look wrong; no capital founded", false); return;
+    case civ_seats::SiteState::NoSite: late_site_tell("No free city site is left for " + next.who + "'s capital.", true); return;
+    case civ_seats::SiteState::Ready: break;
+    }
+    next.before = founder_city_list(cities, home);
+    const uint8_t bit = uint8_t(1u << plan.seat);
+    g_founder_spawned_seats |= bit; // h_CivAI holds the other nations' AI: the new nation must not act as an NPC
+    g_late_spawning = true;
+    const bool spawned = h_SpawnNextCity(ex, 0, nullptr);
+    g_late_spawning = false;
+    if (!spawned) {
+        g_founder_spawned_seats &= uint8_t(~bit);
+        late_site_tell("No free city site is left for " + next.who + "'s capital.", true);
+        return;
+    }
+    next.phase = LatePhase::Requested;
+    g_late = std::move(next);
+    g_late_requested = true;
+    g_late_site_told.clear();
+    H->log(M, SK_INFO, "civ late capital: founding requested for seat %d (%s) with %zu cities in the world", g_late.seat,
+           g_late.who.c_str(), cities.size());
+}
+
 // BUG-9135: the founders of up to founders::kPlaySeats players (civ.multi_founders on)
 static void founders_multi(const std::string& planet, void* home)
 {
+    if (!g_late_capital && g_late.phase != LatePhase::Idle) // switched off while a late capital was being founded
+        late_give_up("civ.late_capital was switched off", false);
     founders::Roster tribal, saved;
     founders::Outfits outfits;
     std::string outfit_error;
@@ -3327,10 +3651,15 @@ static void founders_multi(const std::string& planet, void* home)
         const auto step = have_tribal ? found_next_capital(planet, home, tribal, g_founder_nations,
                                                            have_outfits ? &outfits : nullptr, outfit_error)
                                       : FoundStep::Idle;
-        if (step == FoundStep::Idle && g_founder_share_due) {
+        if ((step == FoundStep::Idle || step == FoundStep::Late) && g_founder_share_due) {
             g_founder_share_due = false;
             share_founders();
+            return;
         }
+        // roadmap phase 4: a late joiner's capital, or the Tribe roster's next seat once NPC nations exist
+        if (step == FoundStep::Idle || step == FoundStep::Late)
+            late_capital_tick(planet, home, have_tribal ? tribal : founders::Roster{},
+                              have_outfits ? outfits : founders::Outfits{}, step == FoundStep::Late);
         return;
     }
     if (g_founder_nations.seats()) { // bound in this world, unreadable now: found nothing anew
@@ -3338,9 +3667,16 @@ static void founders_multi(const std::string& planet, void* home)
     }
     if (!have_tribal) {
         g_combat_roster_ready = true; // Legacy/stage-chooser game with one native nation.
+        // roadmap phase 4: a co-op campaign (its founder seats reserved, .duo-seats) whose host played Tribe alone gets
+        // its late joiners' capitals; a game without a campaign keeps one shared nation as before
+        founders::CampaignRules rules;
+        if (g_late_capital && (g_late.phase != LatePhase::Idle || founders::read_rules(planet, rules) == founders::RulesFile::Saved))
+            late_capital_tick(planet, home, founders::Roster{}, founders::Outfits{}, false);
         return;
     }
-    found_next_capital(planet, home, tribal, founders::Roster{}, have_outfits ? &outfits : nullptr, outfit_error);
+    const auto step = found_next_capital(planet, home, tribal, founders::Roster{}, have_outfits ? &outfits : nullptr, outfit_error);
+    if (step == FoundStep::Late) // roadmap phase 4: NPC nations exist already: the late capital founds seat 1
+        late_capital_tick(planet, home, tribal, have_outfits ? outfits : founders::Outfits{}, true);
 }
 // a new world or session: no seat founding, nobody seated (the roster is read anew)
 static void reset_founder_seats()
@@ -3352,6 +3688,11 @@ static void reset_founder_seats()
     g_seat_player.fill(civ_seats::kNobody);
     g_local_seat = -1;
     g_seats_refresh_at = 0;
+    g_late = {}; // roadmap phase 4: a late founding of the old world is gone with it
+    g_late_requested = g_late_spawning = g_late_stalled = false;
+    g_late_told.clear();
+    g_late_site_told.clear();
+    g_late_pending_ticks = 0;
 }
 
 static void founder_tick(double now)
@@ -5075,7 +5416,7 @@ static void kill_local(void* v)
 static bool g_city_burst_fix = true;
 COOP_FIX("civ.city_burst", "BUG-0380", g_city_burst_fix,
          "civ: a guest founds every NPC city it is short of at once (by the game's own founding count), not one per 15 s");
-constexpr uintptr_t kExSites = 0xAC, kExSitesLeft = 0xB0; // cCivExpansion: all sites, sites not founded yet
+// kExSites, kExSitesLeft (cCivExpansion +0xAC all sites, +0xB0 not founded yet): declared with the layout at the top
 static size_t g_cities_waiting_told;                     // the "founded here, on their way" line, once per count
 // the sites this game founded (appeared or still on their way), -1 when the fields look wrong
 static int founded_here(void* ex)
@@ -5867,7 +6208,12 @@ std::string status()
     std::string fs = "founders: multi=" + std::to_string((int)g_multi_founders) + " seats=" +
                      std::to_string(g_founder_nations.seats()) + " local_seat=" + std::to_string(g_local_seat) +
                      " spawning=" + std::to_string((unsigned)g_founder_spawned_seats) + " share_due=" +
-                     std::to_string((int)g_founder_share_due);
+                     std::to_string((int)g_founder_share_due) +
+                     // roadmap phase 4: the late capital (phase 0 idle, 1 requested, 2 bound)
+                     " late=" + std::to_string((int)g_late_capital) + "/" + std::to_string((int)g_late.phase) +
+                     " late_seat=" + std::to_string(g_late.seat) + " late_founded=" + std::to_string(g_late_founded) +
+                     " late_built=" + std::to_string(g_late_built) + " late_turrets=" + std::to_string(g_late_turrets) +
+                     " late_deferred=" + std::to_string(g_late_deferred) + " late_stalled=" + std::to_string((int)g_late_stalled);
     for (size_t s = 0; s < g_founder_nations.seats(); ++s) {
         char x[80];
         const auto& f = g_founder_nations.entries[s];
@@ -6123,6 +6469,36 @@ std::string debug(const std::vector<std::string>& a)
             if (p.id != C.sess->my_id() && !world::share_with(p.id, err, true))
                 return "Nation assigned; could not queue the save transfer. Retry the binding. " + err;
         return "Guest species assigned to the nation (seat " + std::to_string(seat) + "). Saving and sharing the planet.";
+    }
+    // roadmap phase 4: every connected partner's late-capital status as the host decides it (docs/re/civ.md#civ-late-capital)
+    if (a.size() == 1 && a[0] == "late") {
+        if (!active() || !is_host() || !player_civ()) return "Open the Civilization planet on the host.";
+        founders::Roster tribal;
+        founders::Outfits looks;
+        std::string error;
+        const std::string planet = world::current_game_key();
+        if (founders::read(planet, tribal) && !founders::read_outfits(planet, looks, error)) looks = {};
+        std::vector<uint8_t> ids;
+        const auto joiners = late_joiners(ids);
+        std::vector<civ_seats::LateWhy> why;
+        const auto plan = civ_seats::late_capital(g_founder_nations, tribal, looks,
+                                                  F<creations::Key>(player_civ(), kNationSpecies).instance, joiners, &why);
+        void* ex = a_ExpansionGet ? skg::cdecl_call<void*>(a_ExpansionGet) : nullptr;
+        const bool sites = ex && skg::readable(ex, kExSitesLeft + 4);
+        char line[200];
+        snprintf(line, sizeof line, "late capital: switch=%d phase=%d seat=%d (%s) next_seat=%d next_joiner=%d stalled=%d "
+                 "sites=%d/%d cities=%zu deferred=%u\n", (int)g_late_capital, (int)g_late.phase, g_late.seat,
+                 g_late.who.c_str(), plan.seat, plan.joiner, (int)g_late_stalled, sites ? F<int>(ex, kExSitesLeft) : -1,
+                 sites ? F<int>(ex, kExSites) : -1, all_cities().size(), g_late_deferred);
+        std::string out = line;
+        for (size_t i = 0; i < joiners.size(); ++i) {
+            const auto& j = joiners[i];
+            snprintf(line, sizeof line, "  player %u party_seat=%d id=%s species=%08X own=%d ready=%d nation_seat=%d: %s\n",
+                     (unsigned)ids[i], j.party_seat, j.identity ? "set" : "-", j.species, (int)j.own_creature,
+                     (int)j.species_ready, j.nation_seat, civ_seats::late_why_text(why[i]));
+            out += line;
+        }
+        return out;
     }
     if (a.size() == 1 && a[0] == "sites") { // BUG-9135 RE: the native city site records (docs/re/civ.md#civ-multi-founders)
         if (!g_ok || game::mode_id() != modes::kCiv || !a_ExpansionGet) return "Open a Civilization planet first.";
