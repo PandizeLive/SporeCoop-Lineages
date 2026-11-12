@@ -10,7 +10,7 @@ role: host
 versions: 0.7.8-lineages53-dev and later (since the BUG-9135 phase 1 commit a6ab1cf1)
 fixed_in: unreleased
 branch: phase4-civ
-commits:
+commits: 405644fb
 tests: tests/win_tests.cpp (test_founders_multi, test_party)
 signature: a full `win_tests.exe` run prints no founders_multi / party checks; only `--founders-only` runs them
 docs:
