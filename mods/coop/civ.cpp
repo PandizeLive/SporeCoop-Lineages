@@ -26,6 +26,9 @@
 #include "fixes.h"
 #include "creations.h"
 #include "founders.h"
+#include "civ_seats.h"
+#include "identity.h"
+#include "party.h"
 #include "world.h"
 #include "vehicle_health.h"
 #include "savestrip.h"
@@ -52,6 +55,22 @@ COOP_FIX("civ.team_progress", "BUG-9056", g_team_progress,
          "civ: founder captures and native unlocks advance one team campaign");
 COOP_FIX("civ.founder_control", "BUG-9054", g_founder_control,
          "civ: separate founder nations use player control and the shared treasury");
+// BUG-9135 (roadmap phase 5): a founder nation per seat, up to founders::kPlaySeats players (civ_seats.h,
+// docs/re/civ.md#civ-multi-founders): each partner seat of the Tribe roster gets its own capital, one at a time, and
+// only its own player commands it. Off: the two nations of before (every partner commanded the second one).
+static bool g_multi_founders = true;
+COOP_FIX("civ.multi_founders", "BUG-9135", g_multi_founders,
+         "civ: a founder nation for every partner seat (up to four players), each commanded by its own player");
+static founders::Outfits g_founder_outfits; // the seats' creature looks (a seat without identity is told by species)
+static auto g_seat_player = [] { // host: the connected player commanding each seat (refresh_founder_seats)
+    std::array<uint8_t, founders::kMaxSeats> seats;
+    seats.fill(civ_seats::kNobody);
+    return seats;
+}();
+static int g_local_seat = -1;           // guest: the seat this game plays (civ_seats::own_seat)
+static double g_seats_refresh_at;
+static uint8_t g_founder_spawned_seats; // host: the seats whose capital was requested in this world (bit per seat)
+static bool g_founder_share_due;        // host: a capital was bound; the world goes out once no other one is founding
 
 // ---- layout (docs/re/civ.md) ----
 // game addresses that are not functions (vtable, return addresses): resolved by name in init()
@@ -264,10 +283,61 @@ static bool founder_country(void* country)
 {
     return g_founder_control && active() && country && g_founder_nations.contains_faction(pol_of(country));
 }
+// BUG-9135: the players in the session besides the host (the two-founder rule of civ_seats::sole_partner_seat)
+static size_t partners_present()
+{
+    const size_t n = C.sess ? C.sess->players().size() : 0;
+    return n ? n - 1 : 0;
+}
+// party::LegacyMatch for g_founder_nations: a seat without identity belongs to the partner playing its species (the
+// nation's species or a look of the seat's tribal founder), or in a two-founder campaign to its only partner
+static bool founder_legacy_match(int seat, uint8_t player)
+{
+    return civ_seats::seat_species(g_founder_nations, g_founder_outfits, seat,
+                                   creations::player_key(player, creations::kCreature).instance) ||
+           civ_seats::sole_partner_seat(g_founder_nations, seat, partners_present());
+}
+// host: the player commanding each seat now; guest: the seat this game plays. Every 0.25 s, when the session's
+// players changed and when the roster changed: the ownership hooks run often and only read the result.
+static void refresh_founder_seats()
+{
+    const auto before = g_seat_player;
+    g_seat_player.fill(civ_seats::kNobody);
+    g_local_seat = -1;
+    if (!g_multi_founders || !C.sess)
+        return;
+    const auto& r = g_founder_nations;
+    if (is_host()) {
+        for (size_t s = 0; s < civ_seats::play_seats(r); ++s)
+            g_seat_player[s] = party::founder_player_of(r, (int)s, founder_legacy_match);
+        // a seat's player changed without a join or leave (an identity or a creature arrived): the vehicles of the
+        // founder nations get their owners anew (host_tick)
+        if (g_seat_player != before)
+            g_command_refresh = true;
+    } else if (is_guest() && r.seats()) {
+        g_local_seat = civ_seats::own_seat(r, g_founder_outfits, identity::own(),
+                                           creations::player_key(C.sess->my_id(), creations::kCreature).instance,
+                                           partners_present());
+    }
+}
+// the founder nation this game's player commands as a partner (0: none); before BUG-9135 always the second one
+static uint32_t local_founder_faction()
+{
+    if (!g_multi_founders)
+        return g_founder_nations.guest().faction;
+    return g_local_seat >= 1 ? g_founder_nations.entries[g_local_seat].faction : 0;
+}
+// the founder seats used for the team rules (campaign merge, HUD progress, offline selection)
+static size_t founder_seat_end() { return g_multi_founders ? g_founder_nations.seats() : std::min<size_t>(g_founder_nations.seats(), 2); }
 static uint8_t founder_owner(uint32_t faction)
 {
     if (!g_founder_control || !g_founder_nations.contains_faction(faction)) return 0xFF;
     if (faction == g_founder_nations.home().faction) return 0;
+    if (g_multi_founders) { // BUG-9135: the seat's own player (civ_seats::owner_of_seat)
+        const int seat = g_founder_nations.seat_of_faction(faction);
+        return civ_seats::owner_of_seat(seat, is_host(), seat >= 0 ? g_seat_player[seat] : civ_seats::kNobody, g_local_seat,
+                                        C.sess->my_id(), g_offline_control && g_offline_selection_ready);
+    }
     for (const auto& player : C.sess->players()) if (player.id) return player.id;
     return g_offline_control && g_offline_selection_ready ? 0 : 0xFE;
 }
@@ -1097,9 +1167,10 @@ static BuyByCiv_t o_BuyByCiv;
 static FinishBuy_t o_FinishBuy;
 static uint32_t purchase_ui_buyer(uint32_t original, uintptr_t caller, uintptr_t site)
 {
+    // BUG-9135: the guest's own seat's nation
     if (caller == site && site && g_purchase_ready && g_economic_purchase && g_founder_control && active() &&
-        is_guest() && !local_play() && g_founder_nations.guest().faction)
-        return g_founder_nations.guest().faction;
+        is_guest() && !local_play() && local_founder_faction())
+        return local_founder_faction();
     return original;
 }
 static bool SK_THISCALL h_CanBuyCity(void* city,uint32_t buyer)
@@ -1127,12 +1198,19 @@ struct OfflineCandidates {
     struct { void** begin; void** end; void** capacity; } view{};
     explicit OfflineCandidates(void* c) : cursor(c) {
         if (!g_offline_control || !g_offline_selection_ready || !g_founder_control ||
-            !active() || !is_host() || C.sess->players().size() != 1 || !g_founder_nations.guest().faction) return;
+            !active() || !is_host() || !g_founder_nations.guest().faction) return;
+        if (!g_multi_founders && C.sess->players().size() != 1) return;
         void* home = player_civ();
         if (!home || F<void*>(cursor, 0x164) != (uint8_t*)home + 0xD4) return;
-        void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
-        if (!partner || partner == home) return;
-        auto extra = vec_of((uint8_t*)partner + 0xD4);
+        // BUG-9135: every absent partner seat's nation (before: the one partner's, only while the host was alone)
+        std::vector<void*> extra;
+        for (size_t s = 1; s < founder_seat_end(); ++s) {
+            if (g_multi_founders && g_seat_player[s] != civ_seats::kNobody) continue; // its player commands it
+            void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[s].faction);
+            if (!partner || partner == home) continue;
+            auto list = vec_of((uint8_t*)partner + 0xD4);
+            extra.insert(extra.end(), list.begin(), list.end());
+        }
         if (extra.empty()) return;
         previous = (uint8_t*)home + 0xD4;
         items = vec_of(previous);
@@ -1166,8 +1244,8 @@ static void* SK_CDECL h_TerrainCursor()
     void* cursor = o_TerrainCursor();
     if (!cursor) return cursor;
     void* country = nullptr;
-    if (g_founder_control && active() && is_guest() && g_founder_nations.guest().faction)
-        country = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
+    if (g_founder_control && active() && is_guest() && local_founder_faction()) // BUG-9135: the own seat's nation
+        country = thiscall<void*>(a_CivByPol, nm(), local_founder_faction());
     if (country) {
         // Borrow the native country's live spatial vector. Native insert/remove
         // operations maintain its lifetime; no vehicle pointers are cached here.
@@ -1200,8 +1278,13 @@ static void SK_THISCALL h_CivAI(void* country)
 {
     // Native appearance can run an AI tick before the outside-frame binding.
     // A reserved new capital must not buy units or grow as an NPC in that gap.
-    if (g_founder_control && g_auto_founders && active() && is_host() && g_founder_spawned &&
-        !g_founder_nations.guest().faction && country != player_civ()) return;
+    // BUG-9135: while any seat's capital is founding, every nation that is neither the player's nor seated waits
+    // (founding needs a world without NPC nations, so that is the new capital's)
+    if (g_founder_control && g_auto_founders && active() && is_host() &&
+        (g_multi_founders ? (g_founder_spawned_seats >> g_founder_nations.seats()) != 0 &&
+                                !g_founder_nations.contains_faction(pol_of(country))
+                          : g_founder_spawned && !g_founder_nations.guest().faction) &&
+        country != player_civ()) return;
     void* previous = g_ai_founder;
     if (founder_country(country)) g_ai_founder = country;
     o_CivAI(country);
@@ -1243,10 +1326,17 @@ static float SK_THISCALL h_HudProgress(void* strategy)
     void* home = player_civ();
     if (g_team_progress && g_founder_control && home &&
         pol_of(home) == g_founder_nations.home().faction) {
-        void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
         const int total = skg::cdecl_call<int>(a_FinalCityCount);
-        if (partner && partner != home && total > 0)
-            value = std::min(1.f, original + (float)o_CityCount(partner) / total);
+        int partner_cities = 0;
+        bool counted = false;
+        for (size_t s = 1; s < founder_seat_end() && total > 0; ++s) { // BUG-9135: every partner nation's cities
+            void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[s].faction);
+            if (!partner || partner == home) continue;
+            partner_cities += o_CityCount(partner);
+            counted = true;
+        }
+        if (counted)
+            value = std::min(1.f, original + (float)partner_cities / total);
     }
     ++g_hud_samples;
     g_solo_fraction = original;
@@ -2942,6 +3032,327 @@ static bool g_founder_queued;
 static double g_founder_poll;
 static std::string g_founder_planet, g_founder_notice;
 
+static void founder_report(const std::string& text)
+{
+    if (text == g_founder_notice) return;
+    g_founder_notice = text;
+    H->log(M, SK_INFO, "civ automatic founders: %s", text.c_str());
+}
+
+// the two founders before BUG-9135 (civ.multi_founders off): the host's nation and the one partner's
+static void founders_two(const std::string& planet, void* home)
+{
+    founders::Roster tribal, saved;
+    founders::Outfits outfits;
+    std::string error;
+    if (founders::read(planet, saved, founders::Stage::Civilization)) {
+        if (pol_of(home) != saved.home().faction || F<creations::Key>(home, kNationSpecies).instance != saved.home().species) {
+            founder_report("The native home civilization does not match the saved founders."); return;
+        }
+        void* partner = nullptr;
+        auto cities = all_cities();
+        for (void* city : cities) if (pol_of(city) == saved.guest().faction) partner = F<void*>(city, kCityCiv);
+        if (!partner) {
+            // The roster may have reached disk immediately before an
+            // interrupted native save. Recreate only an absent reserved
+            // capital, never replace a different existing nation's city.
+            if (!g_founder_spawned && cities.size() == 1) {
+                if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet))
+                    g_founder_spawned = h_SpawnNextCity(ex, 0, nullptr);
+            }
+            founder_report("Waiting for the saved partner capital to finish founding."); return;
+        }
+        auto& key = F<creations::Key>(partner, kNationSpecies);
+        if (key.instance && key.instance != saved.guest().species) {
+            founder_report("The reserved capital belongs to another species; its identity was retained."); return;
+        }
+        bool restored = !key.instance;
+        key = {saved.guest().species, 0x2B978C46, 0x40626200};
+        g_founder_nations = saved;
+        g_combat_roster_ready = true;
+        if (restored) {
+            if (C.sess->players().size() == 1) {
+                if (!world::save_game(error)) founder_report(error);
+            } else for (const auto& player : C.sess->players()) if (player.id)
+                if (!world::share_with(player.id, error, true)) founder_report(error);
+        }
+        return;
+    }
+    if (!founders::read(planet, tribal)) {
+        g_combat_roster_ready = true; // Legacy/stage-chooser game with one native nation.
+        return;
+    }
+    if (!founders::read_outfits(planet, outfits, error)) { founder_report(error); return; }
+    auto host_key = F<creations::Key>(home, kNationSpecies);
+    creations::Key guest_key{outfits.current(1), 0x2B978C46, 0x40626200};
+    if (!outfits.contains(0, host_key.instance) || !guest_key.instance ||
+        guest_key == host_key || !creations::key_known(guest_key)) {
+        founder_report("Waiting for the saved founding species before establishing the partner capital."); return;
+    }
+    auto cities = all_cities();
+    if (!g_founder_spawned) {
+        // Only start from the native graduation's single capital. Never
+        // repurpose an established NPC city in an older Civilization save.
+        if (cities.size() != 1 || F<void*>(cities[0], kCityCiv) != home) {
+            founder_report("The partner capital was not reserved before other nations appeared."); return;
+        }
+        void* expansion = skg::cdecl_call<void*>(a_ExpansionGet);
+        if (!expansion) return;
+        g_founder_spawned = h_SpawnNextCity(expansion, 0, nullptr);
+        founder_report(g_founder_spawned ? "Native partner capital founding requested." : "No free native city site.");
+        return;
+    }
+    if (cities.size() != 2) return; // native appearance is asynchronous
+    void* nation = nullptr;
+    for (void* city : cities) {
+        void* country = F<void*>(city, kCityCiv);
+        if (!country || country == home) continue;
+        if (nation || pol_of(city) != pol_of(country) || F<creations::Key>(city, kCitySpecies).instance ||
+            F<creations::Key>(country, kNationSpecies).instance) {
+            founder_report("The new capital already has a species; its identity was retained."); return;
+        }
+        nation = country;
+    }
+    if (!nation) return;
+    founders::Roster pair{host_key.instance, guest_key.instance, pol_of(home), pol_of(nation)};
+    if (!founders::record(planet, pair, error, founders::Stage::Civilization)) { founder_report(error); return; }
+    F<creations::Key>(nation, kNationSpecies) = guest_key;
+    g_founder_nations = pair;
+    g_combat_roster_ready = true;
+    founder_report("Both original species now have native Civilization capitals.");
+    if (C.sess->players().size() == 1 && !world::save_game(error)) founder_report(error);
+    for (const auto& player : C.sess->players()) if (player.id)
+        if (!world::share_with(player.id, error, true)) founder_report(error);
+}
+
+// ---- BUG-9135 (roadmap phase 5): a capital per partner seat (civ_seats.h, docs/re/civ.md#civ-multi-founders) ----
+static std::vector<civ_seats::City> founder_city_list(const std::vector<void*>& cities, void* home)
+{
+    std::vector<civ_seats::City> out;
+    for (void* city : cities) {
+        void* country = F<void*>(city, kCityCiv);
+        civ_seats::City c;
+        c.faction = pol_of(city);
+        c.nation = country != nullptr;
+        c.home = country && country == home;
+        c.blank = country && pol_of(city) == pol_of(country) && !F<creations::Key>(city, kCitySpecies).instance &&
+                  !F<creations::Key>(country, kNationSpecies).instance;
+        out.push_back(c);
+    }
+    return out;
+}
+
+// A partner's former Tribe village (the cTribe with its Tribe roster seat's political id, +0x30), remembered when its
+// capital is requested (a founding at a tribe's site removes the tribe, docs/re/civ.md#civ-tribe-raids). The capital
+// takes the next free native site (SpawnNextCity picks by appearance order); choosing the free site nearest the
+// village needs the position field of the site records (not known yet; `coop.civ sites` dumps them), so for now the
+// distance is logged as the evidence.
+static std::array<net::Vec3, founders::kMaxSeats> g_founder_village;
+static uint8_t g_founder_village_known;
+static void remember_village(int seat, uint32_t tribal_faction)
+{
+    struct Find {
+        uint32_t faction;
+        net::Vec3 pos;
+        bool found;
+    } find{tribal_faction, {}, false};
+    g_founder_village_known &= uint8_t(~(1u << seat));
+    if (!tribal_faction)
+        return;
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto& f = *(Find*)u;
+        if (!f.found && noun == kTribeNoun && game::object_alive(o) && F<uint32_t>(o, kPol) == f.faction)
+            f.found = game::object_position(o, f.pos);
+        return !f.found;
+    }, &find);
+    if (find.found) {
+        g_founder_village[seat] = find.pos;
+        g_founder_village_known |= uint8_t(1u << seat);
+    }
+}
+
+// the world goes out after the founders changed: saved when the host is alone, else shared (as before BUG-9135)
+static void share_founders()
+{
+    std::string error;
+    if (C.sess->players().size() == 1) {
+        if (!world::save_game(error)) founder_report(error);
+    } else for (const auto& player : C.sess->players()) if (player.id)
+        if (!world::share_with(player.id, error, true)) founder_report(error);
+}
+
+// A seat without identity learns the identity of the connected partner playing its species, once (written to the
+// roster: a roster with an identity is CIV2; founders::record keeps CIV1 only without identities).
+static void bind_founder_identities(const std::string& planet)
+{
+    std::vector<civ_seats::Partner> partners;
+    std::vector<uint8_t> ids;
+    for (const auto& p : C.sess->players()) {
+        if (p.id == C.sess->my_id()) continue;
+        partners.push_back({identity::of(p.id), creations::player_key(p.id, creations::kCreature).instance});
+        ids.push_back(p.id);
+    }
+    const auto binds = civ_seats::identities_to_bind(g_founder_nations, g_founder_outfits, partners);
+    if (binds.empty()) return;
+    founders::Roster next = g_founder_nations;
+    for (const auto& [seat, index] : binds) next.entries[seat].player = partners[index].identity;
+    std::string error;
+    if (!founders::record(planet, next, error, founders::Stage::Civilization)) { founder_report(error); return; }
+    g_founder_nations = next;
+    for (const auto& [seat, index] : binds)
+        H->log(M, SK_INFO, "civ automatic founders: seat %d is player %u's (its species); identity saved", seat,
+               (unsigned)ids[index]);
+}
+
+// The next partner seat of the Tribe roster without a capital gets one: SpawnNextCity, then (the appearance is
+// asynchronous) the only new blank nation is bound to the seat. One seat at a time, in seat order.
+enum class FoundStep { Idle, Busy, Bound };
+static FoundStep found_next_capital(const std::string& planet, void* home, const founders::Roster& tribal,
+                                    const founders::Roster& current, const founders::Outfits* outfits, const std::string& outfit_error)
+{
+    const int seat = civ_seats::next_capital_seat(current.seats(), tribal.seats());
+    if (seat < 0) return FoundStep::Idle;
+    if (!outfits) { founder_report(outfit_error); return FoundStep::Idle; }
+    const auto host_key = F<creations::Key>(home, kNationSpecies);
+    const creations::Key key{outfits->current((size_t)seat), 0x2B978C46, 0x40626200};
+    bool distinct = key.instance && !(key == host_key);
+    for (size_t s = 1; s < current.seats(); ++s)
+        distinct = distinct && current.entries[s].species != key.instance;
+    if (!outfits->contains(0, host_key.instance) || !distinct || !creations::key_known(key)) {
+        founder_report(seat == 1 ? std::string("Waiting for the saved founding species before establishing the partner capital.")
+                                 : "Waiting for the saved founding species of partner seat " + std::to_string(seat) +
+                                       " before establishing its capital.");
+        return FoundStep::Idle;
+    }
+    const auto cities = all_cities();
+    const auto list = founder_city_list(cities, home);
+    const uint8_t bit = uint8_t(1u << seat);
+    if (!(g_founder_spawned_seats & bit)) {
+        // Only while every city is the host's or a seated founder's: never repurpose an established NPC city, and the
+        // new nation is the only unknown one (before: only from the native graduation's single capital).
+        if (!civ_seats::only_founder_cities(list, current)) {
+            founder_report("The partner capital was not reserved before other nations appeared."); return FoundStep::Idle;
+        }
+        void* expansion = skg::cdecl_call<void*>(a_ExpansionGet);
+        if (!expansion) return FoundStep::Idle;
+        remember_village(seat, tribal.entries[seat].faction);
+        if (h_SpawnNextCity(expansion, 0, nullptr)) g_founder_spawned_seats |= bit;
+        const bool spawned = g_founder_spawned_seats & bit;
+        founder_report(!spawned ? std::string("No free native city site.")
+                       : seat == 1 ? std::string("Native partner capital founding requested.")
+                                   : "Native capital founding requested for partner seat " + std::to_string(seat) + ".");
+        return spawned ? FoundStep::Busy : FoundStep::Idle;
+    }
+    const uint32_t faction = civ_seats::new_capital(list, current);
+    if (!faction) return FoundStep::Busy; // native appearance is asynchronous
+    if (faction == civ_seats::kAmbiguous) {
+        founder_report("The new capital already has a species; its identity was retained."); return FoundStep::Idle;
+    }
+    void* capital = nullptr;
+    for (void* city : cities) if (pol_of(city) == faction) capital = city;
+    void* nation = capital ? F<void*>(capital, kCityCiv) : nullptr;
+    if (!nation) return FoundStep::Busy;
+    founders::Roster next = current;
+    if (!next.seats()) next.entries[0] = {host_key.instance, pol_of(home), tribal.entries[0].player};
+    next.entries[seat] = {key.instance, pol_of(nation), tribal.entries[seat].player};
+    std::string error;
+    if (!founders::record(planet, next, error, founders::Stage::Civilization)) { founder_report(error); return FoundStep::Idle; }
+    F<creations::Key>(nation, kNationSpecies) = key;
+    g_founder_nations = next;
+    g_combat_roster_ready = true;
+    refresh_founder_seats();
+    const auto at = city_pos(capital);
+    if (g_founder_village_known & bit)
+        H->log(M, SK_INFO, "civ automatic founders: seat %d capital %08X at (%.0f %.0f %.0f), %.0f m from its former village",
+               seat, faction, at.x, at.y, at.z, net::dist(at, g_founder_village[seat]));
+    else
+        H->log(M, SK_INFO, "civ automatic founders: seat %d capital %08X at (%.0f %.0f %.0f); its former village is gone",
+               seat, faction, at.x, at.y, at.z);
+    founder_report(next.seats() == 2 ? std::string("Both original species now have native Civilization capitals.")
+                                     : "Partner seat " + std::to_string(seat) + " now has a native Civilization capital.");
+    if (civ_seats::next_capital_seat(next.seats(), tribal.seats()) < 0) share_founders(); // the last one: at once, as before
+    else g_founder_share_due = true; // after the next capital (or when it cannot be founded now)
+    return FoundStep::Bound;
+}
+
+// BUG-9135: the founders of up to founders::kPlaySeats players (civ.multi_founders on)
+static void founders_multi(const std::string& planet, void* home)
+{
+    founders::Roster tribal, saved;
+    founders::Outfits outfits;
+    std::string outfit_error;
+    const bool have_tribal = founders::read(planet, tribal);
+    const bool have_outfits = have_tribal && founders::read_outfits(planet, outfits, outfit_error);
+    if (have_outfits) g_founder_outfits = outfits; // a seat without identity is told by these looks
+    if (founders::read(planet, saved, founders::Stage::Civilization)) {
+        if (pol_of(home) != saved.home().faction || F<creations::Key>(home, kNationSpecies).instance != saved.home().species) {
+            founder_report("The native home civilization does not match the saved founders."); return;
+        }
+        auto cities = all_cities();
+        std::array<void*, founders::kMaxSeats> nation{};
+        int missing = -1;
+        for (size_t s = 1; s < saved.seats(); ++s) {
+            for (void* city : cities) if (pol_of(city) == saved.entries[s].faction) nation[s] = F<void*>(city, kCityCiv);
+            if (!nation[s] && missing < 0) missing = (int)s;
+        }
+        if (missing >= 0) {
+            // The roster may have reached disk immediately before an interrupted native save. Recreate only an absent
+            // reserved capital, one at a time in seat order (the native political ids follow the founding order), and
+            // only while every city is a founder's: never replace a different existing nation's city.
+            const uint8_t bit = uint8_t(1u << missing);
+            if (!(g_founder_spawned_seats & bit) && civ_seats::only_founder_cities(founder_city_list(cities, home), saved))
+                if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet))
+                    if (h_SpawnNextCity(ex, 0, nullptr)) g_founder_spawned_seats |= bit;
+            founder_report("Waiting for the saved partner capital to finish founding."); return;
+        }
+        for (size_t s = 1; s < saved.seats(); ++s) {
+            const auto& key = F<creations::Key>(nation[s], kNationSpecies);
+            if (key.instance && key.instance != saved.entries[s].species) {
+                founder_report("The reserved capital belongs to another species; its identity was retained."); return;
+            }
+        }
+        bool restored = false;
+        for (size_t s = 1; s < saved.seats(); ++s) {
+            auto& key = F<creations::Key>(nation[s], kNationSpecies);
+            restored |= !key.instance;
+            key = {saved.entries[s].species, 0x2B978C46, 0x40626200};
+        }
+        g_founder_nations = saved;
+        g_combat_roster_ready = true;
+        bind_founder_identities(planet);
+        refresh_founder_seats();
+        if (restored) { share_founders(); return; }
+        // the Tribe roster's further partners: their capitals, one at a time
+        const auto step = have_tribal ? found_next_capital(planet, home, tribal, g_founder_nations,
+                                                           have_outfits ? &outfits : nullptr, outfit_error)
+                                      : FoundStep::Idle;
+        if (step == FoundStep::Idle && g_founder_share_due) {
+            g_founder_share_due = false;
+            share_founders();
+        }
+        return;
+    }
+    if (g_founder_nations.seats()) { // bound in this world, unreadable now: found nothing anew
+        founder_report("The saved founders could not be read; nothing is founded until they can."); return;
+    }
+    if (!have_tribal) {
+        g_combat_roster_ready = true; // Legacy/stage-chooser game with one native nation.
+        return;
+    }
+    found_next_capital(planet, home, tribal, founders::Roster{}, have_outfits ? &outfits : nullptr, outfit_error);
+}
+// a new world or session: no seat founding, nobody seated (the roster is read anew)
+static void reset_founder_seats()
+{
+    g_founder_spawned_seats = 0;
+    g_founder_share_due = false;
+    g_founder_village_known = 0;
+    g_founder_outfits = {};
+    g_seat_player.fill(civ_seats::kNobody);
+    g_local_seat = -1;
+    g_seats_refresh_at = 0;
+}
+
 static void founder_tick(double now)
 {
     if (!g_auto_founders || !is_host() || g_founder_queued || now < g_founder_poll ||
@@ -2961,93 +3372,10 @@ static void founder_tick(double now)
         if (planet != g_founder_planet) {
             g_founder_planet = planet; g_founder_spawned = false; g_founder_nations = {};
             g_combat_roster_ready = false;
+            reset_founder_seats(); // BUG-9135
         }
-        auto report = [](const std::string& text) {
-            if (text == g_founder_notice) return;
-            g_founder_notice = text;
-            H->log(M, SK_INFO, "civ automatic founders: %s", text.c_str());
-        };
-        founders::Roster tribal, saved;
-        founders::Outfits outfits;
-        std::string error;
-        if (founders::read(planet, saved, founders::Stage::Civilization)) {
-            if (pol_of(home) != saved.home().faction || F<creations::Key>(home, kNationSpecies).instance != saved.home().species) {
-                report("The native home civilization does not match the saved founders."); return;
-            }
-            void* partner = nullptr;
-            auto cities = all_cities();
-            for (void* city : cities) if (pol_of(city) == saved.guest().faction) partner = F<void*>(city, kCityCiv);
-            if (!partner) {
-                // The roster may have reached disk immediately before an
-                // interrupted native save. Recreate only an absent reserved
-                // capital, never replace a different existing nation's city.
-                if (!g_founder_spawned && cities.size() == 1) {
-                    if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet))
-                        g_founder_spawned = h_SpawnNextCity(ex, 0, nullptr);
-                }
-                report("Waiting for the saved partner capital to finish founding."); return;
-            }
-            auto& key = F<creations::Key>(partner, kNationSpecies);
-            if (key.instance && key.instance != saved.guest().species) {
-                report("The reserved capital belongs to another species; its identity was retained."); return;
-            }
-            bool restored = !key.instance;
-            key = {saved.guest().species, 0x2B978C46, 0x40626200};
-            g_founder_nations = saved;
-            g_combat_roster_ready = true;
-            if (restored) {
-                if (C.sess->players().size() == 1) {
-                    if (!world::save_game(error)) report(error);
-                } else for (const auto& player : C.sess->players()) if (player.id)
-                    if (!world::share_with(player.id, error, true)) report(error);
-            }
-            return;
-        }
-        if (!founders::read(planet, tribal)) {
-            g_combat_roster_ready = true; // Legacy/stage-chooser game with one native nation.
-            return;
-        }
-        if (!founders::read_outfits(planet, outfits, error)) { report(error); return; }
-        auto host_key = F<creations::Key>(home, kNationSpecies);
-        creations::Key guest_key{outfits.current(1), 0x2B978C46, 0x40626200};
-        if (!outfits.contains(0, host_key.instance) || !guest_key.instance ||
-            guest_key == host_key || !creations::key_known(guest_key)) {
-            report("Waiting for the saved founding species before establishing the partner capital."); return;
-        }
-        auto cities = all_cities();
-        if (!g_founder_spawned) {
-            // Only start from the native graduation's single capital. Never
-            // repurpose an established NPC city in an older Civilization save.
-            if (cities.size() != 1 || F<void*>(cities[0], kCityCiv) != home) {
-                report("The partner capital was not reserved before other nations appeared."); return;
-            }
-            void* expansion = skg::cdecl_call<void*>(a_ExpansionGet);
-            if (!expansion) return;
-            g_founder_spawned = h_SpawnNextCity(expansion, 0, nullptr);
-            report(g_founder_spawned ? "Native partner capital founding requested." : "No free native city site.");
-            return;
-        }
-        if (cities.size() != 2) return; // native appearance is asynchronous
-        void* nation = nullptr;
-        for (void* city : cities) {
-            void* country = F<void*>(city, kCityCiv);
-            if (!country || country == home) continue;
-            if (nation || pol_of(city) != pol_of(country) || F<creations::Key>(city, kCitySpecies).instance ||
-                F<creations::Key>(country, kNationSpecies).instance) {
-                report("The new capital already has a species; its identity was retained."); return;
-            }
-            nation = country;
-        }
-        if (!nation) return;
-        founders::Roster pair{host_key.instance, guest_key.instance, pol_of(home), pol_of(nation)};
-        if (!founders::record(planet, pair, error, founders::Stage::Civilization)) { report(error); return; }
-        F<creations::Key>(nation, kNationSpecies) = guest_key;
-        g_founder_nations = pair;
-        g_combat_roster_ready = true;
-        report("Both original species now have native Civilization capitals.");
-        if (C.sess->players().size() == 1 && !world::save_game(error)) report(error);
-        for (const auto& player : C.sess->players()) if (player.id)
-            if (!world::share_with(player.id, error, true)) report(error);
+        if (g_multi_founders) founders_multi(planet, home);
+        else founders_two(planet, home);
     }, new uint64_t(g_founder_epoch));
 }
 
@@ -3064,20 +3392,30 @@ static void campaign_tick(double now)
         if (!g_team_progress || !active() || world::load_queued() || world::save_busy() ||
             world::save_pending() || world::cinematic_playing()) return;
         void* home = player_civ();
-        void* guest = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.guest().faction);
-        if (!home || !guest) return;
+        // BUG-9135: every partner nation (before: the one partner's), then the host's
+        std::vector<void*> nations;
+        for (size_t s = 1; s < founder_seat_end(); ++s)
+            if (void* partner = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[s].faction))
+                nations.push_back(partner);
+        if (!home || nations.empty()) return;
         auto cities = team_cities(home);
         if (cities.empty()) return;
-        int tech = team_tech(home, std::max(F<int>(home, 0x298), F<int>(guest, 0x298)));
-        int highest = std::max({(int)cities.size(), F<int>(home, 0x4D0), F<int>(guest, 0x4D0)});
-        for (void* country : {guest, home}) {
+        int level = F<int>(home, 0x298), highest = std::max((int)cities.size(), F<int>(home, 0x4D0));
+        for (void* partner : nations) {
+            level = std::max(level, F<int>(partner, 0x298));
+            highest = std::max(highest, F<int>(partner, 0x4D0));
+        }
+        int tech = team_tech(home, level);
+        nations.push_back(home);
+        for (void* country : nations) {
             o_Tech(country, tech);
             F<int>(country, 0x4D0) = highest;
             h_Unlocks(country);
         }
         for (unsigned i = 0; i < 12; ++i) {
-            uint8_t unlocked = F<uint8_t>(home, 0x484 + i) | F<uint8_t>(guest, 0x484 + i);
-            F<uint8_t>(home, 0x484 + i) = F<uint8_t>(guest, 0x484 + i) = unlocked;
+            uint8_t unlocked = 0;
+            for (void* country : nations) unlocked |= F<uint8_t>(country, 0x484 + i);
+            for (void* country : nations) F<uint8_t>(country, 0x484 + i) = unlocked;
         }
         // SetVehicleTech can start the native unlock caption. Check again
         // after that call before posting an asynchronous campaign save.
@@ -3936,6 +4274,7 @@ static void host_tick(double now)
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
     bool roster_changed = players != g_split_for;
+    if (roster_changed && g_multi_founders) refresh_founder_seats(); // BUG-9135: a left player's seat is away now
     host_assign_cities(players);
     // BUG-0031: the vehicles of a player who left go to the owner of the nearest player city (the
     // cities were split anew just now); before, nobody could order them, they took slots of the
@@ -4313,7 +4652,12 @@ static void host_command(uint8_t from, net::Reader& r)
             if (!g_purchase_ready || !g_economic_purchase || !g_founder_control || !active() || !is_host() ||
                 p->epoch!=g_founder_epoch || p->world!=modes::current_world() || world::load_queued() ||
                 world::save_busy() || !net::is_player(*C.sess,p->from)) return;
-            const auto buyer=g_founder_nations.guest().faction;
+            auto buyer=g_founder_nations.guest().faction;
+            if (g_multi_founders) { // BUG-9135: the sender's own seat's nation
+                const int seat=party::founder_seat_of(g_founder_nations,p->from,founder_legacy_match);
+                buyer=seat>=1 && seat<(int)civ_seats::play_seats(g_founder_nations) ?
+                      g_founder_nations.entries[seat].faction : 0;
+            }
             void* city=command_city(p->index);
             bool valid=buyer && founder_owner(buyer)==p->from && p->from && city &&
                 pol_of(city)==p->faction && net::dist(city_pos(city),p->pos)<5.f &&
@@ -5194,6 +5538,18 @@ void tick(double now)
     if (is_guest() && !g_founder_nations.guest().faction && now >= g_founder_poll) {
         g_founder_poll = now + 2;
         founders::read(world::current_game_key(), g_founder_nations, founders::Stage::Civilization);
+        if (g_multi_founders && g_founder_nations.guest().faction) {
+            // BUG-9135: the guest's own seat (civ_seats::own_seat): its identity in the roster the host shared with
+            // the world, else the seats' looks, else (two founders, one partner) the second nation as before
+            founders::Outfits outfits;
+            std::string error;
+            g_founder_outfits = founders::read_outfits(world::current_game_key(), outfits, error) ? outfits : founders::Outfits{};
+            g_seats_refresh_at = 0;
+        }
+    }
+    if (g_multi_founders && now >= g_seats_refresh_at) {
+        g_seats_refresh_at = now + 0.25;
+        refresh_founder_seats();
     }
     founder_tick(now);
     if (is_host() && g_founder_nations.guest().faction && g_offline_planet != g_founder_planet) {
@@ -5302,6 +5658,7 @@ void on_session_end()
     g_hud_samples = 0;
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;
+    reset_founder_seats(); // BUG-9135
     g_founder_poll = 0;
     g_last_rival_turret_hit = {};
     reset_wall_edits();
@@ -5352,6 +5709,7 @@ void on_world_change()
     g_religious_seen.clear();
     ++g_founder_epoch;
     g_founder_queued = g_founder_spawned = false;
+    reset_founder_seats(); // BUG-9135
     g_founder_poll = 0;
     g_last_rival_turret_hit = {};
     g_conversion_key.clear();
@@ -5504,7 +5862,20 @@ std::string status()
     char tu[160];
     snprintf(tu, sizeof tu, "turrets: fix=%d tx=%u rx=%u blocked=%u added=%u removed=%u\n", (int)g_fix_turrets, g_turret_tx,
              g_turret_rx, g_turrets_blocked, g_turrets_added, g_turrets_removed);
-    return std::string(b) + pl + sh + bh + tu + lf;
+    // BUG-9135: the founder seats (host: who commands each; guest: its own seat)
+    std::string fs = "founders: multi=" + std::to_string((int)g_multi_founders) + " seats=" +
+                     std::to_string(g_founder_nations.seats()) + " local_seat=" + std::to_string(g_local_seat) +
+                     " spawning=" + std::to_string((unsigned)g_founder_spawned_seats) + " share_due=" +
+                     std::to_string((int)g_founder_share_due);
+    for (size_t s = 0; s < g_founder_nations.seats(); ++s) {
+        char x[80];
+        const auto& f = g_founder_nations.entries[s];
+        snprintf(x, sizeof x, " [%zu pol=%08X species=%08X id=%s player=%d]", s, f.faction, f.species, f.player ? "set" : "-",
+                 g_seat_player[s] == civ_seats::kNobody ? -1 : (int)g_seat_player[s]);
+        fs += x;
+    }
+    fs += '\n';
+    return std::string(b) + pl + sh + bh + tu + lf + fs;
 }
 
 void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::Vec3& pos, void* user), void* user)
@@ -5695,6 +6066,82 @@ std::string debug(const std::vector<std::string>& a)
             g_command_refresh = true;
         } else if (a.size() != 1) return "Use offline_control on or off.";
         return g_offline_control ? "Offline partner control: on" : "Offline partner control: off";
+    }
+    // BUG-9135: the next founder seat (up to founders::kPlaySeats) for a partner without one; the player id is needed
+    // when more than one partner has no nation
+    if ((a.size() == 2 || a.size() == 3) && a[0] == "bind_guest" && g_multi_founders) {
+        if (!active() || !is_host() || C.sess->players().size() < 2 || !player_civ())
+            return "Bind a nation on the Civilization host with a guest present.";
+        char* end = nullptr;
+        unsigned long long raw = strtoull(a[1].c_str(), &end, 16);
+        if (!raw || raw > UINT32_MAX || !end || *end || raw == pol_of(player_civ()) ||
+            g_founder_nations.contains_faction((uint32_t)raw)) return "Choose a distinct non-player nation from coop civ nations.";
+        std::string planet = world::current_game_key(), err;
+        if (planet.empty()) return "Save and name the planet before binding a nation.";
+        founders::Roster on_disk;
+        if (!g_founder_nations.seats() && founders::read(planet, on_disk, founders::Stage::Civilization))
+            return "The saved founders are still loading. Try again in a few seconds.";
+        const auto unseated = party::unseated_partners(g_founder_nations, founder_legacy_match);
+        uint8_t guest = party::kNobody;
+        if (a.size() == 3) {
+            for (uint8_t p : unseated) if (std::to_string(p) == a[2]) guest = p;
+            if (guest == party::kNobody) return "That player is not a partner without a nation.";
+        } else if (unseated.size() == 1) {
+            guest = unseated[0];
+        } else {
+            return unseated.empty() ? "Every partner already has a nation." : "Name the partner: bind_guest <nation> <player id>.";
+        }
+        const size_t seat = std::max<size_t>(g_founder_nations.seats(), 1);
+        if (seat >= founders::kPlaySeats) return "Every founder seat is taken.";
+        auto key = creations::player_key(guest, creations::kCreature);
+        auto home_key = F<creations::Key>(player_civ(), kNationSpecies);
+        bool distinct = key.instance && home_key.instance && !(key == home_key);
+        for (size_t s = 1; s < g_founder_nations.seats(); ++s)
+            distinct = distinct && g_founder_nations.entries[s].species != key.instance;
+        if (!distinct || !creations::player_species(guest)) return "Waiting for a distinct, loaded guest species.";
+        void* nation = nullptr;
+        for (void* city : all_cities()) {
+            void* country = F<void*>(city, kCityCiv);
+            if (!country || country == player_civ() || pol_of(country) != raw) continue;
+            if (pol_of(city) != raw || (nation && nation != country)) return "City ownership is changing. Try again once it settles.";
+            nation = country;
+            auto city_key = F<creations::Key>(city, kCitySpecies);
+            if (city_key.instance && !(city_key == key)) return "This city already uses another species.";
+        }
+        if (!nation) return "No live capital or city belongs to that nation.";
+        auto& nation_key = F<creations::Key>(nation, kNationSpecies);
+        if (nation_key.instance && !(nation_key == key)) return "This nation already has a different species.";
+        founders::Roster next = g_founder_nations;
+        if (!next.seats()) next.entries[0] = {home_key.instance, pol_of(player_civ()), 0};
+        next.entries[seat] = {key.instance, pol_of(nation), identity::of(guest)};
+        auto stage = founders::Stage::Civilization;
+        if (!founders::can_record(planet, next, err, stage) || !creations::archive_guest_model(guest, planet, err) ||
+            !founders::record(planet, next, err, stage)) return err;
+        nation_key = key; // the native save owns this field. Spore derives live citizens from it as the city enters view.
+        for (const auto& p : C.sess->players()) // every partner's copy carries the roster and the species
+            if (p.id != C.sess->my_id() && !world::share_with(p.id, err, true))
+                return "Nation assigned; could not queue the save transfer. Retry the binding. " + err;
+        return "Guest species assigned to the nation (seat " + std::to_string(seat) + "). Saving and sharing the planet.";
+    }
+    if (a.size() == 1 && a[0] == "sites") { // BUG-9135 RE: the native city site records (docs/re/civ.md#civ-multi-founders)
+        if (!g_ok || game::mode_id() != modes::kCiv || !a_ExpansionGet) return "Open a Civilization planet first.";
+        uint8_t* ex = skg::cdecl_call<uint8_t*>(a_ExpansionGet);
+        if (!ex || !skg::readable(ex, 0xB4)) return "No city site manager.";
+        uint8_t* b = F<uint8_t*>(ex, 0x14);
+        uint8_t* e = F<uint8_t*>(ex, 0x18);
+        std::string out = "sites total=" + std::to_string(F<int>(ex, 0xAC)) + " not_appeared=" + std::to_string(F<int>(ex, 0xB0)) + "\n";
+        for (int k = 0; b && e > b && b + (k + 1) * 0x64 <= e && k < 32; ++k) {
+            uint8_t* rec = b + k * 0x64;
+            if (!skg::readable(rec, 0x64)) break;
+            char row[1200];
+            int n = snprintf(row, sizeof row, "site %d order=%d appeared=%u owner=%08X words:", k, F<int>(rec, 0x2C),
+                             (unsigned)F<uint8_t>(rec, 0x30), F<uint32_t>(rec, 0x38));
+            for (unsigned off = 0; off < 0x64 && n > 0 && n < (int)sizeof row - 32; off += 4)
+                n += snprintf(row + n, sizeof row - n, " +%02X=%08X(%g)", off, F<uint32_t>(rec, off), (double)F<float>(rec, off));
+            out += row;
+            out += '\n';
+        }
+        return out;
     }
     if (a.size() == 2 && a[0] == "bind_guest") {
         if (!active() || !is_host() || C.sess->players().size() != 2 || !player_civ())

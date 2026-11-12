@@ -90,6 +90,7 @@ struct City {
     uint32_t faction = 0; // the city's political id
     bool home = false;    // the city's nation is the native player country (the host's)
     bool blank = false;   // neither the city nor its nation has a species key yet (a fresh native city)
+    bool nation = true;   // the city has a nation (one without is no new capital; it still blocks a founding)
 };
 
 // A new partner capital is founded only while every city belongs to the host's nation or a founder nation: an
@@ -116,7 +117,7 @@ inline uint32_t new_capital(const std::vector<City>& cities, const founders::Ros
 {
     uint32_t found = 0;
     for (const auto& c : cities) {
-        if (c.home || r.contains_faction(c.faction))
+        if (!c.nation || c.home || r.contains_faction(c.faction))
             continue;
         if (found || !c.blank || !c.faction)
             return kAmbiguous;

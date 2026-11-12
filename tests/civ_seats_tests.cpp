@@ -98,6 +98,9 @@ int main()
     std::vector<City> npc{{0x21CA, true, false}, {0x21CB, false, false}, {0x21D0, false, false}};
     check(!only_founder_cities(npc, two), "an NPC nation: no founding");
     check(!only_founder_cities({}, two) && !only_founder_cities({{0x21CB, false, false}}, two), "no home city: no founding");
+    std::vector<City> orphan{{0x21CA, true, false}, {0x21CB, false, true}, {0x21D1, false, false, false}};
+    check(new_capital(orphan, none) == 0x21CB, "a city without a nation is no new capital");
+    check(!only_founder_cities(orphan, two), "a city without a nation blocks a founding");
 
     // identities_to_bind
     Roster legacy4 = four;
