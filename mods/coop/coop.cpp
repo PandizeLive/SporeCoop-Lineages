@@ -43,6 +43,7 @@
 #include "tribe.h"
 #include "drama.h"
 #include "identity.h"
+#include "party.h"
 #include "cellsync.h"
 #include "audio.h"
 #include "census.h"
@@ -2897,6 +2898,7 @@ void avatar_change_check()
         wobj::on_world_change();
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
+            party::on_world_change(); // roadmap 0b
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
             civ::on_world_change(); // BUG-0059
     }
@@ -3412,6 +3414,7 @@ void on_frame(void*, int, void*)
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
+    party::tick(now);                           // roadmap 0b
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
@@ -4059,6 +4062,7 @@ void end_session(EndPath path, bool cell)
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         identity::on_session_end(); // BUG-9135
+        party::on_session_end();    // roadmap 0b
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         wobj::on_session_end();
@@ -6645,7 +6649,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     adventure::init(H, M, &g_sess);
     H->command_add(M, "coop.identity", "coop.identity - this profile's persistent player identity and the ones the host knows (BUG-9135)",
                    [](void*, int, const char* const*, SkOut* out) {
-                       SAY("%s", identity::status().c_str());
+                       SAY("%s%s", identity::status().c_str(), party::status().c_str());
                        return 0;
                    }, nullptr, MT);
     H->command_add(M, "coop.giveup", "coop.giveup [down] - a downed player gives up now, as holding G does; down: a lethal hit on the own creature through the game's damage path (BUG-9118, tests)",
@@ -6895,6 +6899,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
     identity::init(H, M, &g_sess); // BUG-9135
+    party::init(H, M, &g_sess);    // roadmap 0b
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
     crc.sess = &g_sess;

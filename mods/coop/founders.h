@@ -209,4 +209,29 @@ bool model_ids(const std::string& planet_file, std::vector<uint32_t>& ids, std::
 bool load_guest_model(const std::string& planet_file, uint32_t id, std::vector<uint8_t>& data, std::string& err);
 bool store_guest_model(const std::string& planet_file, uint32_t id, const std::vector<uint8_t>& data, std::string& err);
 
+// BUG-9135 / roadmap 0b: the campaign's party, one seat per player who ever played this planet, persistent next to
+// the save (`.duoparty`, PTY1: u8 seats, per seat u64 player identity, u32 own creature species instance, str8 name).
+// Seat 0 is the host's. The seats of the founder rosters (Tribe villages, Civilization nations) and the Creature
+// nests are these seats. Data structures hold kMaxSeats; the game allows kPlaySeats players for now (owner decision).
+constexpr size_t kPlaySeats = 4;
+struct PartySeat {
+    uint64_t player = 0;   // identity.h; 0 = not known yet (a seat taken over from a two-founder save)
+    uint32_t species = 0;  // the seat's own creature (its key instance); 0 = plays the host's species
+    std::string name;      // the player's name when last seen (for an offline seat)
+    bool operator==(const PartySeat&) const = default;
+};
+struct Party {
+    std::vector<PartySeat> seats;
+    int seat_of(uint64_t player) const
+    {
+        if (player) for (size_t i = 0; i < seats.size(); ++i)
+            if (seats[i].player == player) return int(i);
+        return -1;
+    }
+    bool operator==(const Party&) const = default;
+};
+bool read_party(const std::string& planet_file, Party& out);
+// a party may only grow, and a seat's identity is learnt once: the same rule as the founder rosters
+bool record_party(const std::string& planet_file, const Party& value, std::string& err);
+
 } // namespace founders

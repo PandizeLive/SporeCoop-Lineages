@@ -726,4 +726,73 @@ bool store_guest_model(const std::string& key, uint32_t id, const std::vector<ui
     err = existing.empty() ? "Could not archive the guest creature in the host save." : "This planet already archives a different guest creature.";
     return false;
 }
+// BUG-9135 / roadmap 0b
+static bool party_valid(const Party& v)
+{
+    if (v.seats.empty() || v.seats.size() > kMaxSeats) return false;
+    for (size_t i = 0; i < v.seats.size(); ++i) {
+        if (v.seats[i].name.size() > 64) return false;
+        for (size_t j = i + 1; j < v.seats.size(); ++j)
+            if (v.seats[i].player && v.seats[i].player == v.seats[j].player) return false;
+    }
+    return true;
+}
+
+bool read_party(const std::string& key, Party& out)
+{
+    auto path = path_for(key, L".duoparty");
+    if (path.empty()) return false;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    std::array<uint8_t, 5 + kMaxSeats * (8 + 4 + 1 + 64) + 1> bytes{};
+    DWORD got = 0;
+    bool ok = ReadFile(f, bytes.data(), (DWORD)bytes.size(), &got, nullptr) && got < bytes.size();
+    CloseHandle(f);
+    if (!ok) return false;
+    net::Reader r(bytes.data(), got);
+    if (r.u32() != 0x31595450u) return false; // PTY1
+    Party value;
+    const unsigned n = r.u8();
+    for (unsigned i = 0; i < n && r.ok(); ++i) {
+        PartySeat s;
+        s.player = r.u64();
+        s.species = r.u32();
+        s.name = r.str8();
+        value.seats.push_back(std::move(s));
+    }
+    if (!r.ok() || r.left() || value.seats.size() != n || !party_valid(value)) return false;
+    out = std::move(value);
+    return true;
+}
+
+bool record_party(const std::string& key, const Party& value, std::string& err)
+{
+    auto path = path_for(key, L".duoparty");
+    if (path.empty() || !party_valid(value)) { err = "A saved planet and a valid party are required."; return false; }
+    Party prior;
+    const bool had = read_party(key, prior);
+    if (!had && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        err = "This planet's party file is unreadable; it was left as it is."; return false;
+    }
+    if (had) {
+        if (prior == value) return true;
+        if (value.seats.size() < prior.seats.size()) { err = "A party never loses a seat."; return false; }
+        for (size_t i = 0; i < prior.seats.size(); ++i)
+            if (prior.seats[i].player && prior.seats[i].player != value.seats[i].player) {
+                err = "A party seat belongs to another player."; return false;
+            }
+    }
+    net::Writer w;
+    w.u32(0x31595450u);
+    w.u8((uint8_t)value.seats.size());
+    for (const auto& s : value.seats) {
+        w.u64(s.player);
+        w.u32(s.species);
+        w.str8(s.name);
+    }
+    if (publish(path, w.data, had)) return true;
+    err = "Could not save the party. Check write access to the co-op save.";
+    return false;
+}
+
 } // namespace founders

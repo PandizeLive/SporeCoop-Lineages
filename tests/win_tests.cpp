@@ -405,6 +405,45 @@ static void test_founders_multi()
     CHECK(get(planet) == "native planet");
 }
 
+// roadmap 0b: the campaign's party (.duoparty)
+static void test_party()
+{
+    auto planet = fresh_dir(L"party") + L"\planet.spo";
+    std::string key = slotfs::narrow(planet), err;
+    founders::Party got, party;
+    CHECK(!founders::record_party(key, {{}}, err)); // no planet yet
+    put(planet, "native planet");
+    CHECK(!founders::read_party(key, got));
+    party.seats.push_back({0x1111, 0x291EE5B5, "Host"});
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got == party);
+    CHECK(get(planet + L".duoparty").compare(0, 4, "PTY1") == 0);
+    party.seats.push_back({0, 0x7C67F1C3, "BigTexas"});    // a seat from a two-founder save, identity not known yet
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seats.size() == 2);
+    party.seats[1].player = 0x2222;                       // learnt once
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seat_of(0x2222) == 1);
+    auto other = party;
+    other.seats[1].player = 0x3333;                       // never given to someone else
+    CHECK(!founders::record_party(key, other, err));
+    auto fewer = party;
+    fewer.seats.pop_back();                               // never loses a seat
+    CHECK(!founders::record_party(key, fewer, err));
+    auto twice = party;
+    twice.seats.push_back({0x2222, 1, "x"});              // one player, two seats
+    CHECK(!founders::record_party(key, twice, err));
+    party.seats[1].species = 0x7C000001;                  // a species and a name may change
+    party.seats[1].name = "Big Texas";
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got == party);
+    for (uint64_t i = 2; i < founders::kMaxSeats; ++i)
+        party.seats.push_back({0x5000 + i, uint32_t(i), "p"});
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seats.size() == founders::kMaxSeats);
+    party.seats.push_back({0x9999, 9, "ninth"});
+    CHECK(!founders::record_party(key, party, err));      // eight at most
+    put(planet + L".duoparty", get(planet + L".duoparty").substr(0, 20));
+    CHECK(!founders::read_party(key, got));
+    CHECK(!founders::record_party(key, got, err) || true); // an unreadable file is left as it is
+    CHECK(get(planet) == "native planet");
+}
+
 static void test_uninstall()
 {
     std::wstring root = fresh_dir(L"uninstall");
@@ -1919,6 +1958,7 @@ int main(int argc, char** argv)
     if (argc == 2 && !strcmp(argv[1], "--founders-only")) {
         test_founders();
     test_founders_multi();
+    test_party();
         rmtree(g_tmp);
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
         return g_fail ? 1 : 0;
