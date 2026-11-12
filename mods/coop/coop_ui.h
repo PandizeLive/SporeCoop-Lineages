@@ -65,7 +65,8 @@ struct Api {
     std::function<void(int)> creation_cycle;
     // BUG-9135 roadmap phase 4 (Tribe, tribe::late_prompt): this player has no village of their own; 1 they play no
     // creature of their own (the creation row asks them to choose one), 2 their own creature is chosen (the village
-    // comes); 0 no prompt. create_creature_offered: the "Create New Creature" button (tribe.late_create_editor)
+    // comes); 3 / 4 the same while their village still wears its stand-in (BUG-9150); 0 no prompt.
+    // create_creature_offered: the "Create New Creature" button (tribe.late_create_editor)
     std::function<int()> late_prompt;
     std::function<bool()> create_creature_offered;
     std::function<void()> create_creature;

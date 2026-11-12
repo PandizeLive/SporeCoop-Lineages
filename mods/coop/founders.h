@@ -249,6 +249,11 @@ bool record_outfit(const std::string& planet, size_t seat, uint32_t expected, ui
 bool model_ids(const std::string& planet_file, std::vector<uint32_t>& ids, std::string& err);
 bool load_guest_model(const std::string& planet_file, uint32_t id, std::vector<uint8_t>& data, std::string& err);
 bool store_guest_model(const std::string& planet_file, uint32_t id, const std::vector<uint8_t>& data, std::string& err);
+// BUG-9150 (owner decision 14, "1B"): founder seats founded with a stand-in (a copy of the host's creature under a key of
+// the late joiner's own, archived like a partner's creature) until their player has a creature of their own. The
+// stand-in keys of a planet, <planet>.duostandins (up to kMaxSeats u32, little endian; a missing file: none).
+bool read_stand_ins(const std::string& planet_file, std::vector<uint32_t>& keys);
+bool add_stand_in(const std::string& planet_file, uint32_t key, std::string& err);
 
 // BUG-9135 / roadmap 0b: the campaign's party, one seat per player who ever played this planet, persistent next to
 // the save (`.duoparty`, PTY1: u8 seats, per seat u64 player identity, u32 own creature species instance, str8 name).

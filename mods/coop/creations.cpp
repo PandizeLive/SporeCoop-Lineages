@@ -3824,6 +3824,41 @@ bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& 
     return decode_founder(w.data, b, err) && founders::store_guest_model(planet, b.key.instance, w.data, err);
 }
 
+// BUG-9150 (owner decision 14, "1B"): a stand-in for a late joiner's village until they have a creature of their own: the
+// host's creature (its model and metadata records) under a key of the joiner's own (shared_instance of the joiner and
+// the content), archived in the planet like a partner's creature. So it looks like the host's species while every rule
+// that wants one species per founder seat holds, the save restores it, and the founder repair (tribe.cpp,
+// wrong_founder_tick) later swaps it for the joiner's own creature in place.
+bool make_stand_in(uint8_t player, const Key& host, const std::string& planet, Key& out, std::string& err)
+{
+    if (!player || player >= 0xFE || !host.instance || !is_crt(host)) { err = "No player or host creature for a stand-in."; return false; }
+    std::vector<dbpf::Record> recs;
+    if (!records_from_game(host, recs)) { err = "The host creature's records are not readable for a stand-in."; return false; }
+    Bundle b;
+    b.key = host;
+    for (auto& r : recs)
+        if ((r.key.type == kBem || r.key.type == kMeta) && r.key.instance == host.instance && r.key.group == host.group)
+            b.recs.push_back(r);
+    const std::vector<uint8_t> payload = pack(b);
+    const uint32_t inst = shared_instance(player, fnv(payload.data(), payload.size()));
+    net::Writer w;
+    w.u32(0x31414744); w.u32(inst); w.u8(player);
+    w.raw(payload.data(), payload.size());
+    Bundle checked;
+    if (!decode_founder(w.data, checked, err)) return false;
+    std::vector<dbpf::Record> current;
+    if (!records_from_game(checked.key, current) &&
+        (!find_paths() ||
+         !package_for(g_dir + L"\\founder_" + slotfs::widen(upd::sha256_hex(w.data)) + L".package", checked.recs, kPrioModel))) {
+        err = "Could not register the stand-in creature.";
+        return false;
+    }
+    if (!founders::store_guest_model(planet, inst, w.data, err)) return false;
+    out = {inst, host.type, host.group};
+    H->log(M, SK_INFO, "creations: stand-in %08X for player %u: a copy of the host's %08X (BUG-9150)", inst, player, host.instance);
+    return true;
+}
+
 static bool restore_model(const std::string& planet, uint32_t id, std::string& err)
 {
     std::vector<uint8_t> archive;

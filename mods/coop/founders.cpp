@@ -718,6 +718,45 @@ bool load_guest_model(const std::string& key, uint32_t id, std::vector<uint8_t>&
     return ok;
 }
 
+bool read_stand_ins(const std::string& key, std::vector<uint32_t>& keys)
+{
+    keys.clear();
+    std::wstring path = path_for(key, L".duostandins");
+    if (path.empty()) return false;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return GetLastError() == ERROR_FILE_NOT_FOUND;
+    uint8_t data[4 * kMaxSeats + 1];
+    DWORD got = 0;
+    const bool ok = ReadFile(f, data, sizeof data, &got, nullptr) && got % 4 == 0 && got <= 4 * kMaxSeats;
+    CloseHandle(f);
+    if (!ok) return false;
+    for (DWORD i = 0; i + 4 <= got; i += 4) {
+        const uint32_t k = data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | ((uint32_t)data[i + 3] << 24);
+        if ((k >> 24) != 0x7C) { keys.clear(); return false; }
+        keys.push_back(k);
+    }
+    return true;
+}
+
+bool add_stand_in(const std::string& key, uint32_t id, std::string& err)
+{
+    std::vector<uint32_t> keys;
+    std::wstring path = path_for(key, L".duostandins");
+    if (path.empty() || (id >> 24) != 0x7C || !read_stand_ins(key, keys)) {
+        err = "Could not read this planet's stand-in creatures.";
+        return false;
+    }
+    if (std::find(keys.begin(), keys.end(), id) != keys.end()) return true;
+    if (keys.size() >= kMaxSeats) { err = "This planet has too many stand-in creatures."; return false; }
+    keys.push_back(id);
+    std::vector<uint8_t> data;
+    for (uint32_t k : keys)
+        for (int b = 0; b < 4; ++b) data.push_back((uint8_t)(k >> (8 * b)));
+    if (publish(path, data, true)) return true;
+    err = "Could not save this planet's stand-in creatures.";
+    return false;
+}
+
 bool store_guest_model(const std::string& key, uint32_t id, const std::vector<uint8_t>& data, std::string& err)
 {
     std::wstring path = model_path(key, id);

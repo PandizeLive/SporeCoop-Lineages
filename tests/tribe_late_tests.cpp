@@ -39,6 +39,19 @@ int main()
     // the switches' off sides: as before
     check(founding_wait(host_creation, false, true) == Wait::Ready, "tribe.founder_settle off: no host-creation check");
     check(founding_wait(founder_species, true, false) == Wait::Ready, "tribe.founding_skip off: counted ready (BUG-9138)");
+    // BUG-9150 (tribe.stand_in): the three waits for a creature of their own found now with a stand-in
+    check(founding_wait(none_settled, true, true, true) == Wait::StandIn, "stand-in: no creature once settled");
+    check(founding_wait(host_creation, true, true, true) == Wait::StandIn, "stand-in: one of the host's creations");
+    check(founding_wait(founder_species, true, true, true) == Wait::StandIn, "stand-in: a founder's species");
+    check(founding_wait(none, true, true, true) == Wait::NoCreatureYet, "stand-in: a young world still waits");
+    check(founding_wait(settling, true, true, true) == Wait::Settling, "stand-in: a creature that may still change waits");
+    check(founding_wait(ready, true, true, true) == Wait::Ready, "stand-in: an own creature is founded with it");
+    check(founds_now(Wait::StandIn) && founds_now(Wait::Ready) && !founds_now(Wait::NoCreature), "founds_now");
+    {
+        std::vector<Wait> waits{founding_wait(none_settled, true, true, true), founding_wait(ready, true, true, true)};
+        int why = 0;
+        check(pick_partner(waits, &why) == 0 && why == -1, "stand-in: the first partner is founded at once");
+    }
     check(told(Wait::NoCreature) && told(Wait::HostCreation) && told(Wait::FounderSpecies) && !told(Wait::Settling) &&
               !told(Wait::NoCreatureYet) && !told(Wait::Ready),
           "told waits");
@@ -86,6 +99,11 @@ int main()
     check(prompt(true, false, false, kPromptSettle) == Prompt::ChooseCreature, "late joiner without a creature of their own");
     check(prompt(true, true, false, 100) == Prompt::None, "has a village (an older seat founded with the host's creature)");
     check(prompt(true, false, true, 100) == Prompt::VillageComing, "plays their own creature: the selector stays, the founding follows");
+    // BUG-9150: a village that wears its stand-in keeps the prompt; one with the player's own creature does not
+    check(prompt(true, true, false, 100, true) == Prompt::StandInChoose, "stand-in village: choose or make a creature");
+    check(prompt(true, true, true, 100, true) == Prompt::StandInComing, "stand-in village, own creature chosen: it comes");
+    check(prompt(true, true, false, 100, false) == Prompt::None, "own village: no prompt");
+    check(prompt(true, true, false, 1, true) == Prompt::None, "stand-in village, world not settled: no prompt yet");
     check(prompt(true, true, true, 100) == Prompt::None, "founded: the window as before");
     check(prompt(true, false, false, kPromptSettle - 1) == Prompt::None, "the world has not settled");
     check(prompt(false, false, false, 100) == Prompt::None, "not a guest in Tribe");

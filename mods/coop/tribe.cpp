@@ -4729,6 +4729,30 @@ COOP_FIX("tribe.late_prompt", "BUG-9135", g_late_prompt,
 static bool g_founding_skip = true;
 COOP_FIX("tribe.founding_skip", "BUG-9138", g_founding_skip,
          "tribe: a partner who plays a founder's species waits with a reason; the partners after them are still founded");
+// BUG-9150 (owner decision 14, "1B"): a partner without a creature of their own (none, one of the host's creations, a
+// founder's species) gets their village at once, founded with a stand-in: a copy of the host's creature under a key of
+// their own (creations::make_stand_in, listed in <planet>.duostandins). When they choose or make a creature of their
+// own, the founder repair (wrong_founder_tick, BUG-9137) puts it on the same villagers in place (the outfit path).
+// Off: they wait for a creature of their own as before (tribe.late_prompt).
+static bool g_stand_in = true;
+COOP_FIX("tribe.stand_in", "BUG-9150", g_stand_in,
+         "tribe: a late joiner without a creature of their own gets a village at once, with a stand-in of the host's creature");
+static std::vector<uint32_t> g_stand_ins; // this planet's stand-in keys (host and guests: read from the save)
+static std::string g_stand_ins_planet;
+static double g_stand_ins_read;
+static uint32_t g_stand_ins_made, g_stand_ins_swapped;
+static bool stand_in_key(uint32_t key)
+{
+    if (!key) return false;
+    const auto planet = world::current_game_key();
+    const double now = H->time_seconds();
+    if (planet != g_stand_ins_planet || now - g_stand_ins_read > 5) { // a share or a checkpoint brings a new list
+        g_stand_ins_planet = planet;
+        g_stand_ins_read = now;
+        if (!founders::read_stand_ins(planet, g_stand_ins)) g_stand_ins.clear();
+    }
+    return std::find(g_stand_ins.begin(), g_stand_ins.end(), key) != g_stand_ins.end();
+}
 static uint8_t g_founding_wait_player = 0xFF; // host: the partner the status line is about (0xFF: none)
 static tribe_late::Wait g_founding_wait_kind = tribe_late::Wait::Ready;
 
@@ -4753,7 +4777,7 @@ static tribe_late::Wait founding_wait(uint8_t partner, double now)
     s.settled = founder_creature_settled(partner, now) && (s.has_creature || (C.here && C.here(partner)));
     s.host_creation = s.has_creature && creations::plays_host_creation(partner, creations::kCreature);
     s.founder_species = s.has_creature && founder_species(creature);
-    return tribe_late::founding_wait(s, g_found_settle_fix, g_founding_skip);
+    return tribe_late::founding_wait(s, g_found_settle_fix, g_founding_skip, g_stand_in && g_late_prompt);
 }
 
 // the partner is ready for a village of their own (BUG-9137 guards, BUG-9138); `why`: a reason worth telling, `kind`
@@ -4771,7 +4795,7 @@ static bool founding_ready(uint8_t partner, double now, std::string* why, tribe_
             *why = name + " plays the creature of another founder's village. They need a creature of their own for their own village.";
         // a partner without any creature was not told before tribe.late_prompt
     }
-    return wait == tribe_late::Wait::Ready;
+    return tribe_late::founds_now(wait);
 }
 
 // host: the status line of the Co-op window while a connected partner waits for a creature of their own
@@ -4794,10 +4818,23 @@ static bool guest_has_village()
     return false;
 }
 
+// guest, BUG-9150: this player's own village still wears its stand-in (its members' species is one of the save's stand-ins)
+static bool guest_village_stand_in()
+{
+    if (!g_stand_in) return false;
+    void* home = player_tribe();
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner == C.sess->my_id() && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) != home)
+            return stand_in_key(game::species_key(m.c).instance);
+    return false;
+}
+
 int late_prompt()
 {
     if (!g_late_prompt || !active() || !is_guest() || local_play()) return 0;
-    return (int)tribe_late::prompt(true, guest_has_village(), creations::plays_own_creature(), H->time_seconds() - g_auto_found_entered);
+    const bool has = guest_has_village();
+    return (int)tribe_late::prompt(true, has, creations::plays_own_creature(), H->time_seconds() - g_auto_found_entered,
+                                   has && guest_village_stand_in());
 }
 
 // a seat of an older save learns its player's identity (outside the frame: it writes the planet's founder roster)
@@ -4931,12 +4968,12 @@ static void found_partners()
         return;
     }
     uint8_t partner = 0xFE, why_player = 0xFF;
-    tribe_late::Wait why_kind = tribe_late::Wait::Ready;
+    tribe_late::Wait why_kind = tribe_late::Wait::Ready, partner_kind = tribe_late::Wait::Ready;
     std::string why;
     for (uint8_t p : unseated) {
         std::string reason;
         tribe_late::Wait kind;
-        if (founding_ready(p, now, &reason, &kind)) { partner = p; break; }
+        if (founding_ready(p, now, &reason, &kind)) { partner = p; partner_kind = kind; break; }
         if (why.empty() && !reason.empty()) { why = reason; why_player = p; why_kind = kind; }
     }
     if (partner >= 0xFE) { // the host's status line names them (tribe.late_prompt)
@@ -4957,9 +4994,17 @@ static void found_partners()
         founders_refresh(report);
         return;
     }
-    const auto key = creations::player_key(partner, creations::kCreature);
+    auto key = creations::player_key(partner, creations::kCreature);
     void* species = creations::player_species(partner);
     const uint64_t id = identity::of(partner);
+    // BUG-9150: no creature of their own: a stand-in of the host's creature (the same key on every try: owner + content)
+    const bool stand_in = partner_kind == tribe_late::Wait::StandIn;
+    if (stand_in) {
+        creations::Key s;
+        if (!creations::make_stand_in(partner, {home_species, 0x2B978C46, 0x40626200}, planet, s, error)) { stop(error); return; }
+        key = s;
+        species = game::species_by_key({s.instance, s.type, s.group});
+    }
     if (!species || !key.instance || key.instance == home_species) { stop({}); return; }
     for (size_t s = 0; s < seat; ++s)
         if (roster.entries[s].species == key.instance || g_outfits.contains(s, key.instance)) {
@@ -4985,7 +5030,7 @@ static void found_partners()
         }
         village = t;
     }
-    if (!creations::archive_guest_model(partner, planet, error)) { stop(error); return; }
+    if (!stand_in && !creations::archive_guest_model(partner, planet, error)) { stop(error); return; }
     auto forget_pending = [&]() {
         g_found_pending.erase(std::remove_if(g_found_pending.begin(), g_found_pending.end(),
                                              [&](const FoundPending& p) { return id ? p.id == id : (!p.id && p.player == partner); }),
@@ -5013,6 +5058,16 @@ static void found_partners()
     next.entries[seat].faction = F<uint32_t>(village, 0x30);
     if (!founders::record(planet, next, error)) { stop(error); return; }
     g_order_roster = next;
+    if (stand_in) { // BUG-9150: listed, so the repair puts their own creature on the village later
+        std::string list_error;
+        if (!founders::add_stand_in(planet, key.instance, list_error))
+            H->log(M, SK_WARN, "tribe automatic founders: stand-in %08X not listed: %s", key.instance, list_error.c_str());
+        g_stand_ins_read = -1e9;
+        g_stand_ins_made++;
+        if (C.notice)
+            C.notice(C.sess->name_of(partner) + " has no creature of their own yet: their village starts with the host's creature. "
+                     "Choose or make one in the Co-op window (F9) and the village takes it.");
+    }
     if (g_outfits.species[seat].empty()) g_outfits.species[seat] = {key.instance};
     forget_pending();
     g_found_made++;
@@ -6560,7 +6615,7 @@ static void wrong_founder_tick(double now)
         const uint32_t model = guest ? creations::player_key(guest, creations::kCreature).instance : 0;
         const uint32_t founded = g_order_roster.entries[seat].species;
         if (!model || !founded || founder_model((size_t)seat, model) || other_founder_model(seat, model) ||
-            g_outfits.species[seat].size() != 1 || !creations::host_owns(founded) ||
+            g_outfits.species[seat].size() != 1 || !(creations::host_owns(founded) || (g_stand_in && stand_in_key(founded))) ||
             creations::plays_host_creation(guest, creations::kCreature) || !founder_creature_settled(guest, now) ||
             !creations::player_species(guest)) continue;
         g_wrong_founder_queued = true;
@@ -6585,9 +6640,13 @@ static void wrong_founder_tick(double now)
                 !founders::record_outfit(planet, (size_t)seat, g_outfits.current((size_t)seat), model, error) ||
                 !founders::read_outfits(planet, g_outfits, error) || !apply_guest_model(village, model, seat, error)) { fail(error); return; }
             g_wrong_founder_repairs++;
-            H->log(M, SK_INFO, "tribe: founder repair (BUG-9137): the guest village was founded with the host's %08X, now %08X (seat %d)",
-                   g_order_roster.entries[seat].species, model, seat);
-            if (C.notice) C.notice("Your partner's village now uses their own creature.");
+            const bool was_stand_in = stand_in_key(g_order_roster.entries[seat].species);
+            if (was_stand_in) g_stand_ins_swapped++;
+            H->log(M, SK_INFO, "tribe: founder repair (BUG-9137%s): the guest village was founded with %08X, now %08X (seat %d)",
+                   was_stand_in ? ", BUG-9150 stand-in" : "", g_order_roster.entries[seat].species, model, seat);
+            if (C.notice)
+                C.notice(was_stand_in ? C.sess->name_of(guest) + "'s village now wears their own creature."
+                                      : std::string("Your partner's village now uses their own creature."));
             if (!world::checkpoint_reload(error)) fail("Native outfit applied; checkpoint could not start: " + error);
         }, new Repair{g_campaign_epoch, seat});
         return; // one a tick
@@ -7078,8 +7137,9 @@ std::string status()
                  (unsigned)founder_seats(), g_found_made, g_found_at_nest, g_identities_bound, (unsigned)g_found_pending.size());
         out += b;
         // roadmap phase 4: the partner waiting for a creature of their own, the catch-ups of late villages
-        snprintf(b, sizeof b, "tribe late: prompt=%d skip=%d catch_up=%d catch_ups=%u members_added=%u racks_added=%u waiting=%u\n",
-                 (int)g_late_prompt, (int)g_founding_skip, (int)g_late_catch_up, g_catch_ups, g_catch_up_members, g_catch_up_racks,
+        snprintf(b, sizeof b, "tribe late: prompt=%d skip=%d catch_up=%d stand_in=%d made=%u swapped=%u catch_ups=%u members_added=%u racks_added=%u waiting=%u\n",
+                 (int)g_late_prompt, (int)g_founding_skip, (int)g_late_catch_up, (int)g_stand_in, g_stand_ins_made, g_stand_ins_swapped,
+                 g_catch_ups, g_catch_up_members, g_catch_up_racks,
                  (unsigned)g_founding_wait_player);
         out += b;
         for (int seat = 0; seat < (int)founder_seats(); ++seat) {

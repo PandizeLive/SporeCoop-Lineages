@@ -39,6 +39,9 @@
   ends the session: the slots rise to fit everyone, and the chat says so
   (BUG-9143).
 - Co-op window: the "Give To" button is gone (BUG-9148).
+- Tribe: a friend who joins without a creature of their own gets their village
+  right away, wearing the host's creature for now; when they choose or make
+  their own creature, the same villagers take it on (BUG-9150).
 - Creature and Adventures: with three or four players a downed player can be
   revived by any partner. Before, only two-player games had the knockout; with
   more players a lethal hit was a plain death (BUG-9146).

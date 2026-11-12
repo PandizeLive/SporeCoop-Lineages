@@ -757,10 +757,12 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9140](BUG-9140-tools-tickets-py-new-fails-on-windows-it-imports.md) | fixed | tooling | All | 2026-11-12 | unreleased | tools/tickets.py new fails on Windows: it imports fcntl |
 | [BUG-9141](BUG-9141-revive-countdowns-become-a-draining-ring-on-ever.md) | fixed | feature | Cell Creature Tribe | 2026-11-12 | unreleased | revive countdowns become a draining ring on every stage with revives |
 | [BUG-9142](BUG-9142-a-connected-player-does-not-see-the-progress-deb.md) | open | bug | Creature Cell | 2026-11-12 |  | a connected player does not see the progress debt on the progress bar |
-| [BUG-9143](BUG-9143-loading-a-save-with-fewer-player-slots-than-play.md) | open | bug | all | 2026-11-12 |  | loading a save with fewer player slots than players connected ends the whole session |
+| [BUG-9143](BUG-9143-loading-a-save-with-fewer-player-slots-than-play.md) | fixed | bug | all | 2026-11-12 | unreleased | loading a save with fewer player slots than players connected ends the whole session |
 | [BUG-9144](BUG-9144-lobby-player-slots-with-an-apply-button-no-send.md) | fixed | feature | all | 2026-11-12 | unreleased | lobby: Player Slots with an Apply button; no Send World button |
 | [BUG-9145](BUG-9145-editor-depth-cube-highlights-but-cannot-be-dragg.md) | fixed | bug | Creature | 2026-11-12 | unreleased | editor depth cube highlights but cannot be dragged in some camera orientations |
 | [BUG-9146](BUG-9146-creature-and-adventure-no-knockout-or-revive-wit.md) | fixed | bug | Creature Adventure | 2026-11-12 | unreleased | creature and adventure: no knockout or revive with three or four players |
 | [BUG-9147](BUG-9147-tribe-the-host-s-last-villager-killed-by-the-co.md) | open | bug | Tribe | 2026-11-12 |  | tribe: the host's last villager killed by the co-op epic without the knockout, native game over |
-| [BUG-9148](BUG-9148-co-op-window-no-give-to-button.md) | open | feature | all | 2026-11-12 |  | co-op window: no Give To button |
-| [BUG-9149](BUG-9149-downed-players-wait-a-minute-for-a-revive-on-eve.md) | open | feature | all | 2026-11-12 |  | downed players wait a minute for a revive on every stage |
+| [BUG-9148](BUG-9148-co-op-window-no-give-to-button.md) | fixed | feature | all | 2026-11-12 | unreleased | co-op window: no Give To button |
+| [BUG-9149](BUG-9149-downed-players-wait-a-minute-for-a-revive-on-eve.md) | fixed | feature | all | 2026-11-12 | unreleased | downed players wait a minute for a revive on every stage |
+| [BUG-9150](BUG-9150-tribe-a-late-joiner-s-village-starts-with-a-stan.md) | open | feature | Tribe | 2026-11-12 |  | tribe: a late joiner's village starts with a stand-in of the host's creature and takes theirs in place |
+| [BUG-9151](BUG-9151-creature-after-a-partner-s-editor-their-own-nest.md) | open | bug | Creature | 2026-11-12 |  | creature: after a partner's editor their own nest is rebuilt for the new species and the old one stays |

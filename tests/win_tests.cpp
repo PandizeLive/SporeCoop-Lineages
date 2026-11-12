@@ -208,6 +208,15 @@ static void test_founders()
     CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == quartet);
     CHECK(founders::queue_seats(key,2,5,err));
     CHECK(founders::update_seats(key,3,5,true,settings,plan,err) && settings == quartet && !plan.next_seats);
+    // BUG-9150: the planet's stand-in list (<planet>.duostandins)
+    {
+        std::vector<uint32_t> si;
+        CHECK(founders::read_stand_ins(key,si) && si.empty());
+        CHECK(founders::add_stand_in(key,0x7C112233u,err) && founders::add_stand_in(key,0x7C445566u,err));
+        CHECK(founders::add_stand_in(key,0x7C112233u,err)); // already listed
+        CHECK(!founders::add_stand_in(key,0x29112233u,err)); // not a shared key
+        CHECK(founders::read_stand_ins(key,si) && si == std::vector<uint32_t>({0x7C112233u,0x7C445566u}));
+    }
     // Owner decision 2026-11-12: more seats in the running stage at once (founders::raise_now / raise_seats)
     {
         founders::CampaignRules r{3,100};

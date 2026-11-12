@@ -3600,3 +3600,23 @@ already in overrides_dc04aee5.sym.
   minutes (host log 06:18, 06:28, 06:38 ...); left alone for 4 hours at 5 FPS the host, MSI and old partner villages
   were down to their chief (1 member each), the newest village to 7. Undefended villages lose members to it: normal
   play, not a bug (BUG-9135 ticket, "Seats added mid-stage").
+
+## Late joiners' stand-in villages (2026-11-12, feat/lineages-47)
+<a id="tribe-stand-in"></a>
+
+BUG-9150, owner decision 14 ("1B"). Switch `tribe.stand_in` (on). Code: creations.cpp make_stand_in, founders.cpp
+read_stand_ins / add_stand_in, tribe.cpp found_partners / wrong_founder_tick / late_prompt, tribe_late.h.
+
+* A partner whose wait would be NoCreature, HostCreation or FounderSpecies ([tribe-late-joiners](#tribe-late-joiners))
+  is founded at once: StandIn. The stand-in species is the host village's species re-keyed for that player:
+  records_from_game(host key) keeps the model (kBem) and metadata (kMeta) records, pack() adds part descriptions, the key
+  is shared_instance(player, fnv(payload)) (the same on every try), and the archive is a normal founder archive
+  (DGA1 header, owner = the player), so decode_founder checks it, the save restores it before the planet loads
+  (restore_guest_model) and guests get it with the world. The stand-in keys are listed in `<planet>.duostandins`.
+* ✔ (live) The repair of BUG-9137 (wrong_founder_tick) treats a listed stand-in like a village founded with one of the
+  host's creations: once the seat's player has a creature of their own (records, settled, no founder's species), the
+  outfit history gets it and apply_guest_model puts it on the same members (no member is replaced), then a checkpoint.
+* Guest: its own village (members owned by it outside the host's village) whose species is listed is a stand-in:
+  late_prompt 3 (choose) / 4 (chosen, coming); 0 once the members wear its own creature.
+* ~ Open: a seat still on its stand-in at the Tribe -> Civ graduation gets a capital with the stand-in species
+  (outfits.current); a player who never comes back keeps a village that looks like the host's.

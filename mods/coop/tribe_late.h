@@ -26,6 +26,8 @@ enum class Wait : uint8_t {
     Settling,       // their creature for this world may still change (BUG-9137: 15 s after the world, 10 s after a change)
     HostCreation,   // plays one of the host's own creations (sent without records, BUG-9137)
     FounderSpecies, // plays the species of a founder's village (the host's species, an outfit of it, another partner's)
+    StandIn,        // BUG-9150 (owner decision 14, "1B"): one of the three above, founded now with a stand-in of the
+                    // host's creature that takes their own creature in place later
 };
 
 struct PartnerState {
@@ -39,17 +41,22 @@ struct PartnerState {
 // `settle_fix`: tribe.founder_settle (BUG-9137; off: neither the wait nor the host-creation check).
 // `skip_fix`: tribe.founding_skip (BUG-9138; off: a partner on a founder's species counts as ready and then stops the
 // founding with a message or silently, for every partner after them too).
-inline Wait founding_wait(const PartnerState& p, bool settle_fix, bool skip_fix)
+// `stand_in`: tribe.stand_in (BUG-9150): a partner without a creature of their own (no creature once settled, one of
+// the host's creations, a founder's species) is founded at once with a stand-in instead of waiting.
+inline Wait founding_wait(const PartnerState& p, bool settle_fix, bool skip_fix, bool stand_in = false)
 {
     if (p.pending) return Wait::Ready; // the village is made: finish saving its seat
-    if (!p.has_creature) return p.settled ? Wait::NoCreature : Wait::NoCreatureYet;
+    if (!p.has_creature) return p.settled ? (stand_in ? Wait::StandIn : Wait::NoCreature) : Wait::NoCreatureYet;
     if (settle_fix) {
         if (!p.settled) return Wait::Settling;
-        if (p.host_creation) return Wait::HostCreation;
+        if (p.host_creation) return stand_in ? Wait::StandIn : Wait::HostCreation;
     }
-    if (skip_fix && p.founder_species) return Wait::FounderSpecies;
+    if (skip_fix && p.founder_species) return stand_in ? Wait::StandIn : Wait::FounderSpecies;
     return Wait::Ready;
 }
+
+// a partner founded now: with their own creature (Ready) or with a stand-in (StandIn)
+inline bool founds_now(Wait w) { return w == Wait::Ready || w == Wait::StandIn; }
 
 // a wait worth telling the host and the partner (the others are seconds long)
 inline bool told(Wait w) { return w == Wait::NoCreature || w == Wait::HostCreation || w == Wait::FounderSpecies; }
@@ -60,7 +67,7 @@ inline int pick_partner(const std::vector<Wait>& waits, int* why = nullptr)
 {
     if (why) *why = -1;
     for (size_t i = 0; i < waits.size(); ++i) {
-        if (waits[i] == Wait::Ready) return (int)i;
+        if (founds_now(waits[i])) return (int)i;
         if (why && *why < 0 && told(waits[i])) *why = (int)i;
     }
     return -1;
@@ -97,12 +104,16 @@ enum class Prompt : uint8_t {
     None = 0,       // has a village, not a guest in Tribe, or the world has not settled: the window as before
     ChooseCreature, // no creature of their own: "Choose your own creature for this game" with the creature selector
     VillageComing,  // their own creature was chosen, the host founds the village: the selector stays for a change
+    StandInChoose,  // BUG-9150: their village wears a stand-in of the host's creature: choose or make their own
+    StandInComing,  // BUG-9150: their own creature was chosen: the village takes it shortly
 };
 
-// a guest in the host's Tribe world without a village of their own, once the world settled
-inline Prompt prompt(bool guest_in_tribe, bool has_village, bool plays_own, double seconds_in_world)
+// a guest in the host's Tribe world without a village of their own (or with one that still wears its stand-in), once
+// the world settled
+inline Prompt prompt(bool guest_in_tribe, bool has_village, bool plays_own, double seconds_in_world, bool stand_in_village = false)
 {
-    if (!guest_in_tribe || has_village || seconds_in_world < kPromptSettle) return Prompt::None;
+    if (!guest_in_tribe || seconds_in_world < kPromptSettle) return Prompt::None;
+    if (has_village) return !stand_in_village ? Prompt::None : plays_own ? Prompt::StandInComing : Prompt::StandInChoose;
     return plays_own ? Prompt::VillageComing : Prompt::ChooseCreature;
 }
 

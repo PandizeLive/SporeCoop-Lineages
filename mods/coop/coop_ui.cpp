@@ -1566,6 +1566,13 @@ static void refresh_lobby()
                           "Вы играете своим существом: хост скоро создаст с ним вашу столицу.")
                       : T("You play your own creature: the host founds your village with it shortly.",
                           "Вы играете своим существом: хост скоро создаст с ним вашу деревню.");
+    // BUG-9150: the village wears a stand-in of the host's creature until the player's own creature reaches it
+    else if (wl.empty() && g_status.empty() && late == 3)
+        wl = T("Your village wears the host's creature for now. Choose your own creature below.",
+               "Ваша деревня пока носит существо хоста. Выберите своё ниже.");
+    else if (wl.empty() && g_status.empty() && late == 4)
+        wl = T("You play your own creature: your village takes it shortly.",
+               "Вы играете своим существом: деревня скоро примет его.");
     int share_why = share_blocked();
     if (wl.empty() && g_status.empty() && share_why) // BUG-0597: a host alone can play now
         wl = share_why == 1 && rows.size() <= 1
@@ -1594,7 +1601,7 @@ static void refresh_lobby()
             cl = T("No creatures of your own yet: make one in a creature editor", "Своих существ пока нет: создайте его в редакторе");
             hint = true;
         } else
-            cl = std::string(late == 1 ? T("Choose your own creature for this game: ", "Выберите своё существо для этой игры: ")
+            cl = std::string(late == 1 || late == 3 ? T("Choose your own creature for this game: ", "Выберите своё существо для этой игры: ")
                                        : T("Your creature for this game: ", "Ваше существо в этой игре: ")) +
                  (cname.empty() ? std::string(T("none yet", "пока нет")) : cname);
     } else if (A.creation && A.creation(ck, cname, cown)) {
