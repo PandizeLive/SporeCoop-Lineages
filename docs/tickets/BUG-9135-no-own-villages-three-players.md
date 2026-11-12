@@ -83,3 +83,34 @@ arriving.
 ## Decisions (2026-11-12)
 The owner's confirmed decisions for 3-4 players with own nests, and the proposed foundation phase, are in
 docs/ROADMAP.md (the overview kept up to date); this ticket keeps the code-level details.
+
+## Roadmap phase 3, Tribe parts (2026-11-12, feat/lineages-47): built, not yet run in a game
+Remaining phases 1-4 above (Tribe binding, founding, rules, state on the wire) in tribe.cpp behind `tribe.multi_founders`
+(on; off = the two-founder co-op exactly as before). Details: docs/re/tribe.md#tribe-multi-founders. Pure parts
+(counts, the TRRS rescue trailer, the command seat word, the founding hold for older seats, the HUD food line) in
+tribe_seats.h with tests/tribe_seats_tests.cpp (host unit test, in `make test`).
+* Seat binding through party::founder_seat_of / founder_player_of (identity, else the creature match); a seat without
+  identity learns its partner's identity once (founders::record, DUO1 becomes DUO2); `coop.tribe bind_founder`.
+* Founding: one village per unseated partner, one a tick, the partner's own Creature nest as the site when usable,
+  else the next free site; BUG-9137 guards per partner; one checkpoint after the last.
+* Orders, ownership, food, purchases, performances, outfit votes, rescue / capture / rebuild per seat; every rule that
+  counted two founders counts the founder seats (h_NounData, pace_holds, missing_last_objective 4 + seats, backfill
+  5 + seats, six-rival trial 6 + seats, h_FactionFlag, village_allied_with_founder, shared_hut_upgrade, rewind hold).
+* Wire: two seats byte for byte as before; 3+ seats: a food entry per founder village, rescue trailer TRRS
+  (n x {u16 member, u16 tenths}, u8 n, u32 tag); CMD_REBUILD / CMD_GIVE_UP: seat + 1 in the action word (0: not given).
+* Not changed (fixtures with exactly one guest): `coop.tribe register_guest / found_guest / refound_guest`.
+
+To verify live (host + two partners, three games; then once with the switch off):
+1. Fresh Creature -> Tribe with three players (each with an own creature and nest): both partners get a village
+   (log `tribe automatic founders: seat 1 / seat 2 ...`, `at their own nest` or `at the next free site`), one
+   checkpoint reload; `coop.tribe` on the host: `seats=3`, both partner seats with an identity and a commander.
+2. Each partner selects and orders only their own village's members (walk, gather, raid, equip, build, baby, perform);
+   the other partner's members are refused (`coop.tribe` rejected count on the host).
+3. Food line on each guest (`Host X   You Y`) shows its own village; the host's line lists both partners.
+4. Down the last villager of partner 2's village: protected; partner 1's or the host's villager revives it; a guest's
+   hold-G gives up only its own; capture and `coop.tribe rebuild` from another founder rebuild that seat.
+5. Tribal outfit vote (all three edit): each village gets its own partner's outfit, one checkpoint.
+6. Rejoin of a partner (another network id): the same seat by identity; a third partner joining later gets the next
+   seat; with an older save (seat 1 without identity) the seat-1 partner is recognised by creature and bound.
+7. Campaign: a rival appears with three founders, goals count founders + NPCs (`coop.tribe npc_budget`), hut upgrades
+   reach both partner villages.
