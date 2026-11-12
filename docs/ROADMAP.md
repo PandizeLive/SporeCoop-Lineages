@@ -167,10 +167,10 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2I | Space: a party's cities when it leaves the planet | B (owner asked whether a leaving party needs its cities at all, see 2N) |
 | 2J | Space: who launches | A |
 | 2K | Space: what Space players may do to a planet where others still play Civ | A (owner asked what happens when 100-1000 players fill the galaxy: MMO research, in the Space notes) |
-| 2L | Tribe: when the Village page goes | B, now, prioritised (owner: "prioritize this"); page removed 2026-11-12 (BUG-9153), the native hut and tool menus in progress |
+| 2L | Tribe: when the Village page goes | B, now, prioritised (owner: "prioritize this"); page removed 2026-11-12 (BUG-9153); the guest's own village is its player village: Add Baby and the Tribal Planner work natively (live, two PCs); left: the camera's start, Rebuild with the party wipe |
 | 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save |
-| 2N | Space: the home of a player or party that leaves a planet others still share | open |
-| 2O | Parties: several parties in one session now, or the session stays one party for now | open |
+| 2N | Space: the home of a player or party that leaves a planet others still share | owner's idea: the planet stays protected with one home city that every player's own game shows as their own (their personal empire's home); checked first, fallback a free first colony as the home |
+| 2O | Parties: several parties in one session now, or the session stays one party for now | A, later: the session stays one party; no friend list yet |
 
 Next free ID: 2P.
 
@@ -184,6 +184,10 @@ Answers of 2026-11-12 (1X-2M), notes:
 * 2M changes 1P for Tribe: a joiner without a creature goes into the editor first; their village is founded when they
   save (with the loading screen of 1P A). The stand-in village (BUG-9150) stays only as the fallback when they leave
   the editor without saving.
+* 2N (owner 2026-11-12): "leave it as a protected planet and maybe have a single city that's client side and is the
+  home city for every player". Fits 2A (each player's game keeps its own Space save: it can own the home planet
+  locally). To check before phase 6: what a partner's empire uses as its home on your game (the same planet, which your
+  game calls yours), and that one city works as an empire's homeworld. Fallback: a free first colony as the home.
 * 2K: the galaxy has about 42,000 stars (a community count, TheOnlyZac/starmap); planets are made when a star is first
   visited and almost every system can be colonised (terraforming). A Space empire holds tens of colonies, so about 1000
   players could fill one galaxy. For the MMO: several galaxies (one per server) is the known-safe answer; adding stars or
