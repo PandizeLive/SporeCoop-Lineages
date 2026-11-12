@@ -153,24 +153,41 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A |
 | 1V | Downed: the creature plays its native dying pose while downed | A |
 | 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows |
-| 1X | Space: what a player owns | open |
-| 1Y | Space: what phase 6 builds now | open |
-| 1Z | Space: who runs the enemies in a star system | open |
-| 2A | Space: where Space progress is saved | open |
-| 2B | Space: how difficulty scales | open |
-| 2C | Space: the Galactic Core ending | open |
-| 2D | Creature: the "cocoon" | open |
-| 2E | Creature: how evolving starts | open |
-| 2F | Creature: DNA when two players evolve at once | open |
-| 2G | Creature: who moves the party's nest | open |
-| 2H | Space: what ends Civ for a party | open |
-| 2I | Space: a party's cities when it leaves the planet | open |
-| 2J | Space: who launches | open |
-| 2K | Space: what Space players may do to a planet where others still play Civ | open |
-| 2L | Tribe: when the Village page goes | open |
-| 2M | Tribe: the creature editor for a joiner without a creature | open |
+| 1X | Space: what a player owns | A (owner: "A party will always progress together and share.") |
+| 1Y | Space: what phase 6 builds now | A; owner asked how an empire works for a planet that solo players leave (see 2N) |
+| 1Z | Space: who runs the enemies in a star system | A |
+| 2A | Space: where Space progress is saved | A |
+| 2B | Space: how difficulty scales | A; owner asked whether parties need a friend list and whether to switch from slots now (see 2O) |
+| 2C | Space: the Galactic Core ending | A |
+| 2D | Creature: the "cocoon" | the native cocoon (owner: NPC species wrap into a cocoon and come out as a new species; Claude was wrong that the game has none) |
+| 2E | Creature: how evolving starts | owner's rule: native mating call; the nearest mate answers, else one is spawned; the player clicks the mate to start |
+| 2F | Creature: DNA when two players evolve at once | B, personal DNA (owner: "Everyone gets their own DNA.") |
+| 2G | Creature: who moves the party's nest | owner's rule: anyone starting the native migration warns every player in the world, 10 s later all go into the editor for final touches (downed or dead players too, cleaned up) and migrate together |
+| 2H | Space: what ends Civ for a party | A |
+| 2I | Space: a party's cities when it leaves the planet | B (owner asked whether a leaving party needs its cities at all, see 2N) |
+| 2J | Space: who launches | A |
+| 2K | Space: what Space players may do to a planet where others still play Civ | A (owner asked what happens when 100-1000 players fill the galaxy: MMO research, in the Space notes) |
+| 2L | Tribe: when the Village page goes | B, now, prioritised (owner: "prioritize this"); page removed 2026-11-12 (BUG-9153), the native hut and tool menus in progress |
+| 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save |
+| 2N | Space: the home of a player or party that leaves a planet others still share | open |
+| 2O | Parties: several parties in one session now, or the session stays one party for now | open |
 
-Next free ID: 2N.
+Next free ID: 2P.
+
+Answers of 2026-11-12 (1X-2M), notes:
+* 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species
+  (SporeWiki, Evolution / Cocoons). The personal evolving uses that cocoon instead of the player's egg: the mating call
+  (2E), the player clicks the mate, the creature enters the cocoon, the editor, it comes out as the new creature.
+  To find: the cocoon model and the NPC species-evolution code that plays it (docs/re/creature.md).
+* 2G with 2F: DNA is personal, the progress (brain) stays the party's; whoever starts the native migration starts it for
+  everyone (10 s warning, everyone into the editor, migrate together).
+* 2M changes 1P for Tribe: a joiner without a creature goes into the editor first; their village is founded when they
+  save (with the loading screen of 1P A). The stand-in village (BUG-9150) stays only as the fallback when they leave
+  the editor without saving.
+* 2K: the galaxy has about 42,000 stars (a community count, TheOnlyZac/starmap); planets are made when a star is first
+  visited and almost every system can be colonised (terraforming). A Space empire holds tens of colonies, so about 1000
+  players could fill one galaxy. For the MMO: several galaxies (one per server) is the known-safe answer; adding stars or
+  planets to one galaxy needs research first (unknown).
 
 * (2026-11-12, both answered: decisions 12 and 13.) Seats added mid-stage: built and live-tested 2026-11-12 on the
   Jiff test copy: 3 reserved, a fourth player refused ("session is full"); `coop.seats 4 now` on the host; the host,
