@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "founders.h"
 #include "net/session.h"
@@ -35,5 +36,17 @@ bool bind(int seat, uint8_t player);
 // friends: nobody in the party hunts them, also while their player is offline)
 bool party_species(uint32_t creature_instance);
 std::string status();
+
+// Founder seats (founders::Roster: Tribe villages, Civilization nations; seat 0 the host's). A seat with an identity
+// (Founder::player) belongs to that player; a seat founded before identities existed (player 0, a DUO1 / CIV1 save)
+// belongs to the connected player for whom `legacy(seat, player)` is true (the stage's creature / founder-model match).
+// The caller then binds that identity into the roster once (founders::record keeps DUO1 only without identities).
+using LegacyMatch = bool (*)(int seat, uint8_t player);
+// the seat `player` commands, -1 = none
+int founder_seat_of(const founders::Roster& r, uint8_t player, LegacyMatch legacy);
+// the connected player commanding `seat`, kNobody = offline / unknown (seat 0: the host itself)
+uint8_t founder_player_of(const founders::Roster& r, int seat, LegacyMatch legacy);
+// host: the connected players (not the host) that no founder seat belongs to yet, in join order
+std::vector<uint8_t> unseated_partners(const founders::Roster& r, LegacyMatch legacy);
 
 } // namespace party

@@ -179,6 +179,50 @@ bool party_species(uint32_t creature_instance)
     return false;
 }
 
+int founder_seat_of(const founders::Roster& r, uint8_t player, LegacyMatch legacy)
+{
+    if (!S || player == kNobody)
+        return -1;
+    const size_t n = r.seats();
+    if (player == S->my_id() && S->role() == net::Role::Host)
+        return n ? 0 : -1;
+    const uint64_t id = identity::of(player);
+    if (id) {
+        const int seat = r.seat_of_player(id);
+        if (seat >= 1)
+            return seat;
+    }
+    for (size_t seat = 1; seat < n; ++seat) // a seat without identity: the stage's own match
+        if (!r.entries[seat].player && legacy && legacy((int)seat, player))
+            return (int)seat;
+    return -1;
+}
+
+uint8_t founder_player_of(const founders::Roster& r, int seat, LegacyMatch legacy)
+{
+    if (!S || seat < 0 || seat >= (int)r.seats())
+        return kNobody;
+    if (seat == 0)
+        return S->role() == net::Role::Host ? S->my_id() : 0;
+    if (r.entries[seat].player)
+        return identity::player_of(r.entries[seat].player);
+    for (const auto& p : S->players())
+        if (p.id != S->my_id() && legacy && legacy(seat, p.id) && founder_seat_of(r, p.id, legacy) == seat)
+            return p.id;
+    return kNobody;
+}
+
+std::vector<uint8_t> unseated_partners(const founders::Roster& r, LegacyMatch legacy)
+{
+    std::vector<uint8_t> out;
+    if (!S)
+        return out;
+    for (const auto& p : S->players())
+        if (p.id != S->my_id() && founder_seat_of(r, p.id, legacy) < 0)
+            out.push_back(p.id);
+    return out;
+}
+
 std::string status()
 {
     char b[200];
