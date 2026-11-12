@@ -171,3 +171,58 @@ lines), 6 (a rejoin keeps the seat; a later partner gets the next seat; the olde
 the way: the free-site search found no spot for seat 2 (rings around the host's village only); it now also searches
 around the other founder villages (docs/re/tribe.md#tribe-multi-founders). Not yet live: checks 4, 5, 7, 8 and a fresh
 Creature -> Tribe start (needs the host's clicks), and all of phase 5 (Civilization).
+
+## Phase 4, Tribe parts (2026-11-12, phase4-tribe): built, not yet run in a game
+Owner decisions 4, 5 and 9 on the Tribe side. Details: docs/re/tribe.md#tribe-late-joiners; pure rules in
+mods/coop/tribe_late.h with tests/tribe_late_tests.cpp (host unit test, in `make test`).
+* Decision 4, first half (a returning player keeps their species): already works, no code. A guest's creature is its
+  explicit choice, else its campaign creature (choices.ini [landfall], host name + planet), else the own creation
+  recorded for the planet (worlds.ini), else the host's species; share_own sends it, the host founds or rebinds.
+* Decision 4, second half, `tribe.late_prompt` (on): a partner who plays one of the host's creatures gets one notice
+  both sides can read ("X plays one of the host's creatures, so they have no village of their own. They can choose
+  their own creature in the Co-op window (F9)."); the host's Co-op window status line names them; the partner's Co-op
+  window shows the creature row in Tribe: "Choose your own creature for this game: <name> < >" and a status line. A
+  pick reaches the host's founding without a rejoin (about 10-17 s: share 2 s, settle 10 s, founding tick 5 s).
+  A guest who joins straight into Tribe on the host's species usually sends no creature at all (no avatar in Tribe);
+  that partner waited without a word before and is now told too ("X has no creature of their own here, ..."), once
+  their state shows them in the host's world.
+* `tribe.late_create_editor` (OFF): "Create New Creature" opens the creature editor (0x465C50BA, no creation key) from
+  Tribe; the creation saved there becomes the partner's creature. Not verified (editor with an empty key, the return
+  to Tribe, a host checkpoint during it): needs a live test first.
+* BUG-9138 (`tribe.founding_skip`, on), found on the way: a partner on a founder's species stopped the founding of every
+  partner after them in join order, silently for the host's species. They now wait with the reason above.
+* Decision 5, `tribe.late_catch_up` (on): a partner village founded while the host's village is past the start gets,
+  once and before the founding's checkpoint, the host village's hut level (Community_SetLevel +
+  Tribe_UpdateHutModel), member count by age (the game's SpawnMember under the shared population limit) and tool racks
+  (the planner's CreateTool into free layout slots, purchase history set). The host's village is only read; villages
+  of older saves are never touched (decision 9). shared_hut_upgrade already reached a later village (every partner
+  seat, every second), one share save after the founding; the level now comes with the founding's checkpoint.
+* Test commands: `coop.tribe late` (the late-joiner state on this game), `coop.tribe shapes` (every village of this
+  game: level, adults, babies, rack mask), `coop.tribe hut_level <0..4>` (host, test setup), a `tribe late:` line in
+  `coop.tribe`.
+
+To verify live (three games: host, partner A with a village, partner B joining late):
+1. B joins with `coop.creations choose creature none` (plays the host's species): after about 15 s one notice
+   appears on all three games (B sends no creature: "B has no creature of their own here ..."; B sends one of the
+   host's creations: "B plays one of the host's creatures ..."); the host's F9 status line "B has no village yet:
+   ..."; `coop.tribe late` on the host names B (`waiting=`); B's F9 lobby shows "Choose your own creature for this
+   game: none yet" with < > and the status line; `coop.tribe late` on B: `prompt=1 has_village=0 plays_own=0`; no
+   village for B.
+2. B clicks ">" (or `coop.creations next creature`) onto an own creature: within about 20 s the host logs
+   `tribe automatic founders: village for player B ...` and one checkpoint reloads all games; afterwards B's row is
+   gone (`prompt=0`) and B selects and orders only their own members.
+3. Catch-up: before B's founding, grow the host's village (`coop.tribe spawn 4`, `coop.tribe build 1`,
+   `coop.tribe build 5`, `coop.tribe hut_level 1`), keep `coop.tribe shapes` of the host's village. After B's
+   founding: host log `tribe late catch-up: seat N ...: hut level 1, members +A of A ..., racks 1 5`;
+   `coop.tribe shapes` on the host and on both guests (their own loaded worlds after the checkpoint): B's village has
+   the host's level, the host's adults and babies, racks mask with bits 1 and 5; the host's village line unchanged.
+   With `coop.fix tribe.late_catch_up off` (FAIL control): B's village has 3 adults, its own level, no racks.
+4. BUG-9138: B joins first playing the host's species, C (or A on a fresh save) joins after with their own creature:
+   C gets a village while B waits with the notice; `coop.fix tribe.founding_skip off`: C gets none.
+5. B leaves and rejoins: same seat, no second village, no second `tribe late catch-up` line.
+6. The owner's Jiff copy (older partner village): seat 1's `coop.tribe shapes` line unchanged by the session's
+   catch-up (decision 9).
+7. Only on the MSI (it needs clicks): `coop.fix tribe.late_create_editor on` on B, F9 "Create New Creature": does
+   the editor open with a blank creature, does Save (3+ parts, a name) put a new creation into My Creations, does the
+   exit come back to Tribe (`creations: back from the editor, own creature ...` in B's log), and does the host then
+   found B's village. Watch the host: a checkpoint or share while B is in the editor.

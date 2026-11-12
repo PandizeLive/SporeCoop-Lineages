@@ -3469,3 +3469,115 @@ in a game (to verify with three game instances, see the ticket).
   found 224 m from the host's, beside seat 1's village.
 * Not yet live: a fresh Creature -> Tribe start with three own nests (the founding at the own nest), rescue and
   give-up per seat, the three-way outfit vote, the switch off with two players.
+
+## Joining late: the own-creature prompt and the catch-up (2026-11-12, phase4-tribe)
+<a id="tribe-late-joiners"></a>
+
+BUG-9135, roadmap phase 4 (owner decisions 4, 5 and 9), and BUG-9138. Code: tribe.cpp (founding_wait, late_prompt,
+founding_wait_line, catch_up_village), creations.cpp (plays_own_creature, begin_new_creature), coop.cpp and
+coop_ui.cpp (the Co-op window); the pure rules in tribe_late.h (tests/tribe_late_tests.cpp). Written without a game
+running: nothing here is live-tested yet (the checks are in the ticket). No new game symbol: every call below is
+already in overrides_dc04aee5.sym.
+
+**Decision 4, first half: a returning player keeps their species.** ✔ (code) It already works; no code was added.
+* A guest's creature is creations::mine(kCreature), in this order: an explicit choice (choices.ini `[creations]
+  creature`: the Co-op window's arrows or `coop.creations choose`, every world); the campaign creature (choices.ini
+  `[landfall]`, key `FNV-1(host name)-crc32(planet file)`: written when the guest's own cell became its land creature,
+  or by an editor's result while it had one); the own creation recorded for this planet (worlds.ini `[creature]
+  <crc32(planet file)>`, written while its avatar wore it in Creature or by its own editor there); else the host's
+  species, which follows the host's evolution (BUG-0508).
+* The planet file name stays the same from Creature to Tribe (`snapshot.spo` is read as the planet's,
+  #tribe-snapshot-name), so a creature recorded in Creature still answers in Tribe.
+* share_own sends it with its records every 2 s; on the host plays_host_creation is false and found_partners founds
+  the village of an unseated partner, or a returning partner is recognised by identity and commands their seat again
+  (#tribe-multi-founders).
+* ~ The campaign entry is keyed by the host's name: after the host renames, only the worlds.ini record (by planet)
+  still answers, and only when the guest wore its creature in that world.
+* ? QA 2026-11-12 (#tribe-multi-founders) saw `mine creature: 00000000` after a join although a creature had been
+  chosen in the Galaxy menu. Code reading does not explain it: key 0 is what an explicit "the world's own" choice gives
+  in Tribe (no avatar there), and a restored `U:` outfit journal clears the choice. Live check: `coop.creations` on the
+  guest before and after the join.
+
+**Decision 4, second half: a late joiner without a creature of their own** (`tribe.late_prompt`, on).
+* Host: founding_ready asks tribe_late::founding_wait: Ready, NoCreatureYet, NoCreature, Settling (BUG-9137: 15 s
+  after the world, 10 s after the creature last changed), HostCreation (one of the host's creations, sent without
+  records) or FounderSpecies (`tribe.founding_skip`, below). HostCreation and FounderSpecies are told once to everybody
+  (MSG_NOTICE, so the words fit both sides): "<name> plays one of the host's creatures, so they have no village of their
+  own. They can choose their own creature in the Co-op window (F9)." The host's Co-op window status line says "<name>
+  has no village yet: they play one of your creatures." while that partner is connected and waiting
+  (tribe::founding_wait_line).
+* ✔ (code) A guest who joins straight into Tribe and plays the host's species usually sends no creature at all:
+  mine(kCreature) falls back to the avatar's species, and there is no avatar in Tribe (avatar_species_key reads it in
+  Creature and Adventures only), so share_own sends nothing and the host has no player_key for them. Before, such a
+  partner waited without a word. Now, once they play in this world (Ctx::here: their last state has the host's mode and
+  world, so a partner still receiving the world is not meant) and the world is 15 s old, the wait is NoCreature: "<name>
+  has no creature of their own here, so they have no village yet. They can choose their own creature in the Co-op
+  window (F9)."; status line "<name> has no village yet: they have no creature of their own." (tribe.late_prompt off:
+  silent, as before).
+* Guest: tribe::late_prompt() (in the host's Tribe world, the host not away, 15 s after the world was entered, the
+  host's member state received) is 1 when no member of a village other than the host's belongs to this player and
+  creations::plays_own_creature() is false (mine() is not one of their My Creations, or is "the world's own"); 2 when
+  they play their own creature and their village is not there yet. The lobby page then shows the creature row in
+  Tribe too: "Choose your own creature for this game: <name | none yet>" with the usual < > arrows (2: "Your creature
+  for this game: ..."), and the status line "You have no village: you play one of the host's creatures. Choose your
+  own below." (2: "You play your own creature: the host founds your village with it shortly."). Without own creations
+  the row reads "No creatures of your own yet: make one in a creature editor".
+* ✔ (code) A pick reaches the founding without a rejoin: the arrows call creations::cycle, then choose (choices.ini,
+  share at once), share_own sends the creature with its records within 2 s, the host's apply sets player_key and
+  player_key_changed_at, auto_founders_multi runs found_partners every 5 s, founding_ready passes 10 s after the last
+  change, the village is founded and one checkpoint reloads every game. Every click restarts those 10 s: the village
+  gets the creature shown 10 s after the last click.
+* BUG-9138 (`tribe.founding_skip`, on): before, a partner on a founder's species was "ready": the host's species when
+  it is not in the host's My Creations (a Sporepedia or premade creature, so plays_host_creation is false), an outfit
+  of it, or another partner's founder. found_partners took the first ready partner in join order and stopped at them
+  every tick (without a word for the host's species), so no partner after them got a village. Now they wait with the
+  reason above and the next partner is founded.
+
+**The creature editor from Tribe for a new creature** (`tribe.late_create_editor`, OFF by default).
+* Known: ✔ (#tribe-stage-epoch) a creature editor request in Tribe (CreatureEditorExtraLarge 0x465C50BA with a
+  member's species key) opens the editor within 1 s; the route is kTribe, kEditor, kTribe with no non-stage frame, and
+  tribe::world_check ignores the editor frames. Its Done was blocked by the part-list error (bit 5), which
+  h_BlockingErrors waives while g_own_editor is set. ✔ (#tribe-native-outfitter-request) a guest's own editor request
+  from Tribe (the outfitter 0x156276D1) opens and comes back to Tribe, live on two games. ✔
+  (docs/re/creations.md#creations-own-editor-items) a request without +0x94 offers every part.
+* Built: the button "Create New Creature" (where the vote's Ready button sits, a guest whose late_prompt is not 0)
+  queues outside the frame: a new EditorRequest (0x9C bytes, EditorRequest_ctor), +0xC 0x465C50BA, +0x10..+0x18 zero
+  (no creation), no evolution tag (+0x90) and no collected parts (+0x94); Submit with the vote bypassed and g_own_editor
+  set; creations::begin_new_creature. Back in the same Tribe world adopt_after_editor takes the newest own creation
+  that was not in My Creations when the editor opened (every 2 s for 30 s), as after a Creature editor, and the
+  founding follows. Everybody gets the notice "<name> is making a creature of their own in the editor".
+* ? Not checked (no Ghidra project and no game on the PC this was written on): (1) what the creature editor does with
+  an empty creation key (expected: a blank body, as the Creature Creator's "new" and ModAPI mods open it); (2) that its
+  exit returns to Tribe for a request the stage did not make (cGameModeManager::SubmitEditorRequest 0xB1DE20 keeps
+  the request, #tribe-civ-transition); (3) that Save writes a new key to My Creations (the own editor of an existing
+  creation kept its key on "Save New", docs/re/creations.md#creations-own-editor-save); (4) what a host checkpoint or
+  world share does to a guest who is in the editor (the outfit vote holds the host's saves, this path does not);
+  (5) whether the guest's Tribe mirrors resume afterwards as after the outfitter. Ghidra, next session: the reads of
+  request +0x10 in cEditor::OnEnter and the creature editor's load (an empty key), and its Save path for a new creation.
+
+**Decision 5: a late village catches up to the host's village** (`tribe.late_catch_up`, on).
+* ✔ (code) shared_hut_upgrade already covered a village founded later: its tick (every second) compares the host's
+  level with every partner seat's (founder_seats() grows with the roster) and applies Community_SetLevel +
+  Tribe_UpdateHutModel; the campaign refresh then saves it with a share 2 s later. The catch-up now sets the level
+  before the founding's checkpoint, so that tick finds nothing left to do.
+* found_partners, right after the new seat is recorded and before founders_refresh's checkpoint, calls
+  catch_up_village(seat, village, home). It reads both villages (level +0x38, living members by age +0xB34, racks by
+  tool_inventory) and plans with tribe_late::catch_up_plan: the host's level when it differs (0..4); members up to the
+  host's count (adults up to the host's adults, then babies; never removed; at most 40); the host's racks 1..9 the new
+  village lacks (10 is the fire pit every village has). Then, in this order: the level (the hut pair above); members
+  with the game's SpawnMember (tribe vt 0x98, null at the population limit; the seat is recorded first, so the founders
+  share the host's limit through tribe.shared_capacity); racks with free_rack_slot (CommunityLayout_NearestSlot on
+  tribe +0x3B4, the nearest slot to points on 22/16/28/34 m rings, free and 12-35 m from the centre; stock_trial_instrument
+  uses the same with 22 m), place_committed_tool (CreateTool vt 0xB4, SetTribe, CommunitySlot_SetObject, SetPosition,
+  Tribe_UpdateToolLayout) and Tribe_SetPurchasedTool. Log: `tribe late catch-up: seat N (faction F): hut level L,
+  members +A of B (x adults, y babies), racks k ...`.
+* Once per founding: found_partners records a seat once. Villages of older saves and seats bound by identity or
+  creature are never founded again, so never caught up (decision 9). The host's village is only read. The two-founder
+  path (tribe.multi_founders off, auto_founders_two) is unchanged.
+* ~ A rack the host is dragging in its planner makes tool_inventory refuse the host's inventory: no racks are copied
+  then (the log says "racks none").
+* Not copied: food (decision 5 names members, hut upgrades and tools), held tools, the campaign's tool unlocks (shared
+  already).
+* Tests: `coop.tribe shapes` lists every village of this game (faction, species, player, level, adults, babies, rack
+  mask), on a guest its own loaded world; `coop.tribe late` the late-joiner state (guest: prompt, has_village,
+  plays_own; host: waiting, catch-ups, members and racks added); `coop.tribe` prints a `tribe late:` line.
