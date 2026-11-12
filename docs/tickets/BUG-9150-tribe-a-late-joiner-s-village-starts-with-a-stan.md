@@ -10,7 +10,7 @@ role: all
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 7a701b8c
 tests: tests/tribe_late_tests.cpp, tests/win_tests.cpp (stand-in list); tools/qa_win (manual two-PC run 2026-11-12)
 signature:
 docs: docs/re/tribe.md#tribe-stand-in
