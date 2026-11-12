@@ -1,14 +1,14 @@
 ---
 id: BUG-9137
 title: Tribe: the partner's village is founded with the host's creature the partner played a moment before
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-11
 source: owner report on 0.7.8-lineages53-dev ("Tested Tribal with one other player, and it didn't work. I switched worlds when Kittykath left.")
 role: host
 versions: 0.7.8-lineages46-dev to 0.7.8-lineages53-dev
-fixed_in:
+fixed_in: 0.7.8-lineages54-dev
 branch: feat/lineages-47
 commits:
 tests: QA DuoQAJiffHost (a copy of the owner's Jiff Peanutbutter.spo and EditorSaves, the broken roster) + DuoQACreatureGuest with its own creature; host log "tribe: founder repair (BUG-9137)"; coop.fix tribe.founder_settle off / on

@@ -66,6 +66,7 @@ Done in 50-dev: progression debt (10% of the bar), a visible downed state, no en
 Done in 51-dev: the connected player's own pack (Summon Flock, recruiting), meteors / rain / the UFO shared from the host, and the connected player's Strike splash.
 Done in 52-dev: a connected player with their own custom creature gets their own village and chief again (Tribe, Civilization).
 Done in 53-dev: bones the other player digs up disappear on your screen too.
+Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages49-dev
 role: all
 versions: up to 0.7.8-lineages53-dev (still seen on 53 after the 50 fix)
-fixed_in: 0.7.8-lineages54-dev (50 was partial)
+fixed_in: 0.7.8-lineages54-dev
 branch: feat/lineages-47
 commits:
 tests: QA Cellfive.spo host 9 + guest 8, guest `coop.pool selfhit 20` + `coop.giveup`, host screenshots every 0.3-0.5 s (mean brightness)

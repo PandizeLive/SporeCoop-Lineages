@@ -1,14 +1,14 @@
 ---
 id: BUG-9136
 title: Creature: a partner's social ability reaches the host as a bite, so friendly creatures fight partners and cannot be befriended
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-11
 source: owner report on 0.7.8-lineages53-dev ("friendly creatures are attacking connected players. They aren't able to befriend them.")
 role: guest
 versions: 0.7.8-lineages51-dev to 0.7.8-lineages53-dev (since BUG-9132)
-fixed_in:
+fixed_in: 0.7.8-lineages54-dev
 branch: feat/lineages-47
 commits:
 tests: QA DuoQACreatureHost/Guest (Samuth.spo); guest `coop.prules play <proxy id> 25` (the sing on a host creature); host log "npc: guest N hit npc"; coop.fix creature.social_no_hit off / on

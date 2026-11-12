@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [0.7.8-lineages54-dev] - 2026-11-12
+
+- Creature: a connected player's sing, dance, charm and pose no longer reach
+  the host as a bite. Since Lineages 51 every social move hurt the creature,
+  so creatures being befriended fought back and could not be befriended
+  (BUG-9136).
+- Tribe: a connected player's own village is founded with their own creature.
+  It could take the host's creature they had played a moment before (after a
+  rejoin in another world); such a village now switches to the connected
+  player's own creature by itself (BUG-9137).
+- Cell: when someone else respawns, your screen no longer fades to black as
+  if you respawned (their own respawn effect was copied to every screen)
+  (BUG-9122).
+- Creature: Ctrl+Scroll widens the field of view again (it changed the setting
+  since Lineages 36 but not the picture) (BUG-9130). The notification for each
+  change is gone.
+- Online: the host paces what it sends by what the other player actually
+  receives, instead of sending everything at once each frame. On a slow or
+  choked connection far fewer packets are lost and sent again (BUG-9098).
+- Diagnostics for two reports that could not be reproduced: meat that stays
+  huge after a partner ate it (BUG-9125) and a heal sound that keeps going at
+  a nest (BUG-9133). If you see either, type /bug in the co-op chat right away.
+- Groundwork for 3-4 players with their own villages: every player now has a
+  permanent ID that survives a rejoin, and saves can hold up to 8 founders
+  (gameplay is still 2 founders) (BUG-9135).
+
 ## [0.7.8-lineages53-dev] - 2026-11-11
 
 - Creature: bones the other player digs up disappear on your screen too (they
