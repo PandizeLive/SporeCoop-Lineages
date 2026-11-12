@@ -731,5 +731,25 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9114](BUG-9114-adventure-host-creatures.md) | open | feature | Adventure | 2026-11-10 |  | Adventure creatures move differently in each game; the host should simulate them for everyone |
 | [BUG-9115](BUG-9115-guest-alpha-marks.md) | fixed | desync | Creature | 2026-11-10 |  | a guest does not see the host's nest alphas as alphas (and sees other creatures as alphas) |
 | [BUG-9116](BUG-9116-depth-cube-direction-and-size.md) | fixed | bug | Editor | 2026-11-11 |  | the editor depth cube pushes along the line from the spine, not straight in and out, and keeps one pixel size at every zoom |
-| [BUG-9117](BUG-9117-coop-window-polish.md) | fixed | bug | All | 2026-11-11 |  | co-op window looks unpolished (wrapping text, uneven rows, unframed difficulty, ping wraps, cluttered lobby) |
-| [BUG-9118](BUG-9118-downed-30s-and-give-up.md) | fixed | feature | All | 2026-11-11 |  | downed players get 30 s for a rescue and can give up |
+| [BUG-9117](BUG-9117-coop-window-polish.md) | fixed | bug | All | 2026-11-11 | 0.7.8-lineages48-dev | co-op window looks unpolished (wrapping text, uneven rows, unframed difficulty, ping wraps, cluttered lobby) |
+| [BUG-9118](BUG-9118-downed-30s-and-give-up.md) | fixed | feature | All | 2026-11-11 | 0.7.8-lineages48-dev | downed players get 30 s for a rescue and can give up |
+| [BUG-9119](BUG-9119-progress-debt.md) | fixed | feature | Creature Cell | 2026-11-11 | 0.7.8-lineages48-dev (progression-based cost: 0.7.8-lineages50-dev) | progress debt instead of losing DNA or food when a downed player is not revived |
+| [BUG-9120](BUG-9120-settings-tabs-vanish.md) | fixed | bug | all | 2026-11-11 | 0.7.8-lineages49-dev | Spore's Settings dialog vanishes on Audio (and every other tab) with the Lineages graphics controls |
+| [BUG-9121](BUG-9121-offscreen-arrow-points-down.md) | fixed | bug | all | 2026-11-11 | 0.7.8-lineages50-dev | the arrow to an off-screen partner points down instead of at the partner |
+| [BUG-9122](BUG-9122-partner-respawn-blacks-out-screen.md) | fixed | bug | Cell | 2026-11-11 | 0.7.8-lineages54-dev | Cell: a partner's respawn blacks out this player's screen |
+| [BUG-9123](BUG-9123-cell-shared-dna-unexplained-drop.md) | fixed | bug | Cell | 2026-11-11 | 0.7.8-lineages50-dev | Cell: a guest's DNA drops when the host's editor spends it, with no word why |
+| [BUG-9124](BUG-9124-used-bones-stay-for-partner.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages53-dev | Creature: bones a partner used stay visible here and cannot be used |
+| [BUG-9125](BUG-9125-eaten-meat-giant-on-partner.md) | open | bug | Cell | 2026-11-11 |  | Cell: meat a partner ate stays on this screen at a huge size |
+| [BUG-9126](BUG-9126-endless-heal-effect.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages50-dev | Creature: the heal effect loops forever on both players |
+| [BUG-9127](BUG-9127-creature-knockout-invisible.md) | fixed | bug | Creature Adventure | 2026-11-11 | 0.7.8-lineages50-dev | Creature: a knockout ("downed") shows nothing, so a death or a knockout cannot be told apart |
+| [BUG-9128](BUG-9128-guest-respawns-at-old-nest.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages50-dev | Creature: after a migration the guest respawns at the original nest |
+| [BUG-9129](BUG-9129-guest-pack-summon-and-recruit.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages51-dev | Creature: the guest has no pack: Summon Flock does nothing and the host's creatures cannot join the guest's party |
+| [BUG-9130](BUG-9130-fov-lens-not-drawn.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages54-dev | Creature: Ctrl+Scroll changes the FoV steps but the picture does not change |
+| [BUG-9131](BUG-9131-world-events-not-shared.md) | fixed | desync | Creature | 2026-11-11 | 0.7.8-lineages51-dev | Creature: meteors, rain, the UFO and the night predator run separately in each game |
+| [BUG-9132](BUG-9132-guest-strike-no-damage.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages51-dev | Creature: the guest's Strike does no damage to the host's creatures (Bite does) |
+| [BUG-9133](BUG-9133-guest-heal-sound-loops.md) | open | bug | Creature | 2026-11-11 |  | Creature: the connected player hears a heal sound repeating after a fight, healing at a nest |
+| [BUG-9134](BUG-9134-guest-founder-refused-custom-creature.md) | fixed | bug | Tribe Civ | 2026-11-11 | 0.7.8-lineages52-dev | Tribe / Civ: the connected player gets no village of their own when they play a custom creature |
+| [BUG-9135](BUG-9135-no-own-villages-three-players.md) | open | feature | Tribe Civ | 2026-11-11 |  | Tribe / Civ: with three or more players no partner gets a village of their own |
+| [BUG-9136](BUG-9136-guest-social-sent-as-hit.md) | fixed | bug | Creature | 2026-11-11 | 0.7.8-lineages54-dev | Creature: a partner's social ability reaches the host as a bite, so friendly creatures fight partners and cannot be befriended |
+| [BUG-9137](BUG-9137-founder-stale-guest-creature.md) | fixed | bug | Tribe | 2026-11-11 | 0.7.8-lineages54-dev | Tribe: the partner's village is founded with the host's creature the partner played a moment before |
+| [BUG-9139](BUG-9139-win-tests-the-founder-seat-and-party-file-tests.md) | fixed | test | Civ | 2026-11-12 | unreleased | win_tests: the founder-seat and party file tests never run in the full (lab) run |

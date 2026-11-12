@@ -399,6 +399,32 @@ static void test_founders_multi()
     stranger.entries[2].species = 71;
     DeleteFileW((planet + L".duonations").c_str());
     CHECK(!founders::can_record(key, stranger, err, civ));
+    // roadmap phase 4: a late joiner's nation (a seat past the Tribe roster) needs an identity and a species of its
+    // own; the tribal seats keep their founders' looks; two founders stay CIV1 byte for byte
+    {
+        auto late_planet = fresh_dir(L"founders_late") + L"\\planet.spo";
+        std::string late_key = slotfs::narrow(late_planet);
+        put(late_planet, "native planet");
+        CHECK(founders::record(late_key, founders::Roster{1, 2, 0x800021CA, 0x21CB}, err)); // DUO1
+        CHECK(founders::record_outfit(late_key, 1, 2, 22, err));
+        founders::Roster pair{1, 22, 0x800021CA, 0x21CB};
+        CHECK(founders::record(late_key, pair, err, civ) && get(late_planet + L".duonations").size() == 20 &&
+              get(late_planet + L".duonations").compare(0, 4, "CIV1") == 0);
+        auto late = pair;
+        late.entries[2] = {9, 0x21D9, 0};
+        CHECK(!founders::can_record(late_key, late, err, civ)); // no identity: refused
+        late.entries[2].species = 2;
+        late.entries[2].player = 0x7777;
+        CHECK(!founders::can_record(late_key, late, err, civ)); // seat 1's founding look: refused
+        late.entries[2].species = 9;
+        CHECK(founders::record(late_key, late, err, civ));
+        CHECK(get(late_planet + L".duonations").compare(0, 4, "CIV2") == 0);
+        CHECK(founders::read(late_key, got, civ) && got == late && got.seat_of_player(0x7777) == 2);
+        auto changed_tribal = late;
+        changed_tribal.entries[1].species = 2; // a tribal seat never changes its nation
+        CHECK(!founders::record(late_key, changed_tribal, err, civ));
+        CHECK(get(late_planet) == "native planet");
+    }
     // a damaged DUO2 is unreadable, never half-read
     put(planet + L".duofounders", get(planet + L".duofounders").substr(0, 30));
     CHECK(!founders::read(key, got));
@@ -1988,6 +2014,8 @@ int main(int argc, char** argv)
     }
     test_uninstall();
     test_founders();
+    test_founders_multi(); // BUG-9138: these ran only with --founders-only, never in the lab's full run
+    test_party();
     if (argc == 2 && !strcmp(argv[1], "--uninstall-only")) {
         rmtree(g_tmp);
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
