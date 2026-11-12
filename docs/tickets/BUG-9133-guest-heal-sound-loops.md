@@ -15,7 +15,7 @@ tests: -
 signature: -
 docs: -
 related: BUG-9126
-switch: -
+switch: none
 ---
 
 ## Findings (not reproduced)
