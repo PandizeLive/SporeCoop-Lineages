@@ -46,16 +46,16 @@ Design rules that follow from it, for the co-op work now:
 * Space, rethought (owner 2026-11-12: "Consider the idea that multiple people will be progressing out of the planet,
   and especially in MMO, non partied members may progress out the planet too."). The native end of Civ is "own the
   whole planet", which with several parties on one planet means beating the other players first. Asked 2026-11-12:
-  3G what ends Civ for a party (recommended: the party's own progress target, the other parties keep playing Civ);
-  3H what happens to a party's cities when it leaves (recommended: they stay as its homeworld, nobody can capture them);
-  3I who launches (recommended: the whole party together, each player in their own ship; a later joiner launches from
-  the homeworld); 3J what Space players may do to a planet where others still play Civ (recommended: visit and trade
+  what ends Civ for a party (recommended: the party's own progress target, the other parties keep playing Civ);
+  what happens to a party's cities when it leaves (recommended: they stay as its homeworld, nobody can capture them);
+  who launches (recommended: the whole party together, each player in their own ship; a later joiner launches from
+  the homeworld); what Space players may do to a planet where others still play Civ (recommended: visit and trade
   only, no raids or abductions of players' cities).
-* Open decision IDs asked 2026-11-12 and not answered yet: 3G-3J (above), 4A the egg as the "cocoon", 4B how evolving
-  starts, 4C DNA when two evolve at once, 4D migration and the stage end, 5A when the Village page goes, 5B the creature
-  editor on join.
+* These Space questions are decisions 1X-2C and 2H-2K in the decision log (Open decisions).
 
 ## Confirmed decisions: 3-4 player co-op with own nests (owner, 2026-11-12)
+
+These are 1A-1K, 1N-1Q in the decision log (Open decisions); the numbers below are kept.
 
 | # | Decision |
 |---|----------|
@@ -124,16 +124,53 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
 
 ## Open decisions
 
-Decision IDs (owner, 2026-11-12): every decision has a permanent ID, topic number + letter ("3J"); letters keep
-counting within a topic and are never reused; answers read "3JA". Topics so far:
+Decision log (owner, 2026-11-12): every decision ever asked has a permanent ID in the order it was asked: 1A, 1B ...
+1Z, then 2A ... 2Z, and so on. Answers read "2HA" (decision 2H, option A). Options: A what Claude recommends, B the
+closest to the owner's ask (with its issues), C an alternative; one answer per ID, no sub-decisions.
 
-| Topic | Subject | Asked so far | Answers |
-|---|---|---|---|
-| 1 | Party wipe (Tribe, Civ) | 1A (every part of the wipe design) | 1A: A, all recommended (2026-11-12) |
-| 2 | Downed players (dying pose, spectating) | 2A (look), 2B (spectating) | 2A: A; 2B: A, with Tab and left / right arrows next to the spectated name (2026-11-12) |
-| 3 | Space and the MMO goal | 3A-3F (first briefing), 3G-3J (rethought: players leaving the planet at different times, party or not) | open |
-| 4 | Creature personal evolving (the egg) | 4A-4D | open (re-asked 2026-11-12) |
-| 5 | Guests playing their village natively, the editor on join | 5A (the Village page), 5B (the editor on join) | open. Owner 2026-11-12: "If a player connects, they should be sent to creature editor, and be given a village location. We shouldn't need this button." Native right-click orders for guests built (BUG-9152). |
+| ID | Decision | Answer |
+|---|---|---|
+| 1A | Lineages 54 is published first, before the 3-4 player work (table above: 1) | A |
+| 1B | Own nest per player in Creature, 40-80 m from the host's (2) | A |
+| 1C | Nests migrate together (3) | A |
+| 1D | A joiner keeps a species from the previous stage; a late joiner without one makes a creature (4) | B, with the owner's detection rule |
+| 1E | A late joiner's home is caught up to the host's home only (5) | A |
+| 1F | A late joiner in Creature gets their own nest (6) | A |
+| 1G | Party species are best friends; other species can be hunted (7) | A |
+| 1H | An offline nest is run by the AI, can die out, is rebuilt on return (8) | A |
+| 1I | Old saves keep their partner villages (9) | A |
+| 1J | Cap 4 in the menus, difficulty per seat for now, data for 8 seats (10) | A |
+| 1K | Tests: up to 3 test games on the owner's PC at 5 FPS plus the MSI; real clicks on the MSI (11) | A |
+| 1L | Phases 2-5 built on the phase 0 foundation | A |
+| 1M | Switch retirement in small tested batches | A |
+| 1N | The live Civ test may click in the test host's window (12) | A |
+| 1O | The host can add player slots in the middle of a stage (13) | A |
+| 1P | A late joiner without a creature: a stand-in village at once, else the editor first with a loading screen (14) | B in Tribe (built, BUG-9150); A in Civ (the loading screen, not built yet) |
+| 1Q | "Player Slots", an Apply button, no Send World button (15) | owner's request, built |
+| 1R | The Tribe -> Civ graduation test by scripted native raids | A (done, phase 5 live) |
+| 1S | A save loaded with fewer slots than players connected gets more slots | A (built, BUG-9143) |
+| 1T | The "Give To" button | B, removed (BUG-9148) |
+| 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A |
+| 1V | Downed: the creature plays its native dying pose while downed | A |
+| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows |
+| 1X | Space: what a player owns | open |
+| 1Y | Space: what phase 6 builds now | open |
+| 1Z | Space: who runs the enemies in a star system | open |
+| 2A | Space: where Space progress is saved | open |
+| 2B | Space: how difficulty scales | open |
+| 2C | Space: the Galactic Core ending | open |
+| 2D | Creature: the "cocoon" | open |
+| 2E | Creature: how evolving starts | open |
+| 2F | Creature: DNA when two players evolve at once | open |
+| 2G | Creature: who moves the party's nest | open |
+| 2H | Space: what ends Civ for a party | open |
+| 2I | Space: a party's cities when it leaves the planet | open |
+| 2J | Space: who launches | open |
+| 2K | Space: what Space players may do to a planet where others still play Civ | open |
+| 2L | Tribe: when the Village page goes | open |
+| 2M | Tribe: the creature editor for a joiner without a creature | open |
+
+Next free ID: 2N.
 
 * (2026-11-12, both answered: decisions 12 and 13.) Seats added mid-stage: built and live-tested 2026-11-12 on the
   Jiff test copy: 3 reserved, a fourth player refused ("session is full"); `coop.seats 4 now` on the host; the host,
