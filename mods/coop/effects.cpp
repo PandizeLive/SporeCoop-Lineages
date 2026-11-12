@@ -55,6 +55,41 @@ COOP_FIX("effects.space", "BUG-0451", g_space, "effects: also relayed in Space (
 static bool g_main_world_fix = true;
 COOP_FIX("effects.main_world", "BUG-0451", g_main_world_fix,
          "effects: the skin painter's own effects are never relayed (they faulted the partner's game in Tribe and Civ)");
+// BUG-9122 (reopened on 0.7.8-lineages53): the own Cell respawn plays "cell_egg_L0_autohatch" on the own cell. The
+// effect fades the whole screen (it is the respawn's camera effect). The relay sent it as a world effect (pool 5,
+// id B4B06F12 = FNV-1 of the lower-case name) and every partner's game played it: their screens went black for about
+// a second at each respawn of somebody else (QA host brightness 88 -> 7 -> 6 -> 73 -> 90). Such own-screen effects are
+// never sent and never played for a partner. Off: relayed as in 0.7.8-lineages53.
+static bool g_own_screen_fix = true;
+COOP_FIX("effects.own_screen", "BUG-9122", g_own_screen_fix,
+         "effects: a partner's own respawn fade (the Cell egg hatch) is not played on everybody's screen");
+static constexpr uint32_t fnv1_lower(const char* s)
+{
+    uint32_t h = 0x811C9DC5u;
+    for (; *s; ++s) {
+        char c = *s >= 'A' && *s <= 'Z' ? char(*s + 32) : *s;
+        h = h * 0x01000193u;
+        h ^= (uint8_t)c;
+    }
+    return h;
+}
+static_assert(fnv1_lower("cell_egg_L0_autohatch") == 0xB4B06F12u, "the game's effect name hash");
+static constexpr uint32_t kOwnScreen[] = {
+    fnv1_lower("cell_egg_L0_autohatch"), fnv1_lower("cell_egg_L1_autohatch"), fnv1_lower("cell_egg_L2_autohatch"),
+    fnv1_lower("cell_egg_L3_autohatch"), fnv1_lower("cell_egg_L4_autohatch"), fnv1_lower("cell_egg_autohatch"),
+};
+static uint32_t g_own_screen_kept;
+static bool own_screen(uint32_t id)
+{
+    if (!g_own_screen_fix || !id)
+        return false;
+    for (uint32_t k : kOwnScreen)
+        if (k == id) {
+            g_own_screen_kept++;
+            return true;
+        }
+    return false;
+}
 static uint32_t g_stage_skipped;
 static bool stage_off()
 {
@@ -362,6 +397,8 @@ static void process_local(void* creature, const game::EffectEvent& ev)
         return;
     if (!ev.stop && !ev.id)
         return;
+    if (!ev.stop && own_screen(ev.id)) // BUG-9122
+        return;
     if (!ev.stop && stage_off())
         return;
     if (!ev.stop && nobody_here()) {
@@ -443,7 +480,7 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X at %.2f %.2f %.2f is not on the local player", id, p.x, p.y, p.z);
         return;
     }
-    if (stage_off())
+    if (stage_off() || own_screen(id)) // BUG-9122: the own respawn fade stays here
         return;
     if (nobody_here()) {
         g_elsewhere_tx++;
@@ -727,6 +764,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     if (!stop && stage_off())
         return;
+    if (!stop && own_screen(id)) { // BUG-9122: from a partner of an older version
+        if (g_log)
+            H->log(M, SK_INFO, "effect: from %u id %08X not played: the partner's own respawn fade", player, id);
+        return;
+    }
     if (!stop && g_here_fix && C.here && !C.here(player)) {
         g_elsewhere_rx++;
         if (g_log)
@@ -998,8 +1040,8 @@ std::string status()
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
-    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d other_stages=%d space=%d stage_skipped=%u\n",
-             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_other_stages, (int)g_space, g_stage_skipped);
+    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d other_stages=%d space=%d stage_skipped=%u own_screen_kept=%u\n",
+             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_other_stages, (int)g_space, g_stage_skipped, g_own_screen_kept);
     s += b;
     snprintf(b, sizeof b,
              "effects foreign world: created=%u last=%08X queued=%u near=%u not played=%u known ids=%u main_world_fix=%d\n",
