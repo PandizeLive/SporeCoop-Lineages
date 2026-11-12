@@ -29,3 +29,12 @@ switch: -
   chase an unreachable max.
 * Next: a real session's report (`/bug heal sound` in the co-op chat when it loops) with the sound list
   (`coop.audio list`) of that moment.
+
+## Two-PC attempt (2026-11-11, not reproduced) and diagnostics
+TITAN hosts a copy of the owner's Vandh.spo (Creature), a QA guest and the MSI join (3 players). On the MSI:
+`coop.team hp 6` next to both partners: the pack regen healed 6 -> 11.7 of 15 in 20 s without a sound per regen step
+(`coop.audio list`: plays grouped by caller and parameters before / during / after). Seen: the tracker's "playing" list
+fills with sound BD19551A (caller 0x601F9E <- 0xB99A42), a one-shot that ends without a stop command: not a loop.
+A new parameterised play (039F9E01=4072DC09, caller 0xA353F6) started during the heal and went on after it; not
+identified. Lead: the game's own nest heal (+0xFB8) never finishing for a partner. Diagnostics (teamplay.cpp): "creature:
+the nest heal is on for N s: hp A -> B of MAX, regen, down" (WRN, once per episode, after 15 s without finishing).

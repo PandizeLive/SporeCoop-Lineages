@@ -120,8 +120,35 @@ COOP_FIX("creature.regen_hysteresis", "BUG-9126", g_regen_fix,
          "creature: the pack regen starts below 95% health and stops at full (no endless heal effect)");
 static bool g_regen_active;
 
+// BUG-9133 (not reproduced on two PCs): the game's own nest heal (avatar +0xFB8, docs/re/creature.md BUG-0496) keeps
+// its sound going while it heals. A heal that stays on for 15 s without the health rising is logged once per episode
+// (what keeps it from finishing: health, max, the regen, the rescue), for the next report of a looping heal sound.
+static void nest_heal_watch(void* avatar, double now)
+{
+    static double on_since = -1, logged_at = -1;
+    static float hp_at_start;
+    const uint8_t* av = (const uint8_t*)avatar;
+    const bool on = av && av[0xFB8];
+    if (!on) {
+        on_since = -1;
+        return;
+    }
+    const float hp = game::health(avatar);
+    if (on_since < 0) {
+        on_since = now;
+        hp_at_start = hp;
+        return;
+    }
+    if (now - on_since < 15 || logged_at >= on_since)
+        return;
+    logged_at = now;
+    H->log(M, SK_WARN, "creature: the nest heal is on for %.0f s: hp %.2f -> %.2f of %.2f, regen %d, down %d (BUG-9133)",
+           now - on_since, hp_at_start, hp, game::max_health(avatar), (int)g_regen_active, (int)creature_rescue::down());
+}
+
 void tick(void* avatar, double now)
 {
+    nest_heal_watch(avatar, now);
     if (!g_on || !avatar || creature_rescue::down() || now - g_last_regen < 1.0)
         return;
     g_last_regen = now;

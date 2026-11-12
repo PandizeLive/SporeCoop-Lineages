@@ -132,14 +132,39 @@ static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
 static bool g_strike_fix = true;
 COOP_FIX("creature.guest_strike", "BUG-9132", g_strike_fix, "creature: a guest's own attack that hit a host creature without a forwarded hit (Strike) reaches the host");
 static uint32_t g_strike_sent, g_attacks_seen;
-bool own_attack_running() { return g_strike_fix && g_hit_attacker && g_hit_attacker == game::avatar(); }
+// BUG-9136: the BUG-9132 fallback sent the points of every own ability that reached a proxy without damage, the social
+// ones too: a partner's sing / dance / charm / pose next to a creature it was befriending reached the host as a bite
+// (owner, 2026-11-11: "friendly creatures are attacking connected players. They aren't able to befriend them"; the host
+// log had both guests "hit" npc 253 of 291E6BFD while the party befriended that species). A social ability (+0x10 not 0,
+// the kind a social answer must match) or any ability used in the social stance (GetAbilityMode 0) is no attack: no hit
+// is forwarded for it, and the no-attacker hits while it runs are not the guest's (npc.cpp damage_filter).
+// `coop.fix creature.social_no_hit off`: forwarded as in 0.7.8-lineages51..53.
+static bool g_social_fix = true;
+COOP_FIX("creature.social_no_hit", "BUG-9136", g_social_fix, "creature: a guest's social ability (sing, dance, charm, pose) never reaches the host as a hit");
+static uintptr_t a_AbilityMode;
+static bool g_hit_social = false; // the own ability hit running now is a social one
+static uint32_t g_social_kept;
+static bool social_use(void* attacker, uint32_t idx)
+{
+    if (a_AbilityMode && skg::cdecl_call<int>(a_AbilityMode) == 0)
+        return true;
+    uint8_t* ab = (int)idx < skg::vcall<int>(attacker, 0xB0 / 4) ? skg::vcall<uint8_t*>(attacker, 0xB4 / 4, (int)idx) : nullptr;
+    return ab && skg::readable(ab, 0x40) && *(uint32_t*)(ab + 0x10) != 0;
+}
+bool own_attack_running()
+{
+    return g_strike_fix && g_hit_attacker && g_hit_attacker == game::avatar() && !(g_social_fix && g_hit_social);
+}
 static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
     void* was = g_hit_attacker;
     uint32_t was_idx = g_hit_idx;
+    const bool was_social = g_hit_social;
     g_hit_attacker = attacker;
     g_hit_idx = idx;
     const bool own = is_guest() && attacker && attacker == game::avatar() && target && game::in_creature_stage();
+    const bool social = own && social_use(attacker, idx);
+    g_hit_social = social;
     const uint32_t sent_before = own ? npc::hits_sent_count() : 0;
     bool r = hit_body(attacker, target, idx, a4);
     if (own) {
@@ -149,17 +174,23 @@ static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t id
         const uint32_t type = ab && skg::readable(ab, 0x40) ? *(uint32_t*)(ab + 8) : 0;
         const float points = ab && skg::readable(ab, 0x40) ? *(float*)(ab + 0x3C) : 0.f;
         const bool sent = npc::hits_sent_count() != sent_before;
-        bool fwd = false;
-        if (g_strike_fix && !sent && npc::is_proxy(victim) && points > 0 && points < 1000)
-            fwd = npc::forward_hit(victim, points, 2);
+        bool fwd = false, kept = false;
+        if (g_strike_fix && !sent && npc::is_proxy(victim) && points > 0 && points < 1000) {
+            if (g_social_fix && social)
+                kept = true, g_social_kept++; // BUG-9136: a social ability is no attack
+            else
+                fwd = npc::forward_hit(victim, points, 2);
+        }
         g_strike_sent += fwd;
         static unsigned logged;
         if (logged++ < 40)
-            H->log(M, SK_INFO, "player_rules: own attack ability %u type 0x%X points %.2f on %p (proxy %d): %s", idx, type, points,
-                   victim, (int)npc::is_proxy(victim), sent ? "hit sent by the game's damage" : fwd ? "hit sent (BUG-9132)" : "no hit");
+            H->log(M, SK_INFO, "player_rules: own attack ability %u type 0x%X points %.2f on %p (proxy %d, social %d): %s", idx, type,
+                   points, victim, (int)npc::is_proxy(victim), (int)social,
+                   sent ? "hit sent by the game's damage" : fwd ? "hit sent (BUG-9132)" : kept ? "social: no hit (BUG-9136)" : "no hit");
     }
     g_hit_attacker = was;
     g_hit_idx = was_idx;
+    g_hit_social = was_social;
     return r;
 }
 
@@ -571,7 +602,8 @@ std::string status()
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));
     out += b;
-    snprintf(b, sizeof b, "player_rules: guest strike fix=%d attacks=%u forwarded=%u\n", (int)g_strike_fix, g_attacks_seen, g_strike_sent);
+    snprintf(b, sizeof b, "player_rules: guest strike fix=%d attacks=%u forwarded=%u social_fix=%d social_kept=%u\n", (int)g_strike_fix,
+             g_attacks_seen, g_strike_sent, (int)g_social_fix, g_social_kept);
     out += b;
     snprintf(b, sizeof b, "player_rules: guest pack summon_sent=%u recruit_sent=%u recruit_got=%u addmember_hook=%d\n", g_summon_sent,
              g_recruit_sent, g_recruit_got, (int)(o_AddMember != nullptr));
@@ -600,6 +632,33 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         skg::thiscall<void>(a, c, (float)atof(argv[2]));
         g_hit_attacker = was;
         H->out_printf(out, "stun called on %p\n", c);
+        return 0;
+    }
+    // tests (guest, BUG-9136): play <proxy id> <hex ability type>: the own avatar aims at proxy <id> (SetTarget vt 0x84
+    // with its combatant, as a click on it does) and plays its ability of that type (PlayAbility), as a key would
+    if (argc > 3 && !strcmp(argv[1], "play")) {
+        void* av = game::avatar();
+        void* px = is_guest() ? npc::proxy((uint16_t)atoi(argv[2])) : nullptr;
+        uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");
+        const uint32_t want = (uint32_t)strtoul(argv[3], nullptr, 16);
+        if (!av || !px || !pa) {
+            H->out_printf(out, "no avatar, proxy or PlayAbility\n");
+            return 1;
+        }
+        int idx = -1, cnt = skg::vcall<int>(av, 0xB0 / 4);
+        for (int i = 0; i < cnt && idx < 0; i++) {
+            uint8_t* ab = skg::vcall<uint8_t*>(av, 0xB4 / 4, i);
+            if (ab && skg::readable(ab, 0x40) && *(uint32_t*)(ab + 8) == want)
+                idx = i;
+        }
+        if (idx < 0) {
+            H->out_printf(out, "the avatar has no ability of type 0x%X\n", want);
+            return 1;
+        }
+        skg::vcall<void>(av, 0x84 / 4, (uint8_t*)px + game::kCombatOff, 1, 0);
+        int r = skg::thiscall<int>(pa, av, idx, (void*)nullptr);
+        H->out_printf(out, "ability %d (type 0x%X) played on proxy %s: %d, stance %d\n", idx, want, argv[2], r,
+                      a_AbilityMode ? skg::cdecl_call<int>(a_AbilityMode) : -1);
         return 0;
     }
     // tests (host): charge <npc id> <player>: NPC <id> aims at player <player>'s puppet (SetTarget vt 0x84 with its
@@ -737,6 +796,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_AttackTarget, (void**)&o_AttackTarget);
     if (uintptr_t a = H->sym("SporeCoop::CreatureStun"))
         H->hook_create(M, (void*)a, (void*)h_Stun, (void**)&o_Stun);
+    a_AbilityMode = H->sym("Simulator::cCreatureGameData::GetAbilityMode"); // BUG-9136: 0 social stance, 1 combat
     a_PostStim = H->sym("SporeCoop::BT_PostStimulus");
     a_GoalStart = H->sym("SporeCoop::BT_GoalSlotStart");
     a_StimClear = H->sym("SporeCoop::BT_ClearStimulus");

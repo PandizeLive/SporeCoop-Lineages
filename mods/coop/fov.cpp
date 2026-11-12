@@ -8,6 +8,7 @@
 #include <string>
 #include <windows.h>
 
+#include "fixes.h"
 #include "game.h"
 #include "modes.h"
 #include "mouse.h"
@@ -80,9 +81,9 @@ static void set_steps(int steps, bool announce)
     g_steps = steps;
     g_wheel_delta = 0;
     H->log(M, SK_INFO, "fov: steps=%d (+%d degrees)", g_steps, 3 * g_steps);
-    if (!announce || !g_notify) return;
-    g_notify(g_steps ? "Field of view +" + std::to_string(3 * g_steps) + " degrees (Ctrl+Scroll up to restore)"
-                     : std::string("Field of view: normal"));
+    // owner, 2026-11-11 (the lens works again, BUG-9130): no notification for a change any more (BUG-9099 showed one
+    // while the picture did not change); the log line stays
+    (void)announce;
 }
 
 // BUG-9099: the wide lens lasted the whole session and nothing showed it. It now ends
@@ -100,8 +101,78 @@ static void track_mode()
     }
 }
 
+// BUG-9130: since Lineages 36 the wide lens was set only around the viewer's BeginUpdate / EndUpdate (to keep the
+// native zoom travel and the picking ray out of it); the drawn picture never changed (QA screenshots at steps 0 and 6
+// identical, owner: "Ctrl+Scroll does nothing"). The Lineages 30 way works: after the camera manager's own update the
+// viewer gets the wider perspective, and before the next update the camera gets back its exact previous view window
+// (so its zoom and follow math never see the widened one and nothing compounds). The widened window is then what the
+// scene is drawn with and what GetCameraToPoint casts world clicks through (no ray correction needed).
+// `coop.fix creature.fov_update off`: the draw-scoped lens of 36..53.
+static bool g_update_fix = true;
+COOP_FIX("creature.fov_update", "BUG-9130", g_update_fix, "creature: Ctrl+Scroll widens the picture (the lens is set after the camera's update)");
+static void (__thiscall* original_update)(void*, int);
+struct Applied {
+    void* viewer = nullptr;
+    float base_x = 0, base_y = 0, applied_x = 0, applied_y = 0;
+};
+static Applied g_applied;
+
+static void unapply()
+{
+    if (!g_applied.viewer)
+        return;
+    void* viewer = g_applied.viewer;
+    if (void* camera = perspective_camera(viewer);
+        camera && skg::field<float>(camera, 0x5C) == g_applied.applied_x && skg::field<float>(camera, 0x60) == g_applied.applied_y)
+        skg::thiscall<void>(g_view_window, viewer, g_applied.base_x, g_applied.base_y);
+    g_applied = {};
+}
+
+static void __fastcall camera_update(void* manager, void*, int elapsed)
+{
+    if (!g_update_fix) {
+        unapply();
+        original_update(manager, elapsed);
+        return;
+    }
+    track_mode();
+    if (manager != active_manager()) {
+        original_update(manager, elapsed);
+        return;
+    }
+    unapply(); // the camera's exact previous window: its zoom and follow math stay native
+    original_update(manager, elapsed);
+    void* viewer = viewer_of(manager);
+    void* camera = perspective_camera(viewer);
+    g_eligible = camera && third_person(manager);
+    g_vanilla = g_effective = 0;
+    if (!g_eligible) {
+        g_wheel_delta = 0;
+        return;
+    }
+    const float x = skg::field<float>(camera, 0x5C);
+    const float y = skg::field<float>(camera, 0x60);
+    if (!(x > 0) || !(y > 0) || !std::isfinite(x) || !std::isfinite(y)) {
+        g_eligible = false;
+        return;
+    }
+    constexpr float half_rad_to_deg = 114.591559f;
+    g_vanilla = g_effective = std::atan(y) * half_rad_to_deg;
+    if (!g_steps)
+        return;
+    g_effective = std::min(150.f, g_vanilla + 3.f * g_steps);
+    if (g_effective <= g_vanilla) {
+        g_effective = g_vanilla;
+        return;
+    }
+    skg::thiscall<void>(g_perspective, viewer, g_effective); // keeps the aspect and the clipping planes
+    g_applied = {viewer, x, y, skg::field<float>(camera, 0x5C), skg::field<float>(camera, 0x60)};
+}
+
 static bool __fastcall begin_view(void* viewer, void*)
 {
+    if (g_update_fix) // BUG-9130: the lens is the camera update's (above)
+        return original_begin(viewer);
     track_mode();
     void* manager = active_manager();
     // A draw whose EndUpdate never reached us must not leave the wide lens behind.
@@ -150,7 +221,8 @@ static bool __fastcall camera_to_point(void* viewer, void*, float x, float y, vo
 {
     // The scene uses a wider lens only while drawing. Match that lens when
     // Spore turns a cursor position into a ray between draws.
-    if (g_steps && !g_projection.viewer) {
+    // (BUG-9130: with creature.fov_update the wide window stays set between draws: the native ray already matches it.)
+    if (g_steps && !g_projection.viewer && !g_update_fix) {
         void* manager = active_manager();
         void* camera = perspective_camera(viewer);
         if (camera && viewer == viewer_of(manager) && third_person(manager)) {
@@ -196,9 +268,13 @@ bool init(const SkHost* host, SkMod* mod, bool (*input_allowed)(), void (*notify
     const auto begin = H->sym("App::cViewer::BeginUpdate");
     const auto end = H->sym("App::cViewer::EndUpdate");
     const auto point = H->sym("App::cViewer::GetCameraToPoint");
-    if (!g_mode_manager || !g_camera_manager || !g_active_camera || !g_perspective || !g_view_window || !begin || !end || !point)
+    const auto update = H->sym("App::cCameraManager::Update");
+    if (!g_mode_manager || !g_camera_manager || !g_active_camera || !g_perspective || !g_view_window || !begin || !end || !point ||
+        !update)
         return false;
-    if (H->hook_create(mod, reinterpret_cast<void*>(point), reinterpret_cast<void*>(camera_to_point),
+    if (H->hook_create(mod, reinterpret_cast<void*>(update), reinterpret_cast<void*>(camera_update),
+                       reinterpret_cast<void**>(&original_update)) != 0 ||
+        H->hook_create(mod, reinterpret_cast<void*>(point), reinterpret_cast<void*>(camera_to_point),
                        reinterpret_cast<void**>(&original_camera_to_point)) != 0 ||
         H->hook_create(mod, reinterpret_cast<void*>(end), reinterpret_cast<void*>(end_view),
                        reinterpret_cast<void**>(&original_end)) != 0 ||
@@ -230,6 +306,7 @@ void shutdown()
 {
     mouse::set_fov_wheel(nullptr);
     if (g_projection.viewer) restore(viewer_of(active_manager()));
+    unapply();
 }
 
 } // namespace fov

@@ -3408,9 +3408,43 @@ static void guest_tick(double now)
     own_probe("mirror moves");
 }
 
+// BUG-9125 (owner: "when meat is eaten by the connected player, the host sees it still but massive size"; not
+// reproduced on two PCs): every 5 s a meat cell three times the usual size of meat of its level is logged once, with
+// what this machine knows of it (mirror of the host's cell or our own, its level, how long it has been seen).
+static void meat_size_watch(double now)
+{
+    static double next;
+    static std::unordered_map<uint32_t, double> logged;
+    if (now < next || !in_cell())
+        return;
+    next = now + 5;
+    std::map<int, std::vector<float>> sizes;
+    std::vector<std::pair<uint32_t, uint8_t*>> meat;
+    for_each_cell([&](uint8_t* c, uint32_t idx) {
+        if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || strcmp(kind_of(c), "meat") != 0)
+            return;
+        sizes[F<int>(c, kLevel)].push_back(F<float>(c, kSize));
+        meat.push_back({idx, c});
+    });
+    for (auto& [lv, v] : sizes)
+        std::sort(v.begin(), v.end());
+    for (auto& [idx, c] : meat) {
+        auto& v = sizes[F<int>(c, kLevel)];
+        const float median = v[v.size() / 2], size = F<float>(c, kSize);
+        if (v.size() < 3 || !(size > median * 3.f) || logged.count(idx) || logged.size() > 40)
+            continue;
+        logged[idx] = now;
+        auto it = g_host_of.find(idx);
+        H->log(M, SK_WARN, "cell: oversized meat c%u size %.2f (median %.2f of %u at level %d) pos=(%.1f %.1f) %s (BUG-9125)", idx,
+               size, median, (unsigned)v.size(), F<int>(c, kLevel), pos_of(c).x, pos_of(c).y,
+               is_guest() ? (it != g_host_of.end() ? "mirror of the host's cell" : "our own (not the host's)") : "host's own");
+    }
+}
+
 // ---------------- both ----------------
 static void symbiosis_tick(double now)
 {
+    meat_size_watch(now); // BUG-9125 diagnostics
     uint8_t* a = avatar();
     double dt = g_last_tick > 0 ? std::min(now - g_last_tick, 0.5) : 0;
     g_last_tick = now;
@@ -3985,7 +4019,25 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (kind == ACT_GONE) {
             if (c) {
                 g_eats_in++;
+                // BUG-9125 (not reproduced): what a partner's meal with loot leaves on this screen
+                const size_t loot_before = g_loot_recent.size();
+                const float eaten_size = F<float>(c, kSize);
+                const int eaten_level = F<int>(c, kLevel);
                 o_Destroy(idx, arg & 1, 0.f, 0); // with the loot the game asked for on the guest
+                static unsigned loot_logged;
+                if ((arg & 1) && loot_logged < 40) {
+                    loot_logged++;
+                    std::string made;
+                    char lb[64];
+                    for (size_t i = loot_before; i < g_loot_recent.size(); i++)
+                        if (uint8_t* lc = modes::cell_at(g_loot_recent[i].first)) {
+                            snprintf(lb, sizeof lb, " c%u %s size=%.2f level=%d", g_loot_recent[i].first, kind_of(lc), F<float>(lc, kSize),
+                                     F<int>(lc, kLevel));
+                            made += lb;
+                        }
+                    H->log(M, SK_INFO, "cell: player %u ate c%u (%s size %.2f level %d) with loot: here%s", from, idx, what,
+                           eaten_size, eaten_level, made.empty() ? " nothing" : made.c_str());
+                }
                 if (int awarded = earned_food(food,plant)) o_AddFood(awarded,plant);
                 if (food && e.has_meal) g_food_sent = -1; // acknowledge even a fractional meal
             } else if (food) {
