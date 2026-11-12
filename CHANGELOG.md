@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Creature / Adventure: a downed creature lies in the game's own death pose
+  until it is revived, and its player watches a partner meanwhile: SPECTATING
+  and their name under the revive ring, Tab or the arrow buttons to switch, a
+  red edge round the screen (BUG-9156).
 - Tribe: when one player's whole village is wiped out and nobody revives
   their last villager in time, the whole party pays: the newest ally becomes a
   rival again (or the newest conquest stops counting), a totem piece and a step

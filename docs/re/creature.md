@@ -3217,3 +3217,21 @@ Two PCs: TITAN hosts a copy of the owner's Vandh.spo (QA), the MSI joins with it
   rejoin under another id the seat's species is a new key and gets a new nest (the old one stays as an AI nest).
   Stable keys per identity are a separate roadmap step. Three or more players: the code loops over the seats; tested
   with two.
+
+## The downed pose and spectating a partner (2026-11-12, feat/lineages-47)
+<a id="creature-downed-pose-spectate"></a>
+
+BUG-9156, switches `creature.downed_pose`, `creature.spectate`.
+* ✔ (live) The game's default death animation 0xF14FAA46 played with cCreatureBase::PlayAnimation (no Die, mbDead
+  stays 0) lays a creature down at 1 hp; skipping its idle refresh (0xC148B0) keeps it lying (coop.track: F14FAA46 for
+  the whole window). The game's own death later plays the same animation (the caption "You were killed in battle!"
+  waits for its check button).
+* ✔ (live) The follow camera computes each update from the viewer's last pose: a camera moved after the update without
+  putting it back drifted (into a hill) and a turned one spun (upside down) within seconds. Put back before the update
+  (fov.cpp restore_offset) it stays put.
+* ✔ (live) Turning the viewer's rows (right, forward, up) by the planet rotation split the picture: objects drew at the
+  new angle, the planet's surface and sky at the old one. Sliding the position row of the viewer (+0x30) and of the
+  render camera's frame (viewer +0x170, +0x30) keeps it whole; the partner stood at the screen centre 99 m away.
+* ~ Far from the own creature the ground under the partner draws faintly (pink sky colour where the terrain is): the
+  terrain's detail follows the real camera. Plants, creatures and objects draw.
+* ? No native red / low-health vignette is known; a red screen edge is drawn by the mod (ring_timer::vignette).

@@ -10,6 +10,11 @@ namespace ring_timer {
 // blink. Nothing is drawn for a position that is not finite.
 void draw(const SkHost* host, float x, float y, float radius, float left, float revive, double now);
 
+// BUG-9156: a red edge round the screen (only during SK_EV_OVERLAY), strength 0..1
+void vignette(const SkHost* host, int sw, int sh, float strength);
+// BUG-9156: a filled arrow pointing left or right, centred at (x, y), `size` its half height
+void arrow(const SkHost* host, float x, float y, float size, bool left, uint32_t argb);
+
 // `coop.fix ui.revive_ring` (on): the ring instead of the text countdowns (off: "KO 12", "[REVIVE 12s]", "Downed: 12 s")
 bool enabled();
 } // namespace ring_timer

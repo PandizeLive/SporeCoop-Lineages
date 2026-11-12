@@ -1,4 +1,5 @@
 #include "modes.h"
+#include "creature_rescue.h"
 
 #include <windows.h>
 
@@ -239,9 +240,27 @@ static bool g_puppet_mound_fix = true;
 COOP_FIX("creature.puppet_mound", "BUG-0435", g_puppet_mound_fix, "creature: the partner's creature on a nest mound stands on the mound, not in it");
 constexpr float kMoundMin = 0.1f; // m over GetHeightAt
 
+// BUG-9156: a downed partner's puppet holds the game's death pose while PF_DOWNED is set (its own game plays it with
+// play_animation, which is not relayed)
+static void puppet_downed(void* p, const net::PlayerState& s)
+{
+    const bool down = creature_rescue::downed_pose_on() && (s.flags & net::PF_DOWNED) && !(s.flags & net::PF_DEAD) &&
+                      (game::in_creature_stage() || game::mode_id() == kScenario);
+    if (down) {
+        uint32_t anim = 0;
+        const bool held = game::pose_held(p);
+        game::hold_pose(p, true);
+        if (!held || (game::drawn_state(p, nullptr, &anim) && anim != creature_rescue::kDownedAnim))
+            game::play_animation(p, creature_rescue::kDownedAnim, -1, true);
+    } else if (game::pose_held(p)) {
+        game::hold_pose(p, false);
+    }
+}
+
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
+    puppet_downed(p, s_in); // BUG-9156
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
     // BUG-0376: the partner is off the ground: never onto this game's ground

@@ -2,6 +2,7 @@
 
 #include <d3d9.h>
 #include <cmath>
+#include <algorithm>
 #include "fixes.h"
 
 namespace ring_timer {
@@ -28,6 +29,82 @@ void paint(IDirect3DDevice9* device, D3DPRIMITIVETYPE type, const std::vector<Pt
 } // namespace
 
 bool enabled() { return g_on; }
+
+// BUG-9156: a red edge round the screen (a downed player spectating): four bands from the edge, opaque to clear
+void vignette(const SkHost* host, int sw, int sh, float strength)
+{
+    auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
+    if (!device || sw <= 0 || sh <= 0 || !(strength > 0)) return;
+    IDirect3DStateBlock9* saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved))) return;
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    const float w = (float)sw, h = (float)sh, band = std::min(w, h) * 0.18f;
+    const DWORD edge = (DWORD)(std::clamp(strength, 0.f, 1.f) * 150.f) << 24 | 0x00B00000, clear = 0x00B00000;
+    auto quad = [&](float x0, float y0, DWORD c0, float x1, float y1, DWORD c1, float x2, float y2, DWORD c2, float x3, float y3, DWORD c3) {
+        Vertex v[4] = {{x0, y0, 0, 1, c0}, {x1, y1, 0, 1, c1}, {x2, y2, 0, 1, c2}, {x3, y3, 0, 1, c3}};
+        device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, v, sizeof(Vertex));
+    };
+    quad(0, 0, edge, w, 0, edge, w - band, band, clear, band, band, clear);         // top
+    quad(0, h, edge, band, h - band, clear, w - band, h - band, clear, w, h, edge); // bottom
+    quad(0, 0, edge, band, band, clear, band, h - band, clear, 0, h, edge);         // left
+    quad(w, 0, edge, w, h, edge, w - band, h - band, clear, w - band, band, clear); // right
+    saved->Apply();
+    saved->Release();
+}
+
+// BUG-9156: a filled arrow (left or right) with a dark edge, centred at (x, y)
+void arrow(const SkHost* host, float x, float y, float size, bool left, uint32_t argb)
+{
+    auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
+    if (!device || !(size > 1)) return;
+    IDirect3DStateBlock9* saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved))) return;
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    const float d = left ? -1.f : 1.f;
+    auto tri = [&](float s, DWORD c) {
+        Vertex v[3] = {{x + d * s, y, 0, 1, c}, {x - d * s * 0.7f, y - s, 0, 1, c}, {x - d * s * 0.7f, y + s, 0, 1, c}};
+        device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 1, v, sizeof(Vertex));
+    };
+    tri(size + 2.f, 0xC0000000);
+    tri(size, (DWORD)argb);
+    saved->Apply();
+    saved->Release();
+}
 
 void draw(const SkHost* host, float x, float y, float radius, float left, float revive, double now)
 {

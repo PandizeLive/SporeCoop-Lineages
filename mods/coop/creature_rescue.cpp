@@ -122,6 +122,7 @@ void charge(const std::string& name, bool gave_up = false)
 
 void resolve(Event result)
 {
+    if (body) game::hold_pose(body, false); // BUG-9156: up again (revived), or the game's own death
     local_id = 0;
     if (!body || !here(game::mode_id()) || game::avatar() != body)
         return;
@@ -182,6 +183,26 @@ void on_player_leave(uint8_t player)
     std::erase_if(peers, [player](const net::PlayerState& p) { return p.id == player; });
 }
 
+// BUG-9156 (owner decision 1V): a downed creature plays the game's own death animation and keeps lying (the idle refresh
+// is held, game::hold_pose), without the game's death (no Die: mbDead would hide the partner's puppet); the anchor
+// hold no longer restarts the animation (place, not teleport). The partners' games do the same with its puppet on
+// PF_DOWNED (modes.cpp). `coop.fix creature.downed_pose off`: standing, as before.
+static bool g_downed_pose = true;
+COOP_FIX("creature.downed_pose", "BUG-9156", g_downed_pose,
+         "creature / adventure: a downed creature lies in the game's death pose until it is revived");
+bool downed_pose_on() { return g_downed_pose; }
+static double g_pose_at;
+static void lie_down(void* c, double now)
+{
+    if (!g_downed_pose || !c) return;
+    game::hold_pose(c, true);
+    uint32_t anim = 0;
+    if (game::drawn_state(c, nullptr, &anim) && anim == kDownedAnim && now - g_pose_at < 4) return;
+    if (anim == kDownedAnim) return;
+    game::play_animation(c, kDownedAnim, -1, true);
+    g_pose_at = now;
+}
+
 bool protect(void* avatar, float& damage)
 {
     if (!S || !S->connected() || !here(game::mode_id()) || !planet ||
@@ -197,6 +218,8 @@ bool protect(void* avatar, float& damage)
     last_request = now;
     game::set_health(body, 1);
     game::stop(body);
+    g_pose_at = 0;
+    lie_down(body, now); // BUG-9156
     damage = 0;
     if (S->role() == net::Role::Host) begin(0, local_id, now);
     else send(0, Begin, local_id);
@@ -233,8 +256,11 @@ void tick(uint32_t world, void* avatar, const std::vector<net::PlayerState>& par
         else if (own_near_since < 0) own_near_since = now;
         game::set_health(body, 1); // BUG-9005: the game's nest also heals a downed avatar
         game::stop(body);
-        if (net::dist(anchor, game::position(body)) > 0.4f)
-            game::teleport(body, anchor, game::orientation(body));
+        if (net::dist(anchor, game::position(body)) > 0.4f) {
+            if (g_downed_pose) game::place(body, anchor, game::orientation(body)); // BUG-9156: keeps the pose
+            else game::teleport(body, anchor, game::orientation(body));
+        }
+        lie_down(body, now);
         if (S->role() == net::Role::Client && now - last_request > 1) {
             send(0, Begin, local_id); // the first request may predate the host's first usable peer state
             last_request = now;

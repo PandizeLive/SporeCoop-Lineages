@@ -128,11 +128,70 @@ static void unapply()
     g_applied = {};
 }
 
+// BUG-9156: spectating carries the camera from the own creature to the followed partner after the game's own update: the
+// viewer's camera-to-world position row (+0x30) moves by the partner's offset (cViewer::BeginUpdate takes it to the
+// render camera); the game's update starts again from its own pose next frame (restore_offset)
+static bool (*g_offset_fn)(float from[3], float to[3]);
+void set_camera_offset(bool (*fn)(float from[3], float to[3])) { g_offset_fn = fn; }
+static void rotate(const float q[4], float* v) // v = q v q*
+{
+    const float x = v[0], y = v[1], z = v[2];
+    const float tx = 2 * (q[1] * z - q[2] * y), ty = 2 * (q[2] * x - q[0] * z), tz = 2 * (q[0] * y - q[1] * x);
+    v[0] = x + q[3] * tx + (q[1] * tz - q[2] * ty);
+    v[1] = y + q[3] * ty + (q[2] * tx - q[0] * tz);
+    v[2] = z + q[3] * tz + (q[0] * ty - q[1] * tx);
+}
+// the game's follow camera starts each update from the viewer's last pose: the moved rows are put back before it runs
+static float g_spec_saved[16], g_spec_cam_saved[16];
+static void* g_spec_viewer;
+static float* g_spec_cam;
+static void restore_offset(void* manager)
+{
+    void* viewer = viewer_of(manager);
+    if (g_spec_viewer && viewer == g_spec_viewer && skg::readable(viewer, 0x40)) {
+        std::memcpy(viewer, g_spec_saved, sizeof g_spec_saved);
+        if (g_spec_cam && skg::readable(g_spec_cam, 0x40)) std::memcpy(g_spec_cam, g_spec_cam_saved, sizeof g_spec_cam_saved);
+    }
+    g_spec_viewer = nullptr;
+    g_spec_cam = nullptr;
+}
+static void apply_offset(void* manager)
+{
+    float a[3], b[3];
+    void* viewer = viewer_of(manager);
+    if (!g_offset_fn || !viewer || !skg::readable(viewer, 0x40) || !g_offset_fn(a, b)) return;
+    std::memcpy(g_spec_saved, viewer, sizeof g_spec_saved);
+    g_spec_viewer = viewer;
+    // the render camera's frame (viewer +0x170, RwMatrix: right, up, at, position rows of 4 floats) moves with it
+    float* cam = skg::field<float*>(viewer, 0x170);
+    if (cam && skg::readable(cam, 0x40)) {
+        std::memcpy(g_spec_cam_saved, cam, sizeof g_spec_cam_saved);
+        g_spec_cam = cam;
+    }
+    const float ra = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    const float rb = std::sqrt(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]);
+    if (!(ra > 1) || !(rb > 1)) return;
+    const float ua[3] = {a[0] / ra, a[1] / ra, a[2] / ra}, ub[3] = {b[0] / rb, b[1] / rb, b[2] / rb};
+    float q[4] = {ua[1] * ub[2] - ua[2] * ub[1], ua[2] * ub[0] - ua[0] * ub[2], ua[0] * ub[1] - ua[1] * ub[0],
+                  1 + ua[0] * ub[0] + ua[1] * ub[1] + ua[2] * ub[2]};
+    const float qn = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+    if (!(qn > 1e-4f)) return;
+    for (float& c : q) c /= qn;
+    float* m = (float*)viewer;
+    // Only the position moves: turning the rows too (q) split the picture (the planet and its sky kept the old angle,
+    // MSI 2026-11-12), so the camera keeps its angle and slides to the partner (a slight tilt far away on a small planet)
+    (void)q;
+    for (int k = 0; k < 3; ++k) m[12 + k] += b[k] - a[k];
+    if (g_spec_cam) for (int k = 0; k < 3; ++k) g_spec_cam[12 + k] += b[k] - a[k];
+}
+
 static void __fastcall camera_update(void* manager, void*, int elapsed)
 {
+    restore_offset(manager); // BUG-9156
     if (!g_update_fix) {
         unapply();
         original_update(manager, elapsed);
+        apply_offset(manager);
         return;
     }
     track_mode();
@@ -142,6 +201,7 @@ static void __fastcall camera_update(void* manager, void*, int elapsed)
     }
     unapply(); // the camera's exact previous window: its zoom and follow math stay native
     original_update(manager, elapsed);
+    apply_offset(manager); // BUG-9156
     void* viewer = viewer_of(manager);
     void* camera = perspective_camera(viewer);
     g_eligible = camera && third_person(manager);

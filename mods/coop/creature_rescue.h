@@ -28,4 +28,7 @@ float own_revive();      // this player is down: how far a partner's revive got,
 // the short line under the top bar while the ring shows the time: "Hold G to give up" for the downed player, nothing
 // for the others (the ring and the red arrow say it); without the ring: status()
 std::string ui_line();
+// BUG-9156: the death pose a downed creature holds (the game's default death animation), on or off
+constexpr uint32_t kDownedAnim = 0xF14FAA46u;
+bool downed_pose_on();
 }

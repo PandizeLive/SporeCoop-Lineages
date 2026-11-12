@@ -770,3 +770,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9153](BUG-9153-village-page-removed-guests-play-their-village-w.md) | open | feature | tribe | 2026-11-12 |  | Village page removed: guests play their village with the game's own controls |
 | [BUG-9154](BUG-9154-party-food-a-share-of-each-delivery-for-the-part.md) | open | feature | tribe | 2026-11-12 |  | Party food: a share of each delivery for the partners, food gifts between party villages |
 | [BUG-9155](BUG-9155-party-wipe-one-founder-village-wiped-out-costs-t.md) | open | feature | tribe | 2026-11-12 |  | Party wipe: one founder village wiped out costs the whole party its newest win |
+| [BUG-9156](BUG-9156-downed-the-death-pose-and-spectating-a-partner.md) | open | feature | creature | 2026-11-12 |  | Downed: the death pose and spectating a partner |

@@ -151,8 +151,8 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1S | A save loaded with fewer slots than players connected gets more slots | A (built, BUG-9143) |
 | 1T | The "Give To" button | B, removed (BUG-9148) |
 | 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A; changed by the owner 2026-11-12: it applies when any one player's whole village is wiped out (not rescued in time), and the loss hits the whole party ("a players whole tribe causes the loss of progression for both players, encouraging rescues"); built in Tribe 2026-11-12 (BUG-9155, live by test command); Civ and the red marker in Tribe not yet |
-| 1V | Downed: the creature plays its native dying pose while downed | A |
-| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows |
+| 1V | Downed: the creature plays its native dying pose while downed | A; built in Creature / Adventure 2026-11-12 (BUG-9156, live) |
+| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows; built in Creature / Adventure 2026-11-12 (BUG-9156, live; far ground draws faintly); Cell, Tribe, Space not yet |
 | 1X | Space: what a player owns | A (owner: "A party will always progress together and share.") |
 | 1Y | Space: what phase 6 builds now | A; owner asked how an empire works for a planet that solo players leave (see 2N) |
 | 1Z | Space: who runs the enemies in a star system | A |

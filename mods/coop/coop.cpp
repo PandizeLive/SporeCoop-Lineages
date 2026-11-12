@@ -3326,6 +3326,7 @@ static void apply_startup_off()
     fclose(f);
 }
 
+static void spectate_tick(); // BUG-9156 (below)
 void on_frame(void*, int, void*)
 {
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
@@ -3383,6 +3384,7 @@ void on_frame(void*, int, void*)
         creature_rescue::tick(g_world ? g_world : 0xADE47u, g_local, rescue_peers, now); // BUG-9089: the captain too
     else
         creature_rescue::reset();
+    spectate_tick(); // BUG-9156
     lobby_tick(now);
     vote_tick(now);
     submit_tick(now);
@@ -3880,6 +3882,110 @@ void mate_hearts_tick(double now)
     restored.swap(local.still_eligible);
 }
 
+// ---- BUG-9156: spectating while downed (owner decision 1W: "Tab works, but also a left and right arrow next to the
+// name you're spectating") ----
+// A downed player (Creature, Adventure) watches the nearest partner: the camera is moved by the partner's offset from
+// the own creature after the game's camera update (fov::set_camera_offset), "SPECTATING <name>" with < > buttons under
+// the revive ring, Tab or the buttons switch partners, a red edge round the screen. `coop.fix creature.spectate off`.
+static bool g_spectate_fix = true;
+COOP_FIX("creature.spectate", "BUG-9156", g_spectate_fix,
+         "creature / adventure: a downed player watches a partner (SPECTATING, Tab, < >) with a red screen edge");
+static uint8_t g_spec_id = 0xFF;
+static uint32_t g_spec_clicks;
+static bool g_spec_tab;
+static int g_spec_btn[2][4]; // the < and > buttons on screen: x0, y0, x1, y1
+static uint32_t g_spec_switches;
+
+static bool spectating()
+{
+    return g_spectate_fix && g_local && g_sess.connected() && creature_rescue::down() &&
+           (g_mode == modes::kCreature || g_mode == modes::kScenario);
+}
+
+struct SpecTarget { uint8_t id; net::Vec3 pos; bool down; float dist; };
+static std::vector<SpecTarget> spec_targets()
+{
+    std::vector<SpecTarget> out;
+    const net::Vec3 me = modes::entity_pos(g_adapter, g_local);
+    for (const auto& [id, r] : g_remotes) {
+        if (r.echo || id >= net::kMaxPlayers || r.buf.empty() || !r.puppet || !r.puppet_adapter) continue;
+        const auto& s = r.buf.latest();
+        if (!same_place(s) || !(s.flags & net::PF_IN_WORLD) || (s.flags & net::PF_DEAD)) continue;
+        const net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+        out.push_back({id, p, (s.flags & net::PF_DOWNED) != 0, net::dist(p, me)});
+    }
+    std::sort(out.begin(), out.end(), [](const SpecTarget& a, const SpecTarget& b) {
+        return a.down != b.down ? !a.down : a.dist < b.dist; // standing partners first, the nearest first
+    });
+    return out;
+}
+
+static void spectate_tick()
+{
+    if (!spectating()) { g_spec_id = 0xFF; return; }
+    auto targets = spec_targets();
+    if (targets.empty()) { g_spec_id = 0xFF; return; }
+    // the order of the switch is the players' order, not the distance (stable while they move)
+    std::vector<uint8_t> ids;
+    for (const auto& t : targets) ids.push_back(t.id);
+    std::sort(ids.begin(), ids.end());
+    auto at = std::find(ids.begin(), ids.end(), g_spec_id);
+    if (at == ids.end()) { g_spec_id = targets.front().id; at = std::find(ids.begin(), ids.end(), g_spec_id); }
+    int step = 0;
+    HWND gw = H->game_window ? (HWND)H->game_window() : nullptr;
+    const bool tab = gw && GetForegroundWindow() == gw && (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
+    if (tab && !g_spec_tab) step = 1;
+    g_spec_tab = tab;
+    mouse::install(H->game_window());
+    if (mouse::clicks() != g_spec_clicks) {
+        g_spec_clicks = mouse::clicks();
+        int x, y;
+        mouse::last_click(x, y);
+        for (int b = 0; b < 2; ++b)
+            if (x >= g_spec_btn[b][0] && x <= g_spec_btn[b][2] && y >= g_spec_btn[b][1] && y <= g_spec_btn[b][3])
+                step = b == 0 ? -1 : 1;
+    }
+    if (step && ids.size() > 1) {
+        const int n = (int)ids.size();
+        const int i = (int)(at - ids.begin());
+        g_spec_id = ids[(size_t)(((i + step) % n + n) % n)];
+        ++g_spec_switches;
+    }
+}
+
+// fov's camera move: from the own creature to the followed partner
+static bool spectate_offset(float from[3], float to[3])
+{
+    if (!spectating() || g_spec_id == 0xFF) return false;
+    auto it = g_remotes.find(g_spec_id);
+    if (it == g_remotes.end() || !it->second.puppet || !it->second.puppet_adapter) return false;
+    const net::Vec3 p = modes::entity_pos(it->second.puppet_adapter, it->second.puppet);
+    const net::Vec3 me = modes::entity_pos(g_adapter, g_local);
+    if (!std::isfinite(p.x) || !std::isfinite(me.x) || net::dist(p, me) > 2000) return false;
+    from[0] = me.x; from[1] = me.y; from[2] = me.z;
+    to[0] = p.x; to[1] = p.y; to[2] = p.z;
+    return true;
+}
+
+static void draw_spectate(int sw, int sh, int y)
+{
+    if (!spectating() || g_spec_id == 0xFF) { std::memset(g_spec_btn, 0, sizeof g_spec_btn); return; }
+    ring_timer::vignette(H, sw, sh, 0.85f);
+    const std::string name = "SPECTATING " + g_sess.name_of(g_spec_id);
+    const int w = text_width(name), x = sw / 2 - w / 2;
+    H->overlay_text(x + 1, y + 1, 0xFF000000, name.c_str());
+    H->overlay_text(x, y, 0xFFFFFFFF, name.c_str());
+    const int bw = 22, bh = 20, gap = 10;
+    const int lx = x - gap - bw, rx = x + w + gap;
+    const int bx[2] = {lx, rx};
+    for (int b = 0; b < 2; ++b) { // the previous / next buttons: filled arrows (the overlay font draws no angle brackets)
+        g_spec_btn[b][0] = bx[b] - 4; g_spec_btn[b][1] = y - 6; g_spec_btn[b][2] = bx[b] + bw + 4; g_spec_btn[b][3] = y + bh;
+        ring_timer::arrow(H, bx[b] + bw / 2.f, y + 7.f, 9.f, b == 0, 0xFFFFD040);
+    }
+    const std::string hint = "Tab: next partner";
+    H->overlay_text(sw / 2 - text_width(hint) / 2, y + 18, 0xFFC0C0C0, hint.c_str());
+}
+
 void on_overlay(void*, int, void*)
 {
     if (build_id() == 0xDC04AEE5u) editor_depth::draw(); // BUG-9103
@@ -3913,6 +4019,7 @@ void on_overlay(void*, int, void*)
             H->overlay_text(x + 1, y + 1, 0xFF000000, line.c_str());
             H->overlay_text(x, y, own ? 0xFFFF6060 : 0xFFFFD040, line.c_str());
         }
+        draw_spectate(sw, sh, line_y + 24); // BUG-9156
     }
     if (labels) {
         draw_marks();
@@ -6282,6 +6389,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         if (!editor_depth::init(H, M)) LOG("editor depth handle: symbols missing, off");
     }
     if (build_id() == 0xDC04AEE5u)
+        fov::set_camera_offset(spectate_offset); // BUG-9156
         fov::init(H, M, [] {
             // Creature can pause its simulation without taking away the follow camera.
             return (game_busy() & ~busy::kPaused) == 0 && !coop_ui::is_open();
