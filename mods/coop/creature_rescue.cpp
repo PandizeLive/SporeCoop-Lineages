@@ -10,6 +10,7 @@
 #include "modes.h"
 #include "progress_debt.h"
 #include "ring_timer.h"
+#include "down_time.h"
 #include "net/interp.h"
 
 namespace creature_rescue {
@@ -23,7 +24,7 @@ namespace {
 // same as the timer running out, at once. `coop.fix creature.down_30 off`: 10 s.
 bool g_long_fix = true;
 COOP_FIX("creature.down_30", "BUG-9118", g_long_fix, "creature / adventure: a downed player waits 30 s for a partner (10 before)");
-double window_s() { return g_long_fix ? 30.0 : 10.0; }
+double window_s() { return downed::seconds(g_long_fix, 10.0); } // BUG-9149: a minute (core.down_60)
 constexpr double hold = 1.5;
 constexpr float reach = 6;
 enum Event : uint8_t { Begin, Revived, Expired, GiveUp };

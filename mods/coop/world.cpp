@@ -1537,6 +1537,10 @@ void native_campaign_loaded(const std::string& key)
     g_campaign_setup.checked.clear();
 }
 
+// BUG-9143: a loaded save with fewer player slots than players connected gets more (owner 2026-11-12, "2A")
+static bool g_slots_on_load_fix = true;
+COOP_FIX("core.slots_on_load", "BUG-9143", g_slots_on_load_fix,
+         "a save loaded with fewer player slots than players connected gets more slots (off: the session ends)");
 static bool apply_saved_rules(net::Session& session, const std::string& key, std::string& error)
 {
     founders::CampaignRules rules;
@@ -1550,13 +1554,27 @@ static bool apply_saved_rules(net::Session& session, const std::string& key, std
     case founders::RulesFile::Unreadable:
         error = "Cannot read this planet's player slots. Restore its campaign settings before hosting it.";
         return false;
-    case founders::RulesFile::Saved:
+    case founders::RulesFile::Saved: {
+        // BUG-9143 (owner 2026-11-12, "2A"): a save with fewer player slots than the players connected gets more slots
+        // (difficulty up), told in the chat; before, the whole session ended. Space keeps its next-load rule, and off
+        // (`coop.fix core.slots_on_load off`) the session ends as before.
+        uint8_t needed = 0;
+        for (const auto& p : session.players()) needed = std::max<uint8_t>(needed, uint8_t(p.id + 1));
+        const uint8_t had = plan.seats_in(stage,rules.seats);
+        std::string raise_error;
+        if (needed > had && g_slots_on_load_fix && session.role() == net::Role::Host && stage >= 1 && stage <= 4 &&
+            needed <= 4 && founders::raise_seats(key,needed,stage,raise_error) &&
+            founders::read_rules(key,rules,&plan) == founders::RulesFile::Saved) {
+            g_feed("This save had " + std::to_string(had) + " player slot(s): raised to " + std::to_string(needed) +
+                   " so everyone stays (difficulty rises with them).");
+        }
         for (const auto& p : session.players()) {
             if (p.id >= plan.seats_in(stage,rules.seats)) {
                 error = "This save has fewer player slots than players connected. Rehost from this planet.";
                 return false;
             }
         }
+    }
         rules.seats = plan.seats_in(stage,rules.seats);
         if (stage && session.role() == net::Role::Host) {
             uint8_t occupied = g_campaign_setup.joined_world == key ? g_campaign_setup.joined_floor : 1;

@@ -1,3 +1,5 @@
+#include "down_time.h"
+#include "ring_timer.h"
 #include "spacecoop.h"
 
 #include <algorithm>
@@ -39,7 +41,7 @@ constexpr uintptr_t kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540
 // BUG-9118: 30 s for a partner's repair (20 before; `coop.fix space.down_30 off`), and the pilot can give up (hold G)
 static bool g_down_30 = true;
 COOP_FIX("space.down_30", "BUG-9118", g_down_30, "space: a disabled ship waits 30 s for a partner's repair (20 before)");
-static double down_time() { return g_down_30 ? 30.0 : 20.0; }
+static double down_time() { return downed::seconds(g_down_30, 20.0); } // BUG-9149: a minute (core.down_60)
 static bool g_give_up_now; // coop.giveup (tests)
 constexpr double kRepairHold = 2.0;
 static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
@@ -87,6 +89,7 @@ COOP_FIX("space.down_world", "BUG-0229", g_down_world_fix,
          "space: a disabled state pauses in an editor / adventure and ends without a death in another Space world");
 static uint32_t g_down_world_ends, g_down_owed_cleared, g_down_owed_dropped;
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
+static std::unordered_map<uint8_t, double> g_partner_down_total; // partner -> its whole downed time (BUG-9141)
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
 static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
@@ -1155,6 +1158,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             break;
         if (st == 1) {
             g_partner_down[origin] = now + secs;
+            g_partner_down_total[origin] = secs; // BUG-9141: the ring's whole time
             if (C.notice)
                 C.notice(name(origin) + "'s ship is disabled: fly close to repair it");
         } else {
@@ -1350,18 +1354,42 @@ void tick(double now)
         for (auto& p : partners_here())
             if (g_partner_down.count(p.id)) {
                 int left = (int)std::max(0.0, g_partner_down[p.id] - now);
-                C.beacon(p.pos, "REPAIR " + p.name + " (" + std::to_string(left) + " s)", 0.25, 0xFFFF6040);
+                C.beacon(p.pos, ring_timer::enabled() ? "REPAIR " + p.name // BUG-9141: the ring shows the time
+                                                      : "REPAIR " + p.name + " (" + std::to_string(left) + " s)",
+                         0.25, 0xFFFF6040);
             }
 }
 
 void draw_overlay()
 {
     spaceext::overlay_all();
-    if (!g_down || !in_space())
+    if (!in_space())
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     double now = H->time_seconds();
+    // BUG-9141: a disabled partner's ship here: the draining ring over it (its own time, from its message)
+    if (ring_timer::enabled() && sw > 0)
+        for (auto& p : partners_here()) {
+            auto it = g_partner_down.find(p.id);
+            if (it == g_partner_down.end()) continue;
+            float w[3] = {p.pos.x, p.pos.y, p.pos.z}, sc[2] = {NAN, NAN};
+            const float r = ring_timer::radius_for(sh);
+            if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)
+                ring_timer::draw(H, sc[0], std::max(r + 4.f, sc[1] - 40.f - r), r,
+                                 ring_timer::fraction(it->second - now, g_partner_down_total.count(p.id) ? g_partner_down_total[p.id] : down_time()),
+                                 0.f, now);
+        }
+    if (!g_down)
+        return;
+    if (ring_timer::enabled()) { // BUG-9141: the own disabled ship: a large ring under the top bar, the hint under it
+        const float r = ring_timer::radius_for(sh) * 1.4f;
+        ring_timer::draw(H, sw / 2.f, sh / 4.f + r, r, ring_timer::fraction(g_down_until - now, down_time()),
+                         (float)std::clamp(g_repair_t / kRepairHold, 0.0, 1.0), now);
+        const char* hint = "Ship disabled: a partner repairs it by flying close (hold G to give up)";
+        H->overlay_text(sw / 2 - utf8::overlay_width(hint) / 2, (int)(sh / 4.f + 2.f * r + 10.f), 0xFFFFD040, hint);
+        return;
+    }
     int left = (int)std::max(0.0, g_down_until - now);
     char b[160];
     snprintf(b, sizeof b, "SHIP DISABLED  %d s  -  a partner repairs it by flying close", left);

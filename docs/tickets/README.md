@@ -762,3 +762,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9145](BUG-9145-editor-depth-cube-highlights-but-cannot-be-dragg.md) | fixed | bug | Creature | 2026-11-12 | unreleased | editor depth cube highlights but cannot be dragged in some camera orientations |
 | [BUG-9146](BUG-9146-creature-and-adventure-no-knockout-or-revive-wit.md) | fixed | bug | Creature Adventure | 2026-11-12 | unreleased | creature and adventure: no knockout or revive with three or four players |
 | [BUG-9147](BUG-9147-tribe-the-host-s-last-villager-killed-by-the-co.md) | open | bug | Tribe | 2026-11-12 |  | tribe: the host's last villager killed by the co-op epic without the knockout, native game over |
+| [BUG-9148](BUG-9148-co-op-window-no-give-to-button.md) | open | feature | all | 2026-11-12 |  | co-op window: no Give To button |
+| [BUG-9149](BUG-9149-downed-players-wait-a-minute-for-a-revive-on-eve.md) | open | feature | all | 2026-11-12 |  | downed players wait a minute for a revive on every stage |

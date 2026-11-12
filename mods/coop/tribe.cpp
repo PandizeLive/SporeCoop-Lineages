@@ -1,3 +1,4 @@
+#include "down_time.h"
 #include "tribe.h"
 #include "chief_arrival.h"
 #include "creature_hp.h"
@@ -278,7 +279,7 @@ static std::array<std::pair<uint16_t, double>, founders::kMaxSeats> g_remote_res
 // BUG-9118: a downed founder waits 30 s for its partner (10 before); `coop.fix tribe.down_30 off`: 10 s
 static bool g_down_30 = true;
 COOP_FIX("tribe.down_30", "BUG-9118", g_down_30, "tribe: a downed last villager or village waits 30 s for the partner (10 before)");
-static double down_time() { return g_down_30 ? 30.0 : 10.0; }
+static double down_time() { return downed::seconds(g_down_30, 10.0); } // BUG-9149: a minute (core.down_60)
 static bool g_give_up_now; // coop.giveup (tests)
 // the rescue trailer of MSG_TRIBE_STATE: TRRV for two founder seats as before, TRRS for 3+ (tribe_seats.h)
 static_assert(tribe_seats::kMaxSeats == founders::kMaxSeats, "tribe_seats.h mirrors founders::kMaxSeats");

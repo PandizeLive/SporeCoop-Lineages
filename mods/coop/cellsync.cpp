@@ -33,6 +33,7 @@
 #include "fixes.h"
 #include "trace.h"
 #include "ring_timer.h"
+#include "down_time.h"
 
 void coop_module_of(uintptr_t a, char* out, size_t cap); // debug.cpp (RE, BUG-0355)
 
@@ -256,7 +257,7 @@ static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bi
 // BUG-9118: 30 s for a partner (10 before; `coop.fix cell.down_30 off`), and the downed player can give up (hold G)
 static bool g_down_30 = true;
 COOP_FIX("cell.down_30", "BUG-9118", g_down_30, "cell: a knocked-out cell waits 30 s for a partner (10 before)");
-static double down_time() { return g_down_30 ? 30.0 : 10.0; }
+static double down_time() { return downed::seconds(g_down_30, 10.0); } // BUG-9149: a minute (core.down_60)
 constexpr double kReviveHold = 1.5;
 constexpr float kSmall = 0.5f;
 static double g_last_regen, g_invuln_until, g_last_tick;

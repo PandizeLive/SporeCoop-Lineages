@@ -74,6 +74,9 @@ constexpr uint32_t kDangerButtonShade = 0xFFAD535D;
 constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
 static unsigned g_slots_shown; // the player slot count last written into the lobby's box (0: none)
+static bool g_give_button = false;
+COOP_FIX("ui.give_button", "BUG-9148", g_give_button,
+         "co-op window: the Give To button for selected units and cargo spice (owner 2026-11-12: removed, off)");
 static int g_lan_first, g_lan_max, g_lan_wheel_delta;
 static bool g_lan_dragging;
 constexpr int kLanRows = 6;
@@ -1616,7 +1619,11 @@ static void refresh_lobby()
     bool space = gwhat == "spice";
     // only where there are units to give (Tribe, Civ, Space): at the galaxy menu, in Cell or Creature the
     // line "Select your units to give them to a partner" meant nothing
-    bool giving = A.give && !gto.empty() && (!g_label_width_fix || !gwhat.empty()) && (cl.empty() || space);
+    const bool give_ctx = A.give && !gto.empty() && (!g_label_width_fix || !gwhat.empty()) && (cl.empty() || space);
+    // owner 2026-11-12 ("3B"): no "Give To" button and no gift row (BUG-9148); `coop.fix ui.give_button on`: as before.
+    // The Civ role row keeps its place (it used to show while nothing was selected to give).
+    const bool giving = give_ctx && g_give_button;
+    if (!giving) space = false;
     if (space) // the ship can't be changed in flight: the row is for the cargo
         cl = gn ? std::string(T("Spice in cargo: ", "Специи в трюме: ")) + std::to_string(gn)
                 : T("No spice in cargo to give", "В трюме нет специи");
@@ -1627,7 +1634,7 @@ static void refresh_lobby()
         cl = gn ? std::string(w) + (gwhat == "city" ? "" : std::to_string(gn))
                 : T("Select your units to give them to a partner", "Выделите свои юниты, чтобы отдать напарнику");
     }
-    bool roles = giving && gn == 0 && A.civ_role && A.mode && A.mode() == 0x1654C04; // civ, nothing selected
+    bool roles = give_ctx && (gn == 0 || !g_give_button) && A.civ_role && A.mode && A.mode() == 0x1654C04; // civ
     if (roles) {
         int r = A.civ_role();
         const char* rn[4] = {T("none - pick one", "нет - выберите"), T("military (stronger vehicles)", "военная (сильнее машины)"),

@@ -31,8 +31,14 @@
   player by itself. During a ready vote the host's "Start Now" stays
   (BUG-9144).
 - A downed player's countdown is now a ring that drains as time runs out,
-  with a green fill while a partner revives: in Cell, Creature, Adventures and
-  Tribe (BUG-9141).
+  with a green fill while a partner revives: in Cell, Creature, Adventures,
+  Tribe and Space (BUG-9141).
+- A downed player now waits a whole minute for a partner on every stage
+  (was 30 seconds) (BUG-9149).
+- Loading a save with fewer player slots than the players connected no longer
+  ends the session: the slots rise to fit everyone, and the chat says so
+  (BUG-9143).
+- Co-op window: the "Give To" button is gone (BUG-9148).
 - Creature and Adventures: with three or four players a downed player can be
   revived by any partner. Before, only two-player games had the knockout; with
   more players a lethal hit was a plain death (BUG-9146).
