@@ -11,11 +11,11 @@ versions: 0.7.8-lineages46-dev to 0.7.8-lineages53-dev (by design since the foun
 fixed_in:
 branch: feat/lineages-47
 commits:
-tests: -
+tests: tests/civ_seats_tests.cpp (unit, Civ seat rules)
 signature: host log has no "tribe automatic founders" line at all; session has 3 players (host + 2 partners)
-docs: -
-related: BUG-9040 BUG-9134
-switch: tribe.auto_founders
+docs: docs/re/civ.md#civ-multi-founders
+related: BUG-9040 BUG-9134 BUG-9054 BUG-9056 BUG-9073
+switch: tribe.auto_founders, civ.multi_founders
 ---
 
 ## Report
@@ -83,3 +83,51 @@ arriving.
 ## Decisions (2026-11-12)
 The owner's confirmed decisions for 3-4 players with own nests, and the proposed foundation phase, are in
 docs/ROADMAP.md (the overview kept up to date); this ticket keeps the code-level details.
+
+## Phase 5 (Civilization) in code (2026-11-12, feat/lineages-47; not yet run in a game)
+Switch `civ.multi_founders` (on; off = the two nations of before, byte for byte the old code path). Details and the
+rules: docs/re/civ.md#civ-multi-founders; pure rules mods/coop/civ_seats.h, unit test tests/civ_seats_tests.cpp
+(fails when the two-founder rule ignores the identity or the number of partners).
+* founder_owner per seat: host `party::founder_player_of` with the species match (nation species or the seat's outfit
+  history) and the two-founder rule (one partner, a two-seat roster without identity: that partner, as before); a
+  guest its own seat (`civ_seats::own_seat`: identity in its copy of the roster, species, the two-founder rule).
+  Feeds h_CityOwned, h_VehicleOwned, host_assign_cities, the vehicle owners of host_tick and the purchase check.
+* A seat without identity learns it from the partner who alone plays its species (roster written once, CIV2).
+* founder_tick: one capital per Tribe roster partner seat, one at a time in seat order (per-seat spawned bits), only
+  while every city is the host's or a seated founder's; the new nation is the only blank unknown one; the roster is
+  written after each, the world saved or shared after the last. Recovery recreates missing saved capitals one at a time.
+* Per seat: the guest's purchase dialogue and terrain cursor, CMD_CITY_PURCHASE (the sender's seat), the host's
+  offline selection (every absent seat), campaign_tick (tech, highest count, unlocks over every founder nation),
+  h_HudProgress (every partner nation's cities), the founding AI hold, `coop.civ bind_guest <nation> [player]`.
+* No wire format change. The guest learns its nation from the roster file in the shared save, as before.
+
+Still two nations or open:
+* A Civ seat needs a Tribe roster seat (founders::can_record): with today's Tribe code (seats 0 and 1 only) a third
+  player gets no capital until phase 3 founds their village, or a late-joiner rule (phase 4) lets founders.cpp
+  record a Civ seat without a tribal one.
+* Founding is refused once an NPC nation exists ("not reserved before other nations appeared"): a partner seat
+  added to an advanced Civ save needs phase 4's catch-up capital.
+* The capital takes the next free native site, not the one nearest the partner's former village: the site record's
+  position field is unknown and a guest replays "the next site"; `coop.civ sites` dumps the records and the
+  founding logs the capital's distance to the former village (docs/re/civ.md#civ-multi-founders).
+* `.duo-command` (CMD1) binds the home and seat 1 factions only; its flag covers every absent seat. A per-seat binding
+  needs a CMD2 format in founders.cpp.
+* party seats (`.duoparty`, join order) and founder roster seats (Tribe order) are separate lists; civ uses the
+  founder roster's seats only.
+* Not touched: BUG-9054 (shared budget), BUG-9056 (history, Space readiness), BUG-9073 (turret planner) beyond the
+  per-nation generalisation above.
+
+To verify in a live three-player Civilization game (host + 2 partners, a Tribe save whose roster has three seats):
+1. Host log: `civ automatic founders: Native partner capital founding requested.`, then seat 1 bound, then
+   `Native capital founding requested for partner seat 2.` and `Partner seat 2 now has a native Civilization
+   capital.`; `seat N capital ... from its former village` lines; one world share after the last capital.
+2. `coop.civ nations` on all three games: three founder nations with the three species; `coop.civ` status
+   `founders:` line: host seats 1 and 2 with their players, each guest `local_seat` 1 or 2 (its own).
+3. Each partner selects and moves only its own nation's vehicles, opens only its own cities' menus and buys there
+   (city menu purchase debits the shared treasury); the other partner's vehicles cannot be selected.
+4. A city purchase (economic) by partner 2 is made by nation 2; a capture by partner 2 raises the home campaign
+   counter (`coop.civ campaign`), tech and unlocks match on all three nations, the HUD bar counts all cities.
+5. Partner 2 leaves: its nation's vehicles have no owner (0xFE) unless offline control is on (then the host selects
+   them, also while partner 1 stays); it rejoins under another network id: it commands nation 2 again (identity).
+6. Save, quit, reload: the capitals keep their species, nobody's nation is founded again, owners return.
+7. With `coop.fix civ.multi_founders off` and two players: the old behaviour (lab duo_civ_* tests).
