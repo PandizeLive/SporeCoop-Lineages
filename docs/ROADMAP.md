@@ -43,6 +43,17 @@ Design rules that follow from it, for the co-op work now:
   per identity in a side file), who runs enemies in a system (recommended: whoever of the party is there, handed over
   when they leave), where Space progress is saved (recommended: a side file per identity), difficulty (recommended: per
   party), the Galactic Core (recommended: your own party only).
+* Space, rethought (owner 2026-11-12: "Consider the idea that multiple people will be progressing out of the planet,
+  and especially in MMO, non partied members may progress out the planet too."). The native end of Civ is "own the
+  whole planet", which with several parties on one planet means beating the other players first. Asked 2026-11-12:
+  3G what ends Civ for a party (recommended: the party's own progress target, the other parties keep playing Civ);
+  3H what happens to a party's cities when it leaves (recommended: they stay as its homeworld, nobody can capture them);
+  3I who launches (recommended: the whole party together, each player in their own ship; a later joiner launches from
+  the homeworld); 3J what Space players may do to a planet where others still play Civ (recommended: visit and trade
+  only, no raids or abductions of players' cities).
+* Open decision IDs asked 2026-11-12 and not answered yet: 3G-3J (above), 4A the egg as the "cocoon", 4B how evolving
+  starts, 4C DNA when two evolve at once, 4D migration and the stage end, 5A when the Village page goes, 5B the creature
+  editor on join.
 
 ## Confirmed decisions: 3-4 player co-op with own nests (owner, 2026-11-12)
 
