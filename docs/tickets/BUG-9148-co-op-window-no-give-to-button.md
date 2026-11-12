@@ -10,7 +10,7 @@ role: all
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 99b846b6
 tests: tools/qa_win (manual QA 2026-11-12)
 signature:
 docs:
