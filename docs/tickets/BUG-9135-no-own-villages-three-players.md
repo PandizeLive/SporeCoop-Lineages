@@ -318,3 +318,9 @@ creature of their own got only a chat notice in Civ (the Co-op window had no cre
 now shows the Tribe prompt in Civ, and the row's arrows choose the creature; a real click on the MSI then founded its
 capital within 40 s. Details: docs/re/civ.md#civ-late-capital. Not live yet: the Tribe -> Civ graduation with 3-4
 founder villages (phase 5).
+
+## Phase 5 live test, Tribe -> Civ graduation (2026-11-12, feat/lineages-47)
+Four games, a fresh copy of the owner's Jiff save: four founder villages (seat 1 bound with `coop.tribe bind_founder 1
+2`), then four wins by fixture and one native win (docs/06-testing.md#testing-two-pc-msi), the native "Your totem is
+complete" caption, History, the ready vote (`coop.vote go`), the City Hall and vehicle editors, Civ: one capital per
+founder seat with its own species and owner on every game, 0 faults. Details: docs/re/civ.md#civ-four-founders-live.

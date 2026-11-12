@@ -5252,3 +5252,15 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   bind_founder 1 <player>` for the old partner seat. The older DuoQAJiffHost copy is worn out (4 idle hours of co-op
   epics: one villager per village, then the host's hut destroyed). DuoQAClythHost's Clyth is a prototype whose host hut
   does not belong to the host's village (partners are never founded there).
+* Tribe -> Civ with four founders, the recipe that works (2026-11-12, feat/lineages-47; about 40 minutes): a fresh copy
+  of a Tribe save (difficulty set to 0% in the copy's .duo-seats: five rivals), four players, `coop.seats 4 now`,
+  `coop.tribe bind_founder 1 <player>` for an old seat. Wins 1-4 by fixture (Totem_AddSegment x4 and cPlayer +0x10F0 =
+  4: not a native win, only the count). The fifth is native: `coop.tribe npc_tribe 3 160`, then the scratchpad driver
+  raid.py: TribeGoalUI_SelectTarget(ui, village), the hut lowered to 1 by cTribeHut_TakeDamage, the host's villagers
+  placed beside it (spatial vt +0xEC, +0x44) and ordered DoAction 15 (RaidHuts): the game said "You have destroyed the
+  Orange Village! Your totem is complete! You can advance to the Civilization stage now." Then the captions (0445C99D,
+  062EF353), the Advance button (1136,648), the History tooltip (FFFFFFF1) and check (1152,641), `coop.vote go`, the
+  lab's City Hall drags and name (tools/tests/duo_tribe_graduation_cityhall.py coordinates at 1176x664), the vehicle
+  (the weapon drag needed slower moves: 20 steps of 0.25 s at 5 FPS), "You are about to enter Civilization", and the
+  Civ tutorial (BUG-9052's recipe: both buttons held and moved, `key up down` repeated, `wheel`, a click on the vehicle's
+  panel icon, then the tutorial checks FFFFFFF1): the partner capitals came only after the tutorial released the time.

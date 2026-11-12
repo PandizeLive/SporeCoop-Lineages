@@ -84,7 +84,7 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 | 2 | Creature: own nest per player (decisions 2, 3, 6, 7, 8), via the game's herd-and-nest creation; respawn and hatch at the own nest; migration together. | done 2026-11-12, two-PC tested (docs/re/creature.md#creature-own-nests) |
 | 3 | Tribe: each player's village from their own nest through the game's Tribe-start logic; 3-4 founders in every rule that counts founders (objectives, rivals, alliances, hut upgrades); orders, food, rescue and outfits per seat. | built 2026-11-12 (`tribe.multi_founders`); live-tested with 3 players on two PCs on a copy of the owner's Jiff save: the old broken partner village repaired and bound, a third village founded, orders and food per seat, a rejoin keeps its seat. Not yet live: a fresh Creature -> Tribe start (needs the host's clicks), rescue / give-up, the outfit vote. (docs/re/tribe.md#tribe-multi-founders) |
 | 4 | Joining late (decisions 4, 5): detect a species, else the create-a-creature prompt; catch up to the host's home. | built 2026-11-12. Tribe live-tested with four founder villages on two PCs: a joiner on the host's creature is told why and gets the "choose your own creature" row in the Co-op window; their pick founds their village with no rejoin, caught up to the host's (hut level, members, racks); all games agree. Civ live-tested 2026-11-12 with four games: three late capitals (one per partner) caught up with the host capital; a joiner without a creature now gets the same prompt in Civ (fixed after the test showed only a chat notice). Not yet live: the "Create New Creature" editor button (off), BUG-9138's two-waiting-partners case. (docs/re/tribe.md#tribe-late-joiners, docs/re/civ.md#civ-late-capital) |
-| 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built 2026-11-12 (`civ.multi_founders`), host unit test. The founder roster, seat owners and shared money live-tested with four nations through late capitals (phase 4). The graduation itself (Tribe -> Civ with 3-4 founder villages) is not yet live: it needs a Tribe save with five objectives done; none exists on this PC and the game has no stage-advance cheat (docs/06-testing.md#testing-two-pc-msi). (docs/re/civ.md#civ-multi-founders) |
+| 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built and live-tested 2026-11-12: a native Tribe -> Civ graduation with four founder villages (TITAN host + 2 TITAN guests + the MSI) founded one capital per founder seat, each with its own species and commanded by its own player, on every game; 0 faults. (docs/re/civ.md#civ-four-founders-live) |
 | 6 | Space: the personal launch per seat. | planned |
 | 1b | Stable species keys per identity (a partner's creature keeps its key across rejoins under another network id). | planned |
 | 7 | Adventure creatures simulated by the host (BUG-9114). | waiting (needs clicks on the owner's PC or the MSI) |
@@ -110,14 +110,22 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
   the creature editor at once and prepare the site and catch-up meanwhile (the home appears about 15 s after they
   save; existing creations stay as a shortcut), B found the home at once with the host's creature and swap every
   villager afterwards, C keep the choice row with the editor button beside it.
-* The Tribe -> Civ graduation test with four founder villages (phase 5), owner 2026-11-12 "2A, be smart": on a fresh
+* (2026-11-12, answered "1A": done, phase 5 live-tested.) The Tribe -> Civ graduation test with four founder villages (phase 5), owner 2026-11-12 "2A, be smart": on a fresh
   copy of the Jiff save four founder villages came back in a minute (seat 1 bound with `coop.tribe bind_founder 1 2`),
   but the shortcuts to five wins failed: five totem pieces (Totem_AddSegment) plus the player's progress at 5 / 5
   (cPlayer +0x10F0) do not make History offer the next stage; an NPC village made with `coop.tribe npc_tribe` and its
   hut destroyed with the host's faction (cTribeHut_TakeDamage) counts as no win. The game offers Civ only after a native
   win through its goal path (a target chosen by TribeGoalUI_SelectTarget, raided by ordered villagers:
   tools/tests/duo_tribe_campaign.py). Asked again 2026-11-12.
-* BUG-9143: loading a save with fewer player slots than players connected ends the session. Asked 2026-11-12: raise
-  the loaded save's slots automatically, ask the host, or keep.
-* "Give To <player>" (the owner read it as a sync button for late joiners): it gives the selected units to that
-  player. Asked 2026-11-12: keep it (clearer wording), or remove it.
+* (answered 2026-11-12, "2A" and "3B", built: BUG-9143, BUG-9148.) BUG-9143: a save loaded with fewer player slots
+  than players connected now gets more slots; the "Give To" button is removed.
+* Party wipe (owner 2026-11-12: "When all players go down or die in a stage like tribal ... lose a totem/progress and
+  a captured location with the red debt icon ... They keep their unlocks and DNA ... This can work in Civ as well."):
+  researched 2026-11-12, design and its decisions asked (when it applies, which village, how it comes back, the totem,
+  none won yet, Civ). Note: the native "bounce back" reloads the slot the mod autosaves every 10 minutes and after
+  every win, so today's loss is up to 10 minutes, not the wins.
+* Space and the MMO goal (owner 2026-11-12: "We still need to discuss Space Stage"): briefing sent 2026-11-12 with six
+  decisions (what a player owns in Space, phase 6 scope, who runs enemies, where Space progress is saved, difficulty
+  scaling, the Galactic Core).
+* Downed players (owner 2026-11-12): the dying animation while downed, spectating a partner with a clear HUD and a
+  native vignette. Proposal asked.

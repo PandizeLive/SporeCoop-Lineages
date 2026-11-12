@@ -2058,3 +2058,19 @@ symbol: every call is one the co-op already makes. Not yet run in a game.
   * All four games: the same four capitals and owners, the same shared money (39,240), 0 faults.
   * ? `word38` (the +0x38 "level" candidate) read 0 on the host capital and every late capital: no city level found
     there.
+
+## Four founder nations from a native graduation, live (2026-11-12, feat/lineages-47)
+<a id="civ-four-founders-live"></a>
+
+BUG-9135 roadmap phase 5, the [civ-multi-founders](#civ-multi-founders) rules in a game.
+
+* The native Tribe -> Civ graduation with four founder villages (TITAN host
+  DuoQAJiffGrad, guests Late and Fourth on TITAN, the MSI). After the last win and the History check the ready vote, the
+  City Hall editor (99E92F05) and the Military Land vehicle editor (7D433FAD), the host entered Civ with one capital.
+  The partner capitals waited while the Civ tutorial's captions held the game time ("Native partner capital founding
+  requested."), then came one every 6 to 8 s: "seat 1 capital 000021F8 at (41 -393 -313); its former village is gone",
+  seat 2 000021F7, seat 3 000021F6. Each nation has its seat's founding species (7CDBAC6F, 7C0B35F6, 7C2DD6C0); owners
+  on the host: seat 1 player 2 (Fourth), seat 2 player 1 (Late), seat 3 player 3 (the MSI); Late and Fourth read the
+  same (local_seat 2 and 1) at once, the MSI after its world share a minute later (local_seat 3). 0 faults on all four.
+  The partner capitals sit where the game's next free sites are (not near the former villages: "its former village is
+  gone"; the site choice is still open above).
