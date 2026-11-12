@@ -226,3 +226,59 @@ To verify live (three games: host, partner A with a village, partner B joining l
    the editor open with a blank creature, does Save (3+ parts, a name) put a new creation into My Creations, does the
    exit come back to Tribe (`creations: back from the editor, own creature ...` in B's log), and does the host then
    found B's village. Watch the host: a checkpoint or share while B is in the editor.
+
+## Phase 4, Civilization parts (2026-11-12, phase4-civ): built, not yet run in a game
+Roadmap phase 4 (owner decisions 4, 5, 9) on the Civilization side. Switch `civ.late_capital` (on; needs
+`civ.multi_founders`; off: as phase 5 above). Details: docs/re/civ.md#civ-late-capital. Pure rules in civ_seats.h
+(`late_status`, `late_capital`, `site_state`, `new_city_since`, `catch_up_buildings`, `catch_up_turrets`) and
+founders.h (`nations_descend`), host unit test tests/civ_seats_tests.cpp: each rule replaced by the behaviour before
+it fails the test (4 of 4 checked); tests/win_tests.cpp checks the files (3 checks fail on the old founders.cpp).
+Commits ae6f76c4 (rules, can_record), 405644fb (win_tests, BUG-9139), 5aaeb3eb (civ.cpp).
+Two of the "Still two nations or open" items of phase 5 are addressed:
+* A Civ seat without a Tribe roster seat: founders::can_record accepts a seat past the Tribe roster when it has its
+  player's identity and a species that is no tribal founder's look; tribal seats keep the look rule; two founders stay
+  CIV1 byte for byte.
+* Founding once NPC nations exist: the late capital founds the next seat (a late joiner, or the Tribe roster's next
+  seat) at the next free native site and tells the new city by its object (NPC nations can be blank too); the host's
+  own planet tick founds nothing else meanwhile; the other nations' AI waits as before.
+* Eligible: a connected party partner (identity, party seat) playing a creature of its own (not the host's), loaded
+  here, of a species no nation or tribal founder has, with no founder seat. One at a time, in seat order (Tribe
+  roster seats first, then party seat order), up to four seats. No own creature: no capital, a log line and a notice
+  (the create-a-creature prompt is the Tribe side's). A game with no roster at all needs saved campaign rules
+  (`.duo-seats`); a stage-chooser game keeps one shared nation.
+* Catch-up to the host's capital (not its empire): its houses, factories and entertainment buildings the new capital
+  lacks (the planner sequence, free, the host's slot index where free) and its turrets (City_AddTurret); then one
+  save or world share; the roster is written at the bind (CIV2).
+Still open:
+* The "level" of decision 5: no city level is known in Civilization; the nation's tech and unlocks already follow the
+  host's (campaign_tick). `coop.civ late` prints each founder capital's +0x38 word (a cCommunity's level for tribes)
+  for a check in a game.
+* A site near the host's capital: the site record's position field is unknown; the next free site is used and the
+  bind logs the distance.
+* A late capital whose city did not reach the save before a crash is not founded again once NPC nations exist.
+* The Tribe side of phase 4 (the create-a-creature prompt, the village catch-up) is the other helper's.
+
+To verify in a live Civilization game (no lab run here; the main session):
+1. Late joiner, NPC nations present: a Civ save with founder nations (seats 0 and 1, or 0..2) and at least one NPC
+   nation; a further partner joins with a creature of its own (a party seat with identity). Host log:
+   `civ late capital: founding requested for seat N (<name>) with K cities`, then `seat N (<name>) capital <pol> at
+   (x y z), D m from the host's capital; roster written`, then `caught up with the host's capital: a of b buildings,
+   c of d turrets`, one world share. `coop.civ late` on the host before and after (status per partner,
+   `next_seat`, each founder capital's buildings / turrets / word38).
+2. On every game (`coop.civ nations`, `coop.civ citizens` as the camera passes the capital): the new nation has the
+   joiner's species; its capital has as many houses, factories and entertainment buildings as the host's capital
+   (free slots allowing) and as many turrets; no NPC or host city changed owner, species or buildings.
+3. The joiner (after the share) commands only its own nation: selects and moves its vehicles, opens its own capital's
+   menu and buys there (shared treasury); `coop.civ` status `founders:` shows seat N with its identity and player;
+   the guest's `local_seat` is N. The other partners cannot select its vehicles.
+4. A partner who plays the host's species (no own creature): no capital, the notice "<name> plays the host's species:
+   no capital of their own until they create a creature." on every game, `coop.civ late` says so.
+5. A Tribe roster seat whose capital was not founded before NPC nations appeared (a 3-seat Tribe roster, a 2-nation
+   Civ save with NPC nations): the log has the late founding for that seat instead of "not reserved before other
+   nations appeared", its species is the seat's current look.
+6. Save, quit, reload: the late capital keeps its species and seat, nothing is founded again; the joiner rejoins
+   under another network id and commands it again (identity).
+7. With `coop.fix civ.late_capital off`: no late capital (the phase 5 behaviour); `late_deferred` stays 0.
+8. Evidence for the open items: `coop.civ late` word38 of the host's grown capital and a fresh one (a city level?),
+   the logged distance to the host's capital, `coop.civ sites` before and after the founding (the site record's
+   position field).

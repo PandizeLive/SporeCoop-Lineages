@@ -201,6 +201,30 @@ struct Outfits {
     uint32_t current(size_t seat) const { return seat < species.size() && !species[seat].empty() ? species[seat].back() : 0; }
     bool contains(size_t seat, uint32_t key) const;
 };
+// BUG-9135 (roadmap phase 4): a Civilization roster descends from the Tribe roster. A seat with a tribal founder
+// (seat < tribe.seats()) plays one of that founder's looks (`looks`: the outfit histories, Outfits::contains). A seat
+// past the Tribe roster is a late joiner's (decision 5: a capital without a former village): it needs its player's
+// identity and a species that is no tribal founder's look. Before phase 4 every seat needed a tribal founder.
+// Pure (tests/civ_seats_tests.cpp); can_record uses it for Stage::Civilization when a Tribe roster exists.
+inline bool nations_descend(const Roster& tribe, const Outfits& looks, const Roster& nations)
+{
+    auto look_of = [&](size_t seat, uint32_t key) {
+        const auto& history = looks.species[seat];
+        return key && std::find(history.begin(), history.end(), key) != history.end();
+    };
+    const size_t tribal = std::min(tribe.seats(), kMaxSeats);
+    for (size_t i = 0; i < nations.seats(); ++i) {
+        const Founder& f = nations.entries[i];
+        if (i < tribal) {
+            if (!look_of(i, f.species)) return false;
+            continue;
+        }
+        if (i == 0 || !f.player) return false; // the host's seat always has a tribal founder; a late seat a player
+        for (size_t t = 0; t < tribal; ++t)
+            if (look_of(t, f.species)) return false;
+    }
+    return true;
+}
 bool read_outfits(const std::string& planet, Outfits& out, std::string& err);
 // Expected-current check prevents a delayed editor result overwriting a newer one.
 bool record_outfit(const std::string& planet, size_t seat, uint32_t expected, uint32_t model, std::string& err);

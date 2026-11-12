@@ -1969,3 +1969,68 @@ Nothing here is new reverse engineering; the open game question is marked ?.
   founding as "the next site" too, so a chosen site would need the guests told which one. For now the founding logs
   `seat N capital <pol> at (x y z), D m from its former village` (the cTribe with the Tribe roster seat's political id
   at +0x30, or "is gone"), and `coop.civ sites` dumps every record's 25 words (hex and float) to find the position.
+
+## Late capitals and their catch-up (2026-11-12, phase4-civ)
+<a id="civ-late-capital"></a>
+
+BUG-9135, roadmap phase 4 (owner decisions 4, 5, 9). Switch `civ.late_capital` (on; needs `civ.multi_founders`; off:
+a partner without a Tribe roster seat gets no capital and none is founded once NPC nations exist, as in
+[civ-multi-founders](#civ-multi-founders)). Code: civ.cpp `late_capital_tick`, `late_bind`, `late_catch_up`; pure
+rules civ_seats.h `late_status`, `late_capital`, `site_state`, `new_city_since`, `catch_up_buildings`,
+`catch_up_turrets` and founders.h `nations_descend` (tests/civ_seats_tests.cpp, tests/win_tests.cpp). No new game
+symbol: every call is one the co-op already makes. Not yet run in a game.
+
+* Who (host, every founder tick of 2 s): a connected partner with a party seat (`party::seat_of_player`, its
+  identity), a creature of its own (`creations::player_key`, not `plays_host_creation`, not the host nation's
+  species) that is loaded and known here, whose species no nation and no tribal founder's look has, and no founder
+  seat (`party::founder_seat_of` with the species / two-founder match). Seats stay contiguous: the Tribe roster's
+  seats come first (`next_capital_seat`), then late joiners in party seat order, one at a time, up to
+  founders::kPlaySeats. A partner who plays the host's species gets no capital and every player a notice (decision 4:
+  the Tribe side asks them to create a creature). `coop.civ late` lists every partner's status.
+* Also the Tribe roster's next seat once NPC nations exist (before: "The partner capital was not reserved before
+  other nations appeared."): the same path, the seat's species from its outfit history, its identity from the Tribe
+  roster.
+* A game with neither roster gets late capitals only when it is a co-op campaign (saved campaign rules,
+  `.duo-seats`); a stage-chooser game keeps one shared nation, as before.
+* Roster: founders::can_record (Stage::Civilization) accepts a seat past the Tribe roster when it has its player's
+  identity and a species that is no tribal founder's look (`nations_descend`); tribal seats keep the look rule. The
+  roster the founding will write is checked first (a placeholder political id), and the partner's creature is
+  archived into the planet (`creations::archive_guest_model`, as `coop.civ bind_guest` does) before any city is
+  founded, so a refusal never leaves an unbound city. CIV1 stays byte for byte for two founders without identities;
+  a late seat always makes CIV2.
+* Founding: the next free native site, `SpawnNextCity(ex, 0, 0)` as for founder capitals (the lowest appearance
+  order; [its arguments](#civ-spawn-next-city-args)), only when `site_state` says Ready: cCivExpansion +0xAC all
+  sites, +0xB0 not founded yet ([civ-city-burst](#civ-city-burst)). No site left: a notice. A count that stays one
+  ahead of the live cities for 30 s of running game is taken as a founding the world never finished.
+* ✔ (by earlier evidence, [civ-duo-founders](#civ-duo-founders)) Spore forms new nations with empty country and
+  city species keys, so "the only blank nation" (`new_capital`) cannot tell the new capital once NPC nations exist.
+  The late founding snapshots the live cities (object addresses) before SpawnNextCity; the new capital is the one
+  city that was not there, with a fresh, blank nation whose political id no earlier city had (`new_city_since`;
+  anything else: nothing bound, no further late capital in this world). While it is on its way the host's own
+  non-instant SpawnNextCity calls (the planet tick) return false without founding (the block guests already use,
+  "both callers ignore the result"; counted as `late_deferred`), and h_CivAI holds every nation that is neither the
+  player's nor seated, as for founder capitals. No appearance within 60 s of running game: given up.
+* Bind: the roster (seat 0 the host's nation, seat N {species, political id, identity}), the nation's species key
+  (+0x268), the seat owners refreshed; then at once (the appearance makes a city's first buildings with it) the
+  catch-up, then one save (host alone) or world share.
+* Catch-up (decision 5: the host's capital, not its empire). The host capital is the player nation's first city (as
+  `civ::center`). Its intact houses, factories and entertainment buildings beyond the counts the new capital has,
+  types taken in turn so that a capital with fewer free slots still gets the mix, each at the host building's slot
+  index when that slot is free in the new capital, else the first free slot, through `build_in_city` (the planner
+  sequence of section 2, Building placement: CreateInstance, SetBuildingModel from the new nation's culture set,
+  SnapBuildingToSlot, AddBuilding; free; the host's AddBuilding hook sends each one to the guests). Turrets: one
+  `SporeCoop::City_AddTurret` call (the next free wall slot, BUG-0484) per turret the host's capital has more. The
+  host's and NPC cities are never touched.
+* ? The "level" of decision 5: no Civilization city level is known. The nation's tech level (+0x298), highest city
+  count (+0x4D0) and twelve unlock bytes (+0x484) already follow the host's through campaign_tick for every founder
+  nation ([civ-founder-campaign-credit](#civ-founder-campaign-credit)); the money is shared. A cCommunity keeps a
+  level at +0x38 (`SporeCoop::Community_SetLevel`, tribes); whether a cCity is a cCommunity with a level there is not
+  known. `coop.civ late` prints each founder capital's +0x38 word next to its building and turret counts: compare it
+  between a fresh capital and the host's grown one in a game.
+* ? Choosing the free site nearest the host's capital (asked by the owner) is not done: the site record's position
+  field is still unknown ([civ-multi-founders](#civ-multi-founders), `coop.civ sites`), and SpawnNextCity's `who`
+  argument (dereferenced when non-zero) is not understood. The bind logs the new capital's distance to the host's
+  capital as the evidence.
+* Open: a late capital whose roster reached disk but whose city did not reach the save (a crash between the bind
+  and the save) is not founded again once NPC nations exist (the recovery in founders_multi needs a world without NPC
+  nations, as before); the log then repeats "Waiting for the saved partner capital to finish founding.".

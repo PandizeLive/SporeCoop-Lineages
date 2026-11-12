@@ -414,11 +414,10 @@ bool can_record(const std::string& key, const Roster& value, std::string& err, S
         Outfits outfits;
         auto previous = path_for(key, suffix(Stage::Tribe));
         bool match = GetFileAttributesW(previous.c_str()) == INVALID_FILE_ATTRIBUTES;
-        if (!match && read(key, tribe) && read_outfits(key, outfits, err)) {
-            match = true; // every nation's species descends from its seat's tribal founder
-            for (size_t i = 0; i < value.seats() && match; ++i)
-                match = i < tribe.seats() && outfits.contains(i, value.entries[i].species);
-        }
+        // every nation's species descends from its seat's tribal founder; a seat past the Tribe roster is a late
+        // joiner's, with its player's identity and a species of its own (BUG-9135, roadmap phase 4)
+        if (!match && read(key, tribe) && read_outfits(key, outfits, err))
+            match = nations_descend(tribe, outfits, value);
         if (!match) {
             err = "The selected species do not match the saved tribal founders.";
             return false;
