@@ -29,6 +29,20 @@ Design rules that follow from it, for the co-op work now:
   DNA farming of other players is prevented.
 * Co-op code keeps this open: the protection of decision 7 is "same party", never "every seat"; the game's own
   impress / hunt logic stays for every species outside the party.
+* Space (briefing 2026-11-12, research only): today every player flies in their own copy of the host's galaxy, linked
+  by star and planet ids; one empire for the whole session (shared money and diplomacy, spacecoop / shared.cpp), an own
+  ship and captain per founder, enemies shared only in the host's star system (squadron, hard-wired to player 0), a
+  guest's new colonies shown to the others as an allied "<name>'s empire" and given back on a rejoin from the host's
+  memory only (space_allies, space_map), the Galactic Core waiting for the whole session, difficulty per slot. For 3-4
+  players: the Civ -> Space hand-off carries two founders only (world.cpp, civ.cpp), and Space does not use the party /
+  identity layer yet (keyed by network id or name). Carries over to the MMO: one game per area, id-linked copies,
+  allied empires of other players, Rivals mode's own budgets. Would be redone: host = player 0 in charge, waiting for the
+  whole session, keying by name, colonies in memory only, per-slot difficulty. Decisions asked 2026-11-12: what a
+  player owns in Space (recommended: an own empire each, a party as a standing alliance), phase 6 scope (recommended:
+  keep one shared empire for co-op now but move Space onto the party / identity layer, launch every seat, colonies saved
+  per identity in a side file), who runs enemies in a system (recommended: whoever of the party is there, handed over
+  when they leave), where Space progress is saved (recommended: a side file per identity), difficulty (recommended: per
+  party), the Galactic Core (recommended: your own party only).
 
 ## Confirmed decisions: 3-4 player co-op with own nests (owner, 2026-11-12)
 
