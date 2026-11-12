@@ -4303,6 +4303,16 @@ static bool g_auto_found_queued, g_auto_found_refresh;
 static bool g_auto_found_manual_off;
 static founders::Roster g_auto_found_created;
 static std::string g_auto_found_notice;
+// BUG-9137 (see wrong_founder_tick): found with the partner's settled own creature
+static bool g_found_settle_fix = true;
+COOP_FIX("tribe.founder_settle", "BUG-9137", g_found_settle_fix,
+         "tribe: the partner's village is founded with the partner's settled own creature (and a wrong one is repaired)");
+static double g_auto_found_entered;
+static bool founder_creature_settled(uint8_t guest, double now)
+{
+    return now - g_auto_found_entered >= 15 &&
+           now - creations::player_key_changed_at(guest, creations::kCreature) >= 10;
+}
 
 static void add_clear_sites(net::Vec3 c, std::vector<net::Vec3>& occupied, size_t limit)
 {
@@ -4392,6 +4402,13 @@ static void auto_founders_tick(double now)
             }
             g_order_roster = saved;
         } else {
+            if (g_found_settle_fix && !g_auto_found_created.guest().faction) { // BUG-9137
+                if (!founder_creature_settled(guest, H->time_seconds())) return; // its creature for this world may still come
+                if (creations::plays_host_creation(guest, creations::kCreature)) {
+                    report("Your partner plays one of your creatures here. They need a creature of their own for their own village.");
+                    return;
+                }
+            }
             // Validate the destination before creating native objects. This
             // placeholder is never persisted; the factory supplies its faction.
             uint32_t placeholder = home_faction == 0xFFFFFFFFu ? 0xFFFFFFFEu : 0xFFFFFFFFu;
@@ -5713,6 +5730,81 @@ static void march_click(double now)
     if (modes::planet_at_pixel(x, y, pos)) send_cmd(CMD_WALK, guest_village_ids(), 4, {}, pos);
 }
 
+// the guest founder village's members and its species slots get the founder model `target` (an outfit)
+static bool apply_guest_model(void* guest, uint32_t target, std::string& error)
+{
+    uintptr_t set_tribe = H->sym("SporeCoop::Tribe_SetSpeciesProfile");
+    uintptr_t set_member = H->sym("Simulator::cCreatureBase::SetSpeciesProfile");
+    void* profile = game::species_by_key({target, 0x2B978C46, 0x40626200});
+    auto people = members(guest);
+    if (!profile || !set_tribe || !set_member || people.empty()) { error = "The saved guest model is not ready."; return false; }
+    for (void* person : people)
+        if (!game::object_alive(person) || !founder_model(1, game::species_key(person).instance)) {
+            error = "Village membership changed while applying the outfit."; return false;
+        }
+    // Species profiles are owned by the species manager. The native
+    // cTribe Save derives1904 keys from this raw14-profile array.
+    for (unsigned i = 0; i < 14; ++i) {
+        void* old = F<void*>(guest, 0x18CC + 4*i);
+        if (old && founder_model(1, F<uint32_t>(old, 0x504)))
+            thiscall<void>(set_tribe, guest, profile, (int)i);
+    }
+    for (void* person : people) thiscall<void>(set_member, person, profile);
+    return true;
+}
+
+// BUG-9137: the automatic founders took the partner's creature key at the arrival in Tribe. A partner that rejoined
+// in the host's Creature world still reported the host's creature it played there (sent by key, no records), and its
+// own creature for the Tribe world came 2 s after the founding (owner's save, 2026-11-11: the guest seat bound to the
+// host's 291EE5B5 'Clop', the partner plays 7C67F1C3 'Squart'). The partner then commands nothing: the village is not
+// of its creature. Now (1) the founding waits until the partner's creature has not changed for 10 s, 15 s after the
+// world was entered, and never uses one of the host's own creations; (2) a village already founded with one of the
+// host's own creations gets the partner's own creature as its outfit (the same native change as an editor outfit),
+// once, on the host. `coop.fix tribe.founder_settle off`: as before (0.7.8-lineages53). (Switch: next to the founders.)
+static bool g_wrong_founder_queued;
+static uint32_t g_wrong_founder_repairs;
+
+static void wrong_founder_tick(double now)
+{
+    static double poll;
+    if (!g_found_settle_fix || g_wrong_founder_queued || now < poll || !is_host() || C.sess->players().size() != 2 ||
+        !g_order_roster.guest().faction || g_outfit.token || world::cinematic_playing() || world::time_paused() ||
+        world::load_queued() || world::save_busy() || world::save_pending()) return;
+    poll = now + 2;
+    uint8_t guest = 0;
+    for (const auto& p : C.sess->players()) if (p.id) guest = p.id;
+    const uint32_t model = guest ? creations::player_key(guest, creations::kCreature).instance : 0;
+    const uint32_t founded = g_order_roster.guest().species;
+    if (!model || !founded || founder_model(1, model) || founder_model(0, model) || g_outfits.species[1].size() != 1 ||
+        !creations::host_owns(founded) || creations::plays_host_creation(guest, creations::kCreature) ||
+        !founder_creature_settled(guest, now) || !creations::player_species(guest)) return;
+    g_wrong_founder_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        g_wrong_founder_queued = false;
+        if (epoch != g_campaign_epoch || !active() || !is_host() || world::load_queued() || C.sess->players().size() != 2) return;
+        uint8_t guest = 0;
+        for (const auto& p : C.sess->players()) if (p.id) guest = p.id;
+        const uint32_t model = creations::player_key(guest, creations::kCreature).instance;
+        auto planet = world::current_game_key();
+        std::string error;
+        void* village = founder_village(true);
+        if (!village || !model || founder_model(1, model)) return;
+        auto fail = [&](const std::string& message) {
+            H->log(M, SK_WARN, "tribe: founder repair (BUG-9137) not applied: %s", message.c_str());
+            if (C.notice) C.notice("The partner's village could not take their creature yet: " + message);
+        };
+        if (!creations::archive_guest_model(guest, planet, error) ||
+            !founders::record_outfit(planet, 1, g_outfits.current(1), model, error) ||
+            !founders::read_outfits(planet, g_outfits, error) || !apply_guest_model(village, model, error)) { fail(error); return; }
+        g_wrong_founder_repairs++;
+        H->log(M, SK_INFO, "tribe: founder repair (BUG-9137): the guest village was founded with the host's %08X, now %08X",
+               g_order_roster.guest().species, model);
+        if (C.notice) C.notice("Your partner's village now uses their own creature.");
+        if (!world::checkpoint_reload(error)) fail("Native outfit applied; checkpoint could not start: " + error);
+    }, new uint64_t(g_campaign_epoch));
+}
+
 static void outfit_tick(double now)
 {
     if (is_host() && (world::time_paused() || world::cinematic_playing() || world::load_queued())) {
@@ -5787,23 +5879,7 @@ static void outfit_tick(double now)
             changed = true;
         }
         if (old_guest != target) {
-            uintptr_t set_tribe = H->sym("SporeCoop::Tribe_SetSpeciesProfile");
-            uintptr_t set_member = H->sym("Simulator::cCreatureBase::SetSpeciesProfile");
-            void* profile = game::species_by_key({target, 0x2B978C46, 0x40626200});
-            auto people = members(guest);
-            if (!profile || !set_tribe || !set_member || people.empty()) { fail("The saved guest model is not ready."); return; }
-            for (void* person : people)
-                if (!game::object_alive(person) || !founder_model(1, game::species_key(person).instance)) {
-                    fail("Village membership changed while applying the outfit."); return;
-                }
-            // Species profiles are owned by the species manager. The native
-            // cTribe Save derives1904 keys from this raw14-profile array.
-            for (unsigned i = 0; i < 14; ++i) {
-                void* old = F<void*>(guest, 0x18CC + 4*i);
-                if (old && founder_model(1, F<uint32_t>(old, 0x504)))
-                    thiscall<void>(set_tribe, guest, profile, (int)i);
-            }
-            for (void* person : people) thiscall<void>(set_member, person, profile);
+            if (!apply_guest_model(guest, target, error)) { fail(error); return; }
             changed = true;
         }
         if (g_outfit.token) {
@@ -5825,6 +5901,7 @@ void tick(double now)
     if (!active())
         return;
     auto_founders_tick(now);
+    wrong_founder_tick(now); // BUG-9137
     drop_foreign_selection();
     if (!is_host() && g_remote_rescues[1].first && g_remote_rescues[1].second > now && (give_up::held(H, now) || g_give_up_now)) {
         send_cmd(CMD_GIVE_UP, {}, 0, {}, {}); // BUG-9118: the guest founder is down and gives up
@@ -5922,6 +5999,7 @@ static void forget_world_tables()
     g_objective_backfill_queued = false;
     g_objective_backfill_poll = 0;
     g_auto_found_at = 0;
+    g_auto_found_entered = H ? H->time_seconds() : 0; // BUG-9137
     g_auto_found_queued = g_auto_found_refresh = false;
     g_auto_found_manual_off = false;
     g_auto_found_created = {};
@@ -6140,8 +6218,10 @@ std::string status()
 {
     char b[640];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u\n",
-                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected);
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u commander=%u "
+                 "founder_guest=%08X outfit_guest=%08X founder_repairs=%u\n",
+                 (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, (unsigned)village_commander(),
+                 g_order_roster.guest().species, g_outfits.current(1), g_wrong_founder_repairs);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
