@@ -36,6 +36,7 @@ int own_selected(bool* city = nullptr);
 // give them to another player (the host applies it); returns how many
 int give_selected(uint8_t to);
 
+bool planner_open(); // BUG-9153: the community editor (Civ or Tribe planner) is up
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);

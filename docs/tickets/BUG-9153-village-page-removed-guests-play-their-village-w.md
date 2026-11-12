@@ -15,7 +15,7 @@ tests: tools/qa_win (manual two-PC run 2026-11-12)
 signature: MSI crash 20261112-140751: read of 0x154 at Tribe_HutStateIs2 (C90730) +C via the getter 8E8230
 docs: docs/re/tribe.md#tribe-guest-own-player-village
 related: BUG-9152 BUG-9135
-switch: ui.village_page
+switch: ui.village_page, tribe.own_player_village
 ---
 
 ## Report
@@ -30,5 +30,30 @@ Step 1 (this commit): the Village page is hidden (`coop.fix ui.village_page on`:
 ## Verification
 no-fail-run: feature in progress, manual two-PC run. 2026-11-12, TITAN host + MSI guest on a fresh copy of the owner's Tribe save: the swap without the guard crashed the MSI after about 15 s (crash-20261112-140751); with the guard it ran over 6 minutes with 0 faults (hutless reads 0: the trigger did not come again). The Village button is gone from the Co-op window.
 
+## Fix, step 2 (2026-11-12)
+`tribe.own_player_village` (on): a guest's game makes its own village the player tribe by itself (persp_update, every
+tick) and puts the host's village back for a save, the session's end and the mod's unload, the host away (local play)
+and when the own village goes; a world change forgets it (the game's teardown let go). The hut's Add Baby
+(TribeHutUI_HandleMessage CDBEA0, button 0625CD52) on a guest goes to the host as CMD_BABY. A rack the guest places
+with the game's Tribal Planner is sent to the host as CMD_BUILD when the host's tool list lacks it (guest_tools: the
+planner leaves the rack marked +0x84 bit 8 on the guest even after it closes; civ::planner_open() tells the open
+planner apart), then the host's rack replaces it; a refused one goes after 4 s. Refusals of a guest's baby or rack are
+sent to that player (MSG_NOTICE) and logged on the host; before, the host read them.
+
+Verification, step 2: no-fail-run (feature, manual two-PC run). 2026-11-12, TITAN host + MSI guest, fresh copy of the
+owner's Tribe save, real clicks on the MSI: the swap came on at join and after a mod reload, a save (restored and back)
+and two world reloads (log lines "the host's village is the player's again (session end / save)"); the hut menu
+"Clop Village" opened for the guest's village; Add Baby made a baby on both games (1 -> 2 members, host cmds_done 1);
+the Tribal Planner opened with the guest's food; Wooden Horns dropped on a lit spot and the planner closed: the host
+built it ("Your partner built a tool rack in their village", 25 food taken), the guest's rack became the host's (flags
+0x8 -> 0x0). The first try before the sync change was refused by the host and the reason went only to the host's
+screen (now fixed). 0 faults on both games over the run.
+
+Still open: the camera starts at the host's village (Home and the minimap do not move it to the own one), Rebuild
+(automatic with the party wipe, decision 1U), the other right-click actions not seen live one by one (raid, gather,
+equip, heal, eat, gift, perform), moving a placed rack (it goes back), the Tribe -> Civ graduation and the outfit
+editor with the swap on.
+
 ## History
 - 2026-11-12: opened.
+- 2026-11-12: step 2, the guest's own village is its player tribe; Add Baby and the Tribal Planner go to the host.

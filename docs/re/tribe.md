@@ -3659,3 +3659,32 @@ BUG-9153 (the Village page goes, decision 2L). Experiment `coop.tribe perspectiv
   changes and a rejoin.
 * Method: no Ghidra on the Windows PC; `tools/qa_win/dis.py` disassembles code read from a running QA game and turns a
   crash's stack scan into real call sites (docs/06-testing.md#testing-dis-without-ghidra).
+
+## A guest plays its own village with the game's hut menu and planner (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-native-hut-planner"></a>
+
+BUG-9153 step 2, switch `tribe.own_player_village`. Follows docs/re/tribe.md#tribe-guest-own-player-village.
+* ✔ (live) The swap as a normal state: on every tick a guest in a session (not local play) with its own village makes it
+  the player tribe; the host's village comes back for a save (save_start; the next tick swaps again), the session's end
+  and the mod's unload (on_session_end), local play, and when the own village goes. A world change only forgets the
+  pointer. Seen on the MSI: join, mod reload, a save during a rejoin, and two world loads in a row after a rejoin (the
+  camera went back to the host's village each time).
+* ✔ (live) The hut menu: clicking the guest's own hut opens the game's panel ("Clop Village 1/12", tools and Add Baby).
+  TribeHutUI_HandleMessage CDBEA0 = bool thiscall(this, IWindow*, Message*) ret 8, msg+8 type 0x287259F6 (button),
+  msg+C id; 0x0625CD52 Add Baby (dispatch at CDC3DC -> CDC7C5: Tribe_BabyFoodCost, GetPlayerTribe, food vt+A4,
+  population C8F530 / C8EC70, the spend on tribe+20C). On a guest it now sends CMD_BABY: the host added the baby, both
+  games showed it.
+* ✔ (live) The Tribal Planner (the hut's tools button) opens for the guest's village with its own food. Hovering a
+  palette item lights the free building spots; a drop on one places the rack on the guest's game only, marked
+  +0x84 = 0x9 (selected) / 0x8, and the mark stays after the planner closes (on the host its own purchases clear it).
+  tool_inventory refused such a village, so the guest's tool sync stopped for it. Now, with the planner closed
+  (civ::planner_open: the community editor's update within 3 frames), the marked rack counts; a kind the host lacks is
+  sent as CMD_BUILD (the host checks unlock, food, spot, spacing) and the host's rack replaces the marked one (flags
+  0x0 after). Palette unlocks on the guest's game matched the host's (TribalGame_IsToolUnlocked: 3 and 4 on both).
+* ~ The camera: after the swap and after each world load it stays at the host's village; Home, the minimap house and
+  double-clicking a villager card do not move it. Held W/A/S/D pan it (about 50 m/s at 5 FPS). SimCamera_LookAt B12D10
+  = thiscall(camera, const Vector3* target, const void* orientation (4 floats from TribeGame setup CD7C40), bool
+  instant) ret C; not called by us yet (the orientation is unknown).
+* Seen on the way: the host's purchase refusals were shown on the host's screen only; now sent to the buyer
+  (MSG_NOTICE). The guest's game raised the profile achievement "Deja Vu" while swapped (harmless). An idle host's
+  village starved (food 0, members dying): not related to the swap (the host's game is never swapped).

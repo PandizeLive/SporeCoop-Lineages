@@ -3,9 +3,12 @@
 ## [Unreleased]
 
 - Tribe: the Co-op window's "Village >" page is gone: a connected player plays
-  their own village with the game's own controls. For now this means they
-  cannot add a baby, build a tool or rebuild a partner's village; the game's own
-  hut and tool menus for their village come next (BUG-9153).
+  their own village with the game's own controls. Their game now treats their
+  village as theirs: the food counter, the villager cards, the hut's Add Baby and
+  the Tribal Planner's tool racks are their village's (the host checks and
+  carries out each purchase, and tells them why when it can't). Not yet:
+  rebuilding a partner's village, and their camera starts at the host's village
+  (BUG-9153).
 - Creature: every player who plays their own creature gets their own nest,
   about 60 m from the host's. They hatch and respawn there, it moves with the
   host's nest when the species migrates, and if it died out while they were

@@ -298,6 +298,9 @@ static void SK_THISCALL h_DiscoveryCard(void* mgr, void* data)
 }
 using EditorUpdate_t = int(SK_THISCALL*)(void*, int);
 static EditorUpdate_t o_EditorUpdate;
+// BUG-9153: the planner (Civ's and Tribe's community editor) updated within the last 3 frames
+bool planner_open() { return g_editor && H && H->frame_index && H->frame_index() - g_editor_frame <= 3; }
+
 static int SK_THISCALL h_EditorUpdate(void* ed, int x)
 {
     g_editor = ed;

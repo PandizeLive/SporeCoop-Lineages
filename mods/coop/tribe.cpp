@@ -79,9 +79,11 @@ COOP_FIX("tribe.away", "BUG-0151", g_fix_away, "tribe: while the host is away th
 static uint32_t g_away_orders;
 static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 
-// BUG-9153 (experiment): while a guest's game shows its own village as the player's (`coop.tribe perspective own`),
-// the mod keeps meaning the host's village by player_tribe(); native_player_tribe() is the game's field
+// BUG-9153: while a guest's game shows its own village as the player's (tribe.own_player_village, persp_update), the
+// mod keeps meaning the host's village by player_tribe(); native_player_tribe() is the game's field
 static void* g_persp_host;
+static void* g_own_village; // guest: its own village (members it owns outside the host's), refreshed by guest_tick (BUG-9152)
+static bool g_own_player = true; // tribe.own_player_village (BUG-9153, the switch below)
 static void* native_player_tribe()
 {
     void* nm = game::noun_manager();
@@ -89,7 +91,7 @@ static void* native_player_tribe()
 }
 static void* player_tribe()
 {
-    if (g_persp_host) return g_persp_host;
+    if (g_persp_host && game::object_alive(g_persp_host)) return g_persp_host;
     return native_player_tribe();
 }
 // BUG-9153: Tribe_HutStateIs2 (C90730) reads tribe->mpHut without a null check; the Tribe UI's ring code called it
@@ -967,7 +969,8 @@ std::string village_tool_line(int kind)
     return std::string(names[kind]) + ((mask & (1u << kind)) ? " (" + std::to_string(cost) + " food)." : " (ally or conquer to unlock).");
 }
 
-static bool tool_inventory(void* tribe, std::array<void*, 11>& tools)
+// placed_ok (BUG-9153): a rack the planner left marked (+0x84 bit 8) counts; a guest's own planner leaves it so
+static bool tool_inventory(void* tribe, std::array<void*, 11>& tools, bool placed_ok = false)
 {
     void** begin = F<void**>(tribe, 0x36C), **end = F<void**>(tribe, 0x370);
     if (begin == end) return true;
@@ -978,7 +981,7 @@ static bool tool_inventory(void* tribe, std::array<void*, 11>& tools)
         unsigned kind = F<uint32_t>(tool, 0x1FC);
         // The native planner creates a temporary dragged rack before placement.
         // Defer the whole inventory, including deletions, until it is committed.
-        if (!kind || kind > 10 || tools[kind] || (F<uint32_t>(tool, 0x84) & 8) ||
+        if (!kind || kind > 10 || tools[kind] || ((F<uint32_t>(tool, 0x84) & 8) && !placed_ok) ||
             F<void*>(tool, 0x1F8) != tribe) return false;
         tools[kind] = tool;
     }
@@ -1014,6 +1017,13 @@ static void host_tools(double now)
     }
 }
 
+// BUG-9153: a guest's native Tribal Planner (the hut's tools button) places a rack on its own game only. When the host's
+// inventory lacks a rack the guest's own village has after the planner (no rack in a drag any more), it is a purchase:
+// sent to the host (CMD_BUILD: unlock, food, spot and spacing checked there) instead of removed; the host's state wins
+// 4 s later (a refused rack goes). A moved rack goes back to the host's place (no order for that).
+static std::array<double, 11> g_rack_asked{};
+static uint32_t g_native_tools;
+static bool own_rack_purchase(void* tribe, unsigned kind, void* tool);
 static void guest_tools(net::Reader& packet)
 {
     if (!g_tools_fix) return;
@@ -1054,15 +1064,22 @@ static void guest_tools(net::Reader& packet)
     for (void* t : tribes) if (F<uint32_t>(t, 0x30) == local && net::dist(tribe_pos(t), site) < 3) { tribe = t; break; }
     if (!tribe || !F<void*>(tribe, 0x18CC)) return;
     std::array<void*, 11> tools{};
-    if (!tool_inventory(tribe, tools)) return;
+    // BUG-9153: the guest's own planner is closed: its placements count (a purchase below, or the host's rack)
+    const bool own_placed = g_own_player && g_persp_host && tribe == g_own_village && !civ::planner_open();
+    if (!tool_inventory(tribe, tools, own_placed)) return;
     static uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
     if (!layout) return;
     for (unsigned kind = 1; kind <= 10; ++kind) {
         const auto& s = states[kind];
         void* tool = tools[kind];
         if (!s.present) {
-            if (tool) vcall<void>(tribe, 0xB8 / 4, tool);
+            if (tool && !own_rack_purchase(tribe, kind, tool)) vcall<void>(tribe, 0xB8 / 4, tool);
             continue;
+        }
+        if (kind < g_rack_asked.size()) g_rack_asked[kind] = 0;
+        if (tool && own_placed && (F<uint32_t>(tool, 0x84) & 8)) { // the host's rack replaces the planner's placement
+            vcall<void>(tribe, 0xB8 / 4, tool);
+            tool = nullptr;
         }
         bool created = !tool;
         if (!tool) {
@@ -1148,7 +1165,6 @@ COOP_FIX("tribe.guest_ai", "BUG-9020", g_guest_ai_fix,
 static bool g_guest_native = true;
 COOP_FIX("tribe.guest_native", "BUG-9152", g_guest_native,
          "tribe: a guest selects and orders its own villagers with the game's own controls (box, click, right-click)");
-static void* g_own_village;      // guest: its own village (members it owns outside the host's), refreshed by guest_tick
 static uint32_t g_own_village_binds;
 static void* own_village_now()
 {
@@ -1341,6 +1357,21 @@ static bool send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action,
     return true;
 }
 
+static std::vector<uint16_t> guest_village_ids(bool selected_only);
+static bool own_rack_purchase(void* tribe, unsigned kind, void* tool)
+{
+    if (!g_own_player || !g_persp_host || tribe != g_own_village || kind > 9) return false;
+    const double now = H->time_seconds();
+    double& asked = g_rack_asked[kind];
+    if (asked > 0 && now - asked >= 4.0) { asked = 0; return false; } // refused or lost: the host's state wins
+    if (asked > 0) return true;                                        // waiting for the host's answer
+    const auto ids = guest_village_ids(false);
+    if (ids.empty()) return false;
+    send_cmd(CMD_BUILD, {ids.front()}, (int)kind, {}, F<net::Vec3>(tool, 0x38));
+    asked = now;
+    ++g_native_tools;
+    return true;
+}
 static void ring_order(int action, void* target, const std::vector<uint16_t>& ids); // BUG-0570
 
 // cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) - every
@@ -1962,6 +1993,63 @@ static void theme_hooks_install(); // BUG-0568 (the Tribe theme music relay, bel
 static void save_start();
 static void save_end();
 
+// BUG-9153 (owner 2026-11-12, decision 2L: the Village page goes, a guest plays its village with the game's own
+// controls): Spore has one player tribe per game (noun manager +0x70); on a guest's game it was the host's village, so
+// the HUD's food counter, the villager cards, the hut's menu and the tutorial hints were the host's. Now a guest's game
+// makes its own village the player tribe with the game's setter (SetPlayerTribe: the replacement retained, the former
+// released; the host's village stays alive in the object lists) and puts the host's village back for saves, a stage
+// or world change, the session's end, the host away (local play) and the mod's unload. The mod's own logic keeps
+// meaning the host's village by player_tribe(). The hut's Add Baby on a guest goes to the host (CMD_BABY: food and the
+// population cap checked there), never the guest's own game. `coop.fix tribe.own_player_village off`: as before.
+COOP_FIX("tribe.own_player_village", "BUG-9153", g_own_player,
+         "tribe: a guest's game shows its own village as the player's (food counter, villager cards, hut menu)");
+static bool g_persp_saving;
+static uint32_t g_persp_swaps, g_persp_restores, g_native_babies;
+static uintptr_t a_SetPlayerTribe;
+static bool persp_set(void* t)
+{
+    void* mgr = game::noun_manager();
+    if (!a_SetPlayerTribe || !mgr || !t || !game::object_alive(t)) return false;
+    thiscall<void>(a_SetPlayerTribe, mgr, t);
+    return native_player_tribe() == t;
+}
+static void persp_restore(const char* why)
+{
+    if (!g_persp_host) return;
+    void* host = g_persp_host;
+    g_persp_host = nullptr;
+    if (game::object_alive(host) && native_player_tribe() != host) persp_set(host);
+    ++g_persp_restores;
+    H->log(M, SK_INFO, "tribe: the host's village is the player's again (%s, BUG-9153)", why);
+}
+static void persp_update()
+{
+    const bool want = g_own_player && !g_persp_saving && active() && is_guest() && !local_play() &&
+                      g_own_village && game::object_alive(g_own_village);
+    if (g_persp_host && (!want || !game::object_alive(g_persp_host) || native_player_tribe() != g_own_village))
+        persp_restore(!want ? "not needed" : "changed");
+    if (!want || g_persp_host) return;
+    void* host = native_player_tribe();
+    if (!host || host == g_own_village || !persp_set(g_own_village)) return;
+    g_persp_host = host;
+    ++g_persp_swaps;
+    H->log(M, SK_INFO, "tribe: this game shows its own village as the player's (BUG-9153)");
+}
+// TribeHutUI_HandleMessage (CDBEA0): the hut menu's buttons; 0x0625CD52 Add Baby buys a baby for the player tribe
+using HutUI_t = bool(SK_THISCALL*)(void*, void*, void*);
+static HutUI_t o_HutUI;
+static bool SK_THISCALL h_HutUI(void* self, void* window, void* msg)
+{
+    if (msg && !IsBadReadPtr(msg, 0x10) && F<uint32_t>(msg, 8) == 0x287259F6 && F<uint32_t>(msg, 0xC) == 0x0625CD52 &&
+        active() && is_guest() && !local_play()) {
+        auto ids = guest_village_ids(false);
+        if (!ids.empty()) send_cmd(CMD_BABY, {ids.front()}, 0, {}, {});
+        ++g_native_babies;
+        return true; // the host buys it (its food and cap); the baby comes with its snapshots
+    }
+    return o_HutUI(self, window, msg);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -2001,6 +2089,9 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)key, (void*)h_AbilityKey, (void**)&o_AbilityKey);
     if (uintptr_t hut = H->sym("SporeCoop::Tribe_HutStateIs2")) // BUG-9153
         H->hook_create(M, (void*)hut, (void*)h_HutState, (void**)&o_HutState);
+    a_SetPlayerTribe = H->sym("Simulator::cGameNounManager::SetPlayerTribe"); // BUG-9153
+    if (uintptr_t ui = H->sym("SporeCoop::TribeHutUI_HandleMessage"))
+        H->hook_create(M, (void*)ui, (void*)h_HutUI, (void**)&o_HutUI);
     if (uintptr_t owned = H->sym("SporeCoop::Tribe_IsPlayerOwned"))
         H->hook_create(M, (void*)owned, (void*)h_TribePlayerOwned, (void**)&o_TribePlayerOwned);
     if (uintptr_t capacity = H->sym("SporeCoop::Tribe_MaxPopulation"))
@@ -3098,6 +3189,8 @@ static bool mat_of(void* o, void* t)
 }
 static void save_start()
 {
+    g_persp_saving = true; // BUG-9153: a save keeps the host's village as the player's
+    persp_restore("save");
     g_strip_now.clear();
     if (!g_fix_save_strip || !is_guest() || game::mode_id() != modes::kTribe)
         return;
@@ -3158,6 +3251,7 @@ static void save_start()
 }
 static void save_end()
 {
+    g_persp_saving = false; // BUG-9153: the next tick shows the own village again
     for (auto& t : g_took_t) { // back at the end of the list (the capacity is the one they left)
         void**& e = F<void**>(t.t, t.off + 4);
         if (game::object_alive(t.t) && e < F<void**>(t.t, t.off + 8))
@@ -5318,24 +5412,36 @@ static void catch_up_village(int seat, void* village, void* home)
            tribe_late::describe(plan, level_set, adults, babies, racks).c_str());
 }
 
+// BUG-9153: a refused purchase is told to the player who asked (their native hut and planner have no other answer;
+// before, the host read it), and logged on the host
+static bool tell_buyer(uint8_t from, const char* reason)
+{
+    net::Writer w;
+    w.str8(reason);
+    C.sess->send_reliable_to(from, net::MSG_NOTICE, w);
+    H->log(M, SK_INFO, "tribe: player %u's purchase refused: %s", (unsigned)from, reason);
+    return false;
+}
+
 static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, net::Vec3 pos)
 {
-    auto reject = [](const char* reason) { if (C.notice) C.notice(reason); return false; };
+    auto reject = [from](const char* reason) { return tell_buyer(from, reason); };
     auto found = g_hm_by_id.find(witness);
     void* village = seat >= 1 ? founder_village(seat) : nullptr; // the buyer's own village (BUG-9135)
     if (!village || !intact_village(village) || found == g_hm_by_id.end() || !living(found->second) ||
         owner_of(found->second) != from || F<void*>(found->second, kOwnerTribeOff) != village ||
-        world::load_queued() || world::save_busy() || world::save_pending()) return false;
+        world::load_queued() || world::save_busy() || world::save_pending())
+        return reject("The host could not check that rack just now (your village, or a save running). Try again.");
     int cost;
     uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
     uintptr_t purchased = H->sym("SporeCoop::Tribe_SetPurchasedTool");
-    if (!layout || !purchased || !tool_cost(kind, cost)) return false;
+    if (!layout || !purchased || !tool_cost(kind, cost)) return reject("The game could not price that rack.");
     if (!(tool_unlocks() & (1u << kind))) return reject("Ally with or conquer other tribes to unlock that tool.");
     std::array<void*, 11> tools{};
     if (!tool_inventory(village, tools) || tools[kind]) return reject("That rack already exists, or the village planner is busy.");
     double food;
     if (!shared::tribe_food(village, food) || food < cost) return reject("Your village needs more food for that rack.");
-    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) return false;
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) return reject("Choose ground near your village for the rack.");
     net::Vec3 anchor = tribe_pos(village);
     float distance = net::dist(pos, anchor);
     if (distance < 12.f || distance > 35.f) return reject("Place the rack on clear ground 12 to 35 metres from your hut.");
@@ -5349,7 +5455,7 @@ static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, n
     uintptr_t occupy = H->sym("SporeCoop::CommunitySlot_SetObject");
     if (g_tool_slots) {
         uintptr_t nearest = H->sym("SporeCoop::CommunityLayout_NearestSlot");
-        if (!nearest || !occupy) return false;
+        if (!nearest || !occupy) return reject("The game could not find the building spots of your village.");
         slot = thiscall<void*>(nearest, (uint8_t*)village + 0x3B4, &pos);
         if (!slot || IsBadReadPtr(slot, 24) || F<uint8_t>(slot, 0) || F<void*>(slot, 4))
             return reject("Choose an empty building spot around your village.");
@@ -5389,7 +5495,8 @@ static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness)
         !game::object_alive(found->second) || !is_citizen(found->second) ||
         owner_of(found->second) != from || !living(found->second) ||
         F<void*>(found->second, kOwnerTribeOff) != village || world::load_queued() ||
-        world::save_busy() || world::save_pending()) return false;
+        world::save_busy() || world::save_pending())
+        return tell_buyer(from, "The host could not add that baby just now (your village, or a save running). Try again.");
     float cost;
     double food;
     uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
@@ -5397,19 +5504,16 @@ static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness)
     void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
     if (!birth_cost(cost) || !blocked || !ui || !F<uint8_t>(ui, 0x3A3) ||
         skg::cdecl_call<bool>(blocked)) {
-        if (C.notice) C.notice("Births are not available at this point in the Tribal campaign.");
-        return false;
+        return tell_buyer(from, "Births are not available at this point in the Tribal campaign.");
     }
     if (!shared::tribe_food(village, food) || food < cost) {
-        if (C.notice) C.notice("Your partner's village needs more food to add a baby.");
-        return false;
+        return tell_buyer(from, "Your village needs more food to add a baby.");
     }
     // Use the capped native path, never the mirror helper's uncapped fallback.
     // SpawnMember has no price side effect. Charge only after successful creation.
     void* baby = vcall<void*>(village, 0x98 / 4, 0);
     if (!baby) {
-        if (C.notice) C.notice("Your partner's village is at its population limit.");
-        return false;
+        return tell_buyer(from, "Your village is at its population limit.");
     }
     shared::mirror_village_food(village, food - cost);
     ++g_cmds_done;
@@ -6846,6 +6950,7 @@ static void outfit_tick(double now)
 
 void tick(double now)
 {
+    persp_update(); // BUG-9153 (also puts the host's village back when the session or the stage ends)
     if (!active())
         return;
     auto_founders_tick(now);
@@ -6995,6 +7100,8 @@ static void forget_world_tables()
     g_restore_village_orders = true;
     g_founder_rescues = {};
     g_own_village = nullptr; // BUG-9152: a world change frees the old villages
+    g_persp_host = nullptr;  // BUG-9153: the game's own teardown let go of both villages
+    g_rack_asked = {};
     g_remote_rescues = {};
     g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
     if (g_fix_chiefs) {
@@ -7048,6 +7155,7 @@ void before_save()
 
 void on_session_end()
 {
+    persp_restore("session end"); // BUG-9153 (also the mod's unload)
     theme_forget(); // BUG-0568
     clear_coop_tables(true);
     g_food_cycle = -1;
@@ -8187,36 +8295,12 @@ std::string debug(const std::vector<std::string>& a)
         if (!founders::can_record(planet, roster, err) || !creations::archive_guest_model(guest, planet, err)) return err;
         return founders::record(planet, roster, err) ? founders::describe(roster) : err;
     }
-    if (a.size() == 2 && a[0] == "perspective") { // BUG-9153 experiment: own | host | status
-        uintptr_t set = H->sym("Simulator::cGameNounManager::SetPlayerTribe");
-        void* mgr = game::noun_manager();
-        if (!set || !mgr || !active() || !is_guest()) return "Requires a guest in Tribe Stage.";
-        if (a[1] == "status") {
-            char b[192];
-            snprintf(b, sizeof b, "perspective native=%p host=%p own=%p hutless=%u last=%p vt=%08X", native_player_tribe(),
-                     g_persp_host, g_own_village, g_hutless_reads, g_hutless_last,
-                     g_hutless_last && !IsBadReadPtr(g_hutless_last, 4) ? *(uint32_t*)g_hutless_last : 0u);
-            return b;
-        }
-        if (a[1] == "own") {
-            if (g_persp_host) return "Already showing the own village.";
-            void* own = g_own_village;
-            void* host = native_player_tribe();
-            if (!own || !host || own == host || !game::object_alive(own)) return "No own village yet.";
-            vcall<int>(host, 0); // AddRef: the manager lets go of it
-            g_persp_host = host;
-            thiscall<void>(set, mgr, own);
-            return native_player_tribe() == own ? "The game now shows the own village as the player's." : "Swap failed.";
-        }
-        if (a[1] == "host") {
-            if (!g_persp_host) return "Not swapped.";
-            void* host = g_persp_host;
-            if (game::object_alive(host)) thiscall<void>(set, mgr, host);
-            g_persp_host = nullptr;
-            vcall<int>(host, 1); // Release our hold
-            return "Restored the host's village as the player's.";
-        }
-        return "perspective own | host | status";
+    if (a.size() == 1 && a[0] == "perspective") { // BUG-9153
+        char b[256];
+        snprintf(b, sizeof b, "perspective native=%p host=%p own=%p swaps=%u restores=%u babies=%u tools=%u hutless=%u last=%p",
+                 native_player_tribe(), g_persp_host, g_own_village, g_persp_swaps, g_persp_restores, g_native_babies,
+                 g_native_tools, g_hutless_reads, g_hutless_last);
+        return b;
     }
     if (a.size() == 2 && a[0] == "test_perspective") {
         if (!active() || !is_guest()) return "Requires a guest in Tribe Stage.";
