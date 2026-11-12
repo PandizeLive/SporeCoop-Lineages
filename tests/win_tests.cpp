@@ -280,7 +280,7 @@ static void test_founders()
     expanded.entries[2] = {7, 9};
     expanded.entries[3] = {8, 10};
     CHECK(expanded.contains_faction(9) && expanded.contains_faction(10));
-    CHECK(!founders::record(key, expanded, err)); // never truncate future slots into DUO1
+    // BUG-9135: further partners' seats are tested on their own planet (test_founders_multi); this one stays on two
     CHECK(founders::read(key, got) && got == wanted);
     auto civ = founders::Stage::Civilization;
     CHECK(!founders::record(key, {1, 7, 3, 4}, err, civ));
@@ -332,6 +332,75 @@ static void test_founders()
     CHECK(!founders::read(key, got));
     CHECK(!founders::record(key, wanted, err));
     put(path, "DUO");
+    CHECK(!founders::read(key, got));
+    CHECK(get(planet) == "native planet");
+}
+
+// BUG-9135: more than two founders (DUO2 / CIV2 / OFT2) and the player identity per seat
+static void test_founders_multi()
+{
+    auto planet = fresh_dir(L"founders_multi") + L"\planet.spo";
+    std::string key = slotfs::narrow(planet), err;
+    put(planet, "native planet");
+    founders::Roster two{1, 2, 0x800021CA, 0x21CB}, got;
+    CHECK(founders::record(key, two, err));
+    const std::string duo1 = get(planet + L".duofounders");
+    CHECK(duo1.size() == 20 && duo1.compare(0, 4, "DUO1") == 0); // two founders without identities: DUO1 as before
+    founders::Outfits outfits;
+    CHECK(founders::record_outfit(key, 1, 2, 22, err));
+    const std::string oft1 = get(planet + L".duooutfits");
+    CHECK(oft1.compare(0, 4, "OFT1") == 0);
+    CHECK(!founders::record_outfit(key, 2, 7, 70, err)); // no third seat yet
+    // a third partner's seat: the same first two, then theirs (DUO2)
+    auto three = two;
+    three.entries[2] = {7, 0x21D5, 0xABCDEF0123456789ull};
+    CHECK(three.seats() == 3 && three.seat_of_faction(0x21D5) == 2 && three.seat_of_player(0xABCDEF0123456789ull) == 2);
+    CHECK(founders::record(key, three, err));
+    CHECK(get(planet + L".duofounders").compare(0, 4, "DUO2") == 0);
+    CHECK(founders::read(key, got) && got == three);
+    // the OFT1 history of seats 0 / 1 still reads; seat 2 starts with its founding species
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.current(1) == 22 && outfits.current(2) == 7);
+    CHECK(founders::record_outfit(key, 2, 7, 70, err));
+    CHECK(get(planet + L".duooutfits").compare(0, 4, "OFT2") == 0);
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.current(0) == 1 && outfits.current(1) == 22 &&
+          outfits.current(2) == 70 && outfits.contains(2, 7));
+    CHECK(!founders::record_outfit(key, 2, 70, 22, err)); // another founder's appearance
+    // an identity is learnt once for a seat that had none; a seat's founders never change
+    auto bound = three;
+    bound.entries[1].player = 0x1111;
+    CHECK(founders::record(key, bound, err) && founders::read(key, got) && got.seat_of_player(0x1111) == 1);
+    auto rebound = bound;
+    rebound.entries[1].player = 0x2222;
+    CHECK(!founders::record(key, rebound, err));
+    auto changed = bound;
+    changed.entries[2].species = 8;
+    CHECK(!founders::record(key, changed, err));
+    auto fewer = two;
+    CHECK(!founders::record(key, fewer, err));     // seats are never dropped
+    auto twins = bound;
+    twins.entries[3] = {9, 0x21D6, 0x1111};      // one player, two seats
+    CHECK(!founders::record(key, twins, err));
+    // eight seats fit; a ninth does not exist; a hole in the seats is invalid
+    auto eight = bound;
+    for (size_t i = 3; i < founders::kMaxSeats; ++i)
+        eight.entries[i] = {uint32_t(100 + i), uint32_t(0x2200 + i), 0};
+    CHECK(founders::record(key, eight, err) && founders::read(key, got) && got.seats() == founders::kMaxSeats);
+    auto holed = founders::Roster{1, 2, 3, 4};
+    holed.entries[3] = {5, 6, 0};
+    CHECK(holed.seats() == 2 && !founders::can_record(slotfs::narrow(fresh_dir(L"founders_hole") + L"\p.spo"), holed, err));
+    // Civilization: every nation descends from its seat's tribal founder
+    auto civ = founders::Stage::Civilization;
+    founders::Roster nations = eight;
+    nations.entries[1].species = 22;
+    nations.entries[2].species = 70;
+    CHECK(founders::record(key, nations, err, civ));
+    CHECK(get(planet + L".duonations").compare(0, 4, "CIV2") == 0);
+    auto stranger = nations;
+    stranger.entries[2].species = 71;
+    DeleteFileW((planet + L".duonations").c_str());
+    CHECK(!founders::can_record(key, stranger, err, civ));
+    // a damaged DUO2 is unreadable, never half-read
+    put(planet + L".duofounders", get(planet + L".duofounders").substr(0, 30));
     CHECK(!founders::read(key, got));
     CHECK(get(planet) == "native planet");
 }
@@ -1849,6 +1918,7 @@ int main(int argc, char** argv)
     }
     if (argc == 2 && !strcmp(argv[1], "--founders-only")) {
         test_founders();
+    test_founders_multi();
         rmtree(g_tmp);
         printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
         return g_fail ? 1 : 0;

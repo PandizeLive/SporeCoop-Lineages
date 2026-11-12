@@ -239,6 +239,8 @@ struct Applied {
     void* db = nullptr;
     std::string name;
     bool unusable = false; // no records and an unknown key: not used here
+    bool records = false;  // it came with its records (the owner's own creation, BUG-9137)
+    double changed_at = 0; // when its key last changed here (BUG-9137)
 };
 static std::map<std::pair<uint8_t, uint8_t>, Applied> g_applied; // (owner, kind)
 static unsigned g_bundles_in, g_bundles_out, g_registered, g_swaps;
@@ -2138,12 +2140,15 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     }
     if (old && old != db)
         drop_package(old);
+    if (!(ap.key == use) || !(ap.orig == b.key))
+        ap.changed_at = H->time_seconds(); // BUG-9137: founders wait for a settled creature
     ap.id = id;
     ap.key = use;
     ap.orig = b.key;
     ap.db = db;
     ap.name = name;
     ap.unusable = unusable;
+    ap.records = !b.recs.empty();
     g_bundles_in++;
     H->log(M, SK_INFO, "creations: player %u %s = %08X/%08X/%08X '%s' (%u records)%s", owner, kInfo[k].name,
            use.instance, use.type, use.group, name.c_str(), (unsigned)b.recs.size(),
@@ -3653,6 +3658,8 @@ void on_session_end()
     g_cell_set = {};
 }
 
+std::wstring coop_dir() { return find_paths() ? g_dir : std::wstring(); }
+
 Key player_key(uint8_t player, Kind k)
 {
     auto it = g_applied.find({player, (uint8_t)k});
@@ -3663,6 +3670,27 @@ void* player_species(uint8_t player)
 {
     Key k = player_key(player, kCreature);
     return k.instance ? game::species_by_key({k.instance, k.type, k.group}) : nullptr;
+}
+
+double player_key_changed_at(uint8_t player, Kind k)
+{
+    auto it = g_applied.find({player, (uint8_t)k});
+    return it == g_applied.end() ? 0 : it->second.changed_at;
+}
+
+// BUG-9137: a partner who plays one of the host's own creations (sent by key, without records: the host world's
+// species it got from the host) has no creature of its own here
+bool plays_host_creation(uint8_t player, Kind k)
+{
+    auto it = g_applied.find({player, (uint8_t)k});
+    if (it == g_applied.end() || it->second.records || !it->second.key.instance)
+        return false;
+    return is_host() && in_my_creations(it->second.key);
+}
+
+bool host_owns(uint32_t creature_instance)
+{
+    return creature_instance && is_host() && in_my_creations({creature_instance, 0x2B978C46, 0x40626200});
 }
 
 // Preserve only the two creation record types used by make_bundle(). Never mount a

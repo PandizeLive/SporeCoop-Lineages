@@ -56,8 +56,16 @@ extern bool g_leave_fix;
 
 // the creation of a player, usable on this machine ({} = none / not received yet)
 Key player_key(uint8_t player, Kind k);
+// this profile's SporeCoop folder (next to EditorSaves.package), "" while the game has not opened it yet
+std::wstring coop_dir();
 // cSpeciesProfile* of a player's creature, nullptr if none
 void* player_species(uint8_t player);
+// BUG-9137: when the player's creation of kind k last changed on this machine (0 = never received)
+double player_key_changed_at(uint8_t player, Kind k);
+// BUG-9137 (host): the player plays one of the host's own creations (no creature of its own here)
+bool plays_host_creation(uint8_t player, Kind k);
+// BUG-9137 (host): the creature key is one of the host's own creations (My Creations)
+bool host_owns(uint32_t creature_instance);
 bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
 // Register only validated creature resources belonging to this planet before the native load.
 bool restore_guest_model(const std::string& planet, std::string& err);

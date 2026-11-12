@@ -12,17 +12,42 @@
 namespace founders {
 namespace {
 uint32_t format(Stage stage) { return stage == Stage::Tribe ? 0x314F5544u : 0x31564943u; } // DUO1 / CIV1
+// BUG-9135: DUO2 / CIV2: u8 seats (2..kMaxSeats), per seat u32 species, u32 faction, u64 player identity
+uint32_t format2(Stage stage) { return stage == Stage::Tribe ? 0x324F5544u : 0x32564943u; }
 const wchar_t* suffix(Stage stage) { return stage == Stage::Tribe ? L".duofounders" : L".duonations"; }
 constexpr size_t kBytes = 5 * sizeof(uint32_t);
+constexpr size_t kBytes2Max = 4 + 1 + kMaxSeats * 16;
 
 bool valid(const Roster& v)
 {
-    // The current on-disk duo formats cannot represent extra founders. Refuse
-    // them rather than silently discarding a future caller's campaign data.
-    for (size_t i = 2; i < v.entries.size(); ++i)
+    // Seats are contiguous from seat 0; at least the host's and one partner's; nothing after the last one;
+    // every seat a distinct species and faction.
+    const size_t n = v.seats();
+    if (n < 2) return false;
+    for (size_t i = n; i < v.entries.size(); ++i)
         if (v.entries[i] != Founder{}) return false;
-    return v.home().species && v.guest().species && v.home().species != v.guest().species &&
-           v.home().faction && v.guest().faction && v.home().faction != v.guest().faction;
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = i + 1; j < n; ++j)
+            if (v.entries[i].species == v.entries[j].species || v.entries[i].faction == v.entries[j].faction ||
+                (v.entries[i].player && v.entries[i].player == v.entries[j].player)) return false;
+    return true;
+}
+// the legacy two-seat formats hold exactly two founders and no identities
+bool legacy(const Roster& v)
+{
+    return v.seats() == 2 && !v.entries[0].player && !v.entries[1].player;
+}
+// `prior` is an earlier state of `value`: the same founders in the same seats (an identity may be learnt once),
+// perhaps followed by new seats
+bool extends(const Roster& prior, const Roster& value)
+{
+    const size_t n = prior.seats();
+    if (value.seats() < n) return false;
+    for (size_t i = 0; i < n; ++i) {
+        const Founder &a = prior.entries[i], &b = value.entries[i];
+        if (a.species != b.species || a.faction != b.faction || (a.player && a.player != b.player)) return false;
+    }
+    return true;
 }
 
 std::wstring path_for(const std::string& key, const wchar_t* suffix = L".duofounders")
@@ -350,15 +375,29 @@ bool read(const std::string& key, Roster& out, Stage stage)
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
                            nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return false;
-    std::array<uint8_t, kBytes + 1> bytes{};
+    std::array<uint8_t, kBytes2Max + 1> bytes{};
     DWORD got = 0;
-    bool ok = ReadFile(f, bytes.data(), (DWORD)bytes.size(), &got, nullptr) && got == kBytes;
+    bool ok = ReadFile(f, bytes.data(), (DWORD)bytes.size(), &got, nullptr) && got <= kBytes2Max;
     CloseHandle(f);
-    if (!ok) return false;
+    if (!ok || got < 4) return false;
     net::Reader r(bytes.data(), got);
-    if (r.u32() != format(stage)) return false;
-    Roster value{r.u32(), r.u32(), r.u32(), r.u32()};
-    if (!r.ok() || !valid(value)) return false;
+    const uint32_t magic = r.u32();
+    Roster value;
+    if (magic == format(stage) && got == kBytes) {
+        value = Roster{r.u32(), r.u32(), r.u32(), r.u32()};
+    } else if (magic == format2(stage)) { // BUG-9135
+        const unsigned n = r.u8();
+        if (n < 2 || n > kMaxSeats || got != 5 + n * 16) return false;
+        for (unsigned i = 0; i < n; ++i) {
+            value.entries[i].species = r.u32();
+            value.entries[i].faction = r.u32();
+            value.entries[i].player = r.u64();
+        }
+        if (value.seats() != n) return false;
+    } else {
+        return false;
+    }
+    if (!r.ok() || r.left() || !valid(value)) return false;
     out = value;
     return true;
 }
@@ -367,23 +406,28 @@ bool can_record(const std::string& key, const Roster& value, std::string& err, S
 {
     std::wstring path = path_for(key, suffix(stage));
     if (path.empty() || !valid(value)) {
-        err = "A saved planet and two distinct native factions are required.";
+        err = "A saved planet and distinct native factions for every founder are required.";
         return false;
     }
     if (stage == Stage::Civilization) {
         Roster tribe;
         Outfits outfits;
         auto previous = path_for(key, suffix(Stage::Tribe));
-        if (GetFileAttributesW(previous.c_str()) != INVALID_FILE_ATTRIBUTES &&
-            (!read(key, tribe) || !read_outfits(key, outfits, err) ||
-             !outfits.contains(0, value.home().species) || !outfits.contains(1, value.guest().species))) {
+        bool match = GetFileAttributesW(previous.c_str()) == INVALID_FILE_ATTRIBUTES;
+        if (!match && read(key, tribe) && read_outfits(key, outfits, err)) {
+            match = true; // every nation's species descends from its seat's tribal founder
+            for (size_t i = 0; i < value.seats() && match; ++i)
+                match = i < tribe.seats() && outfits.contains(i, value.entries[i].species);
+        }
+        if (!match) {
             err = "The selected species do not match the saved tribal founders.";
             return false;
         }
     }
     if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES && GetLastError() == ERROR_FILE_NOT_FOUND) return true;
     Roster prior;
-    if (read(key, prior, stage) && prior == value) return true;
+    // BUG-9135: the same founders, perhaps with an identity learnt or further partners' seats added
+    if (read(key, prior, stage) && extends(prior, value)) return true;
     err = "This planet has a different or unreadable founding roster.";
     return false;
 }
@@ -395,19 +439,35 @@ bool record(const std::string& key, const Roster& value, std::string& err, Stage
     Roster prior;
     if (read(key, prior, stage) && prior == value) return true;
     net::Writer w;
-    for (uint32_t n : {format(stage), value.home().species, value.guest().species, value.home().faction, value.guest().faction})
-        w.u32(n);
-    if (publish(path, w.data)) return true;
+    if (legacy(value)) { // byte for byte as before: an older Lineages keeps reading a two-founder campaign
+        for (uint32_t n : {format(stage), value.home().species, value.guest().species, value.home().faction, value.guest().faction})
+            w.u32(n);
+    } else { // BUG-9135
+        const size_t n = value.seats();
+        w.u32(format2(stage));
+        w.u8((uint8_t)n);
+        for (size_t i = 0; i < n; ++i) {
+            w.u32(value.entries[i].species);
+            w.u32(value.entries[i].faction);
+            w.u64(value.entries[i].player);
+        }
+    }
+    if (publish(path, w.data, prior.seats() != 0)) return true;
     if (read(key, prior, stage) && prior == value) return true;
-    err = "Could not save the two founding species. Check write access to the co-op save.";
+    err = "Could not save the founding species. Check write access to the co-op save.";
     return false;
 }
 
 std::string describe(const Roster& v)
 {
-    char line[120];
-    snprintf(line, sizeof line, "Founding species: host %08X, guest %08X", v.home().species, v.guest().species);
-    return line;
+    char line[96];
+    snprintf(line, sizeof line, "Founding species: host %08X", v.home().species);
+    std::string out = line;
+    for (size_t i = 1; i < v.seats(); ++i) {
+        snprintf(line, sizeof line, ", partner %zu %08X", i, v.entries[i].species);
+        out += line;
+    }
+    return out;
 }
 
 // A missing or unreadable setting always reserves an absent nation. Bind
@@ -483,30 +543,48 @@ bool read_outfits(const std::string& key, Outfits& out, std::string& err)
 {
     Roster roster;
     if (!read(key, roster)) { err = "No readable original founders for this outfit."; return false; }
+    const size_t seats = roster.seats();
     Outfits value;
-    value.species[0] = {roster.home().species};
-    value.species[1] = {roster.guest().species};
+    for (size_t i = 0; i < seats; ++i)
+        value.species[i] = {roster.entries[i].species};
     auto path = path_for(key, L".duooutfits");
     HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         if (GetLastError() != ERROR_FILE_NOT_FOUND) { err = "Could not read founder outfit history."; return false; }
         out = std::move(value); return true;
     }
-    // OFT1, four original identity words, two counts, at most16 keys per seat.
-    std::array<uint8_t, (7 + 32) * 4 + 1> bytes{};
+    // OFT1: four original identity words (seats 0 / 1), two counts, at most 16 keys per seat.
+    // OFT2 (BUG-9135): u8 seats, per seat its species and faction, then per seat a count and its keys. A file written
+    // before further partners were founded covers fewer seats: theirs start with the founding species.
+    std::array<uint8_t, 4 + 1 + kMaxSeats * 8 + kMaxSeats * (4 + 16 * 4) + 1> bytes{};
     DWORD got = 0;
     bool ok = ReadFile(file, bytes.data(), (DWORD)bytes.size(), &got, nullptr) && got < bytes.size();
     CloseHandle(file);
     net::Reader r(bytes.data(), got);
-    ok = ok && r.u32() == 0x3154464Fu && r.u32() == roster.home().species &&
-        r.u32() == roster.guest().species && r.u32() == roster.home().faction && r.u32() == roster.guest().faction;
-    for (size_t seat = 0; seat < 2 && ok; ++seat) {
+    const uint32_t magic = ok ? r.u32() : 0;
+    size_t stored = 0;
+    if (magic == 0x3154464Fu) {
+        stored = 2;
+        ok = r.u32() == roster.home().species && r.u32() == roster.guest().species && r.u32() == roster.home().faction &&
+             r.u32() == roster.guest().faction;
+    } else if (magic == 0x3254464Fu) {
+        stored = r.u8();
+        ok = stored >= 2 && stored <= seats;
+        for (size_t i = 0; i < stored && ok; ++i)
+            ok = r.u32() == roster.entries[i].species && r.u32() == roster.entries[i].faction;
+    } else {
+        ok = false;
+    }
+    for (size_t seat = 0; seat < stored && ok; ++seat) {
         unsigned count = r.u32();
         if (!count || count > 16 || r.left() < count * 4) { ok = false; break; }
         value.species[seat].clear();
-        for (unsigned i = 0; i < count; ++i) {
+        for (unsigned i = 0; i < count && ok; ++i) {
             uint32_t id = r.u32();
-            if (!id || value.contains(seat, id) || (seat && value.contains(0, id))) { ok = false; break; }
+            bool clash = !id || value.contains(seat, id);
+            for (size_t other = 0; other < seat && !clash; ++other)
+                clash = value.contains(other, id);
+            if (clash) { ok = false; break; }
             value.species[seat].push_back(id);
         }
         if (value.species[seat].empty() || value.species[seat][0] != roster.entries[seat].species) ok = false;
@@ -517,7 +595,7 @@ bool read_outfits(const std::string& key, Outfits& out, std::string& err)
 
 bool record_outfit(const std::string& key, size_t seat, uint32_t expected, uint32_t model, std::string& err)
 {
-    if (seat >= 2 || !expected || !model) { err = "Invalid founder outfit change."; return false; }
+    if (seat >= kMaxSeats || !expected || !model) { err = "Invalid founder outfit change."; return false; }
     struct Guard {
         HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\SporeCoopDuoOutfits");
         DWORD state = mutex ? WaitForSingleObject(mutex, 0) : WAIT_FAILED;
@@ -528,17 +606,32 @@ bool record_outfit(const std::string& key, size_t seat, uint32_t expected, uint3
     Outfits value;
     Roster roster;
     if (!read(key, roster) || !read_outfits(key, value, err)) return false;
+    const size_t seats = roster.seats();
+    if (seat >= seats) { err = "Invalid founder outfit change."; return false; }
     if (value.current(seat) != expected) { err = "This outfit result is older than the current founder."; return false; }
     if (model == expected) return true;
-    if (value.contains(1 - seat, model) || value.contains(seat, model) || value.species[seat].size() >= 16) {
-        err = "Outfit history is full, repeated, or belongs to the other founder."; return false;
+    bool other = false;
+    for (size_t i = 0; i < seats && !other; ++i)
+        other = i != seat && value.contains(i, model);
+    if (other || value.contains(seat, model) || value.species[seat].size() >= 16) {
+        err = "Outfit history is full, repeated, or belongs to another founder."; return false;
     }
     value.species[seat].push_back(model);
     net::Writer w;
-    for (uint32_t n : {0x3154464Fu, roster.home().species, roster.guest().species, roster.home().faction, roster.guest().faction}) w.u32(n);
-    for (const auto& history : value.species) {
-        w.u32((uint32_t)history.size());
-        for (uint32_t n : history) w.u32(n);
+    if (seats == 2) { // OFT1, byte for byte as before
+        for (uint32_t n : {0x3154464Fu, roster.home().species, roster.guest().species, roster.home().faction, roster.guest().faction})
+            w.u32(n);
+    } else { // OFT2 (BUG-9135)
+        w.u32(0x3254464Fu);
+        w.u8((uint8_t)seats);
+        for (size_t i = 0; i < seats; ++i) {
+            w.u32(roster.entries[i].species);
+            w.u32(roster.entries[i].faction);
+        }
+    }
+    for (size_t i = 0; i < seats; ++i) {
+        w.u32((uint32_t)value.species[i].size());
+        for (uint32_t n : value.species[i]) w.u32(n);
     }
     if (publish(path_for(key, L".duooutfits"), w.data, true)) return true;
     err = "Could not save founder outfit history. The previous history was retained.";

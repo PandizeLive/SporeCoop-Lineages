@@ -133,26 +133,49 @@ bool update_seats(const std::string& planet, uint8_t occupied, uint8_t stage, bo
                   CampaignRules& rules, SeatPlan& plan, std::string& error);
 bool reserve(const std::string& planet, const CampaignRules& requested, std::string& err);
 
+// BUG-9135: founder seats a campaign can persist: the host (seat 0) and up to seven partners. The gameplay of the
+// stages still binds seats 0 and 1 (tribe.cpp / civ.cpp); the save formats and the player identity carry more.
+constexpr size_t kMaxSeats = 8;
+
 struct Founder {
     uint32_t species = 0, faction = 0;
+    // the founder's persistent player identity (identity.h), 0 = not known (a DUO1 / CIV1 roster, an older partner)
+    uint64_t player = 0;
     bool operator==(const Founder&) const = default;
 };
 
 struct Roster {
-    // Persistent campaign slots, NOT reusable network player IDs. Slots 0/1
-    // are the existing duo founders. The additional slots are reserved until
-    // four-species gameplay and its versioned save format are qualified.
-    std::array<Founder, 4> entries{};
+    // Persistent campaign slots, NOT reusable network player IDs. Slot 0 is the host's founder, slot 1 the first
+    // partner's; slots 2.. the further partners' (DUO2 / CIV2 only).
+    std::array<Founder, kMaxSeats> entries{};
     Roster() = default;
     Roster(uint32_t home_species, uint32_t guest_species, uint32_t home_faction, uint32_t guest_faction)
         : entries{{{home_species, home_faction}, {guest_species, guest_faction}}} {}
     const Founder& home() const { return entries[0]; }
     const Founder& guest() const { return entries[1]; }
+    // founded seats (they are contiguous from seat 0)
+    size_t seats() const
+    {
+        size_t n = 0;
+        while (n < entries.size() && entries[n].species && entries[n].faction) n++;
+        return n;
+    }
     const Founder* by_faction(uint32_t faction) const
     {
         if (faction) for (const auto& entry : entries)
             if (entry.species && entry.faction == faction) return &entry;
         return nullptr;
+    }
+    int seat_of_faction(uint32_t faction) const
+    {
+        const Founder* f = by_faction(faction);
+        return f ? int(f - entries.data()) : -1;
+    }
+    int seat_of_player(uint64_t player) const
+    {
+        if (player) for (size_t i = 0; i < entries.size(); ++i)
+            if (entries[i].species && entries[i].player == player) return int(i);
+        return -1;
     }
     bool contains_faction(uint32_t faction) const { return by_faction(faction) != nullptr; }
     bool operator==(const Roster&) const = default;
@@ -174,7 +197,7 @@ bool save_six_rivals(const std::string& planet, const Roster& founders, const Si
 // Outfit keys are versions of a founder, not new founders. The first key in
 // each history is the immutable founding species; the last is its current look.
 struct Outfits {
-    std::array<std::vector<uint32_t>, 2> species;
+    std::array<std::vector<uint32_t>, kMaxSeats> species;
     uint32_t current(size_t seat) const { return seat < species.size() && !species[seat].empty() ? species[seat].back() : 0; }
     bool contains(size_t seat, uint32_t key) const;
 };

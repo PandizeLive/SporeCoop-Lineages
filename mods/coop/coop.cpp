@@ -42,6 +42,7 @@
 #include "teamplay.h"
 #include "tribe.h"
 #include "drama.h"
+#include "identity.h"
 #include "cellsync.h"
 #include "audio.h"
 #include "census.h"
@@ -3410,6 +3411,7 @@ void on_frame(void*, int, void*)
     dna_notices_tick(now);
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
     guest_pack::tick(now);                      // BUG-9129
+    identity::tick(now);                        // BUG-9135
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
@@ -4056,6 +4058,7 @@ void end_session(EndPath path, bool cell)
                             : path == EndPath::Restart ? "a new session" : "disconnected");
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
+        identity::on_session_end(); // BUG-9135
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
         wobj::on_session_end();
@@ -4288,6 +4291,10 @@ void setup_callbacks()
         }
         if (type == net::MSG_CREATURE_RESCUE) {
             creature_rescue::message(from, r);
+            return;
+        }
+        if (type == net::MSG_IDENTITY) { // BUG-9135
+            identity::on_message(from, r);
             return;
         }
         if (type == net::MSG_DRAMA) { // BUG-9131
@@ -4583,6 +4590,7 @@ void setup_callbacks()
         feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
     };
     g_sess.cb.player_leave = [](uint8_t id, uint8_t reason) {
+        identity::on_player_left(id); // BUG-9135
         creature_rescue::on_player_leave(id); // old debt is detached from this reusable seat
         guest_pack::on_player_leave(id);      // BUG-9129
         trace::line("session", "player %u '%s' left: %s", id, g_remotes.count(id) ? g_remotes[id].name.c_str() : "?",
@@ -6635,6 +6643,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return rc;
                    }, nullptr, SK_CMD_MAIN_THREAD);
     adventure::init(H, M, &g_sess);
+    H->command_add(M, "coop.identity", "coop.identity - this profile's persistent player identity and the ones the host knows (BUG-9135)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", identity::status().c_str());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.giveup", "coop.giveup [down] - a downed player gives up now, as holding G does; down: a lethal hit on the own creature through the game's damage path (BUG-9118, tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "down")) {
@@ -6881,6 +6894,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.host_away = [] { return host_absent_for(Absent::Tribe); }; // BUG-0151, BUG-0231
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
+    identity::init(H, M, &g_sess); // BUG-9135
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
     crc.sess = &g_sess;
