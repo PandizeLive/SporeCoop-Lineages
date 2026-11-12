@@ -26,9 +26,12 @@ int main()
     PartnerState founder_species{false, true, true, false, true};
     PartnerState settling{false, true, false, true, true};
     PartnerState none{};
+    PartnerState none_settled{false, false, true, false, false};
     PartnerState pending{true, false, false, true, true};
     check(founding_wait(ready, true, true) == Wait::Ready, "ready");
-    check(founding_wait(none, true, true) == Wait::NoCreature, "no creature yet");
+    check(founding_wait(none, true, true) == Wait::NoCreatureYet, "no creature yet, young world");
+    check(founding_wait(none_settled, true, true) == Wait::NoCreature, "no creature once the world settled");
+    check(founding_wait(none_settled, false, false) == Wait::NoCreature, "no creature: never ready, switches off too");
     check(founding_wait(settling, true, true) == Wait::Settling, "settling comes first");
     check(founding_wait(host_creation, true, true) == Wait::HostCreation, "host creation");
     check(founding_wait(founder_species, true, true) == Wait::FounderSpecies, "founder species");
@@ -36,8 +39,8 @@ int main()
     // the switches' off sides: as before
     check(founding_wait(host_creation, false, true) == Wait::Ready, "tribe.founder_settle off: no host-creation check");
     check(founding_wait(founder_species, true, false) == Wait::Ready, "tribe.founding_skip off: counted ready (BUG-9138)");
-    check(told(Wait::HostCreation) && told(Wait::FounderSpecies) && !told(Wait::Settling) && !told(Wait::NoCreature) &&
-              !told(Wait::Ready),
+    check(told(Wait::NoCreature) && told(Wait::HostCreation) && told(Wait::FounderSpecies) && !told(Wait::Settling) &&
+              !told(Wait::NoCreatureYet) && !told(Wait::Ready),
           "told waits");
 
     // ---- BUG-9138: a partner on a founder's species never holds up the partners after them ----
@@ -49,7 +52,7 @@ int main()
         check(pick_partner(old) == 0, "switch off: the blocked partner is picked first (the bug)");
         std::vector<Wait> waiting{Wait::Settling, Wait::HostCreation, Wait::FounderSpecies};
         check(pick_partner(waiting, &why) == -1 && why == 1, "nobody ready: the first told reason");
-        std::vector<Wait> quiet{Wait::Settling, Wait::NoCreature};
+        std::vector<Wait> quiet{Wait::Settling, Wait::NoCreatureYet};
         check(pick_partner(quiet, &why) == -1 && why == -1, "nothing worth telling");
         check(pick_partner({}, &why) == -1 && why == -1, "no partners");
     }
@@ -60,13 +63,23 @@ int main()
         check(t.rfind("Kit plays one of the host's creatures", 0) == 0 && t.find("Co-op window") != std::string::npos,
               "notice names the player and the window");
         check(wait_text(Wait::FounderSpecies, "Kit") == t, "same words for a founder's species");
-        check(wait_text(Wait::Settling, "Kit").empty() && wait_text(Wait::Ready, "Kit").empty(), "no notice otherwise");
+        check(wait_text(Wait::Settling, "Kit").empty() && wait_text(Wait::Ready, "Kit").empty() &&
+                  wait_text(Wait::NoCreatureYet, "Kit").empty(),
+              "no notice otherwise");
         check(no_em_dash(t) && t.find("your creature") == std::string::npos, "plain words for both sides, no em dash");
+        const std::string n = wait_text(Wait::NoCreature, "Kit");
+        check(n.rfind("Kit has no creature of their own here", 0) == 0 && no_em_dash(n) &&
+                  n.find("your creature") == std::string::npos,
+              "notice for a partner without any creature");
     }
 
     {
-        const std::string h = host_status("Kit");
+        const std::string h = host_status(Wait::HostCreation, "Kit");
         check(h == "Kit has no village yet: they play one of your creatures." && no_em_dash(h), "host status line");
+        check(host_status(Wait::FounderSpecies, "Kit") == h, "host status line, founder species");
+        check(host_status(Wait::NoCreature, "Kit") == "Kit has no village yet: they have no creature of their own.",
+              "host status line, no creature");
+        check(host_status(Wait::Settling, "Kit").empty(), "no status line for a short wait");
     }
 
     // ---- the partner's Co-op window ----

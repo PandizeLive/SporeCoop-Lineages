@@ -6962,6 +6962,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.feed = feed;
     trc.notice = [](const std::string& t) { notice(t, -1); };
     trc.host_away = [] { return host_absent_for(Absent::Tribe); }; // BUG-0151, BUG-0231
+    trc.here = [](uint8_t player) { // BUG-9135 phase 4
+        auto it = g_remotes.find(player);
+        return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
     identity::init(H, M, &g_sess); // BUG-9135

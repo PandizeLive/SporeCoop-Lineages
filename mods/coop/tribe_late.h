@@ -20,7 +20,9 @@ namespace tribe_late {
 // ---- why a connected partner has no village yet (founding_ready) ----
 enum class Wait : uint8_t {
     Ready = 0,      // can be founded now
-    NoCreature,     // no creature of theirs has reached the host yet
+    NoCreatureYet,  // no creature of theirs has reached the host yet, the world is young (it may still come)
+    NoCreature,     // still none once the world settled: a late joiner without a creature of their own (a guest who
+                    // joins in Tribe and plays the host's species sends none: there is no avatar in Tribe)
     Settling,       // their creature for this world may still change (BUG-9137: 15 s after the world, 10 s after a change)
     HostCreation,   // plays one of the host's own creations (sent without records, BUG-9137)
     FounderSpecies, // plays the species of a founder's village (the host's species, an outfit of it, another partner's)
@@ -29,7 +31,7 @@ enum class Wait : uint8_t {
 struct PartnerState {
     bool pending = false;         // a village was made for them and its seat is not saved yet
     bool has_creature = false;    // player_key + species known on the host
-    bool settled = false;         // founder_creature_settled
+    bool settled = false;         // founder_creature_settled (with no creature: the world is 15 s old)
     bool host_creation = false;   // creations::plays_host_creation
     bool founder_species = false; // the creature is a founder seat's species or one of its outfits
 };
@@ -40,7 +42,7 @@ struct PartnerState {
 inline Wait founding_wait(const PartnerState& p, bool settle_fix, bool skip_fix)
 {
     if (p.pending) return Wait::Ready; // the village is made: finish saving its seat
-    if (!p.has_creature) return Wait::NoCreature;
+    if (!p.has_creature) return p.settled ? Wait::NoCreature : Wait::NoCreatureYet;
     if (settle_fix) {
         if (!p.settled) return Wait::Settling;
         if (p.host_creation) return Wait::HostCreation;
@@ -50,7 +52,7 @@ inline Wait founding_wait(const PartnerState& p, bool settle_fix, bool skip_fix)
 }
 
 // a wait worth telling the host and the partner (the others are seconds long)
-inline bool told(Wait w) { return w == Wait::HostCreation || w == Wait::FounderSpecies; }
+inline bool told(Wait w) { return w == Wait::NoCreature || w == Wait::HostCreation || w == Wait::FounderSpecies; }
 
 // the partner found_partners founds now: the first ready one in join order, -1 none. `why`: the first wait worth
 // telling (index into `waits`, -1 none), reported while nobody is founded.
@@ -68,6 +70,9 @@ inline int pick_partner(const std::vector<Wait>& waits, int* why = nullptr)
 inline std::string wait_text(Wait w, const std::string& name)
 {
     switch (w) {
+    case Wait::NoCreature:
+        return name + " has no creature of their own here, so they have no village yet. They can choose their own creature "
+                      "in the Co-op window (F9).";
     case Wait::HostCreation:
     case Wait::FounderSpecies:
         return name + " plays one of the host's creatures, so they have no village of their own. They can choose their own "
@@ -78,7 +83,12 @@ inline std::string wait_text(Wait w, const std::string& name)
 }
 
 // the host's Co-op window status line while a partner waits (short: one line of the window)
-inline std::string host_status(const std::string& name) { return name + " has no village yet: they play one of your creatures."; }
+inline std::string host_status(Wait w, const std::string& name)
+{
+    if (!told(w)) return {};
+    return name + (w == Wait::NoCreature ? " has no village yet: they have no creature of their own."
+                                         : " has no village yet: they play one of your creatures.");
+}
 
 // ---- the partner's Co-op window (guest) ----
 constexpr double kPromptSettle = 15; // seconds after the Tribe world was entered (the host's founding waits as long)

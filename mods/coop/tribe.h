@@ -24,6 +24,8 @@ struct Ctx {
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
     std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
+    // host: the player's last state says they play in this world now (not loading it, not in the menu); BUG-9135
+    std::function<bool(uint8_t player)> here;
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing

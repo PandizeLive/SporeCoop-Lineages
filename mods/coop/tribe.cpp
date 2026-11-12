@@ -4729,6 +4729,7 @@ static bool g_founding_skip = true;
 COOP_FIX("tribe.founding_skip", "BUG-9138", g_founding_skip,
          "tribe: a partner who plays a founder's species waits with a reason; the partners after them are still founded");
 static uint8_t g_founding_wait_player = 0xFF; // host: the partner the status line is about (0xFF: none)
+static tribe_late::Wait g_founding_wait_kind = tribe_late::Wait::Ready;
 
 // the creature is the species of a founder's village or one of its outfits (the host's village's species included)
 static bool founder_species(uint32_t creature)
@@ -4746,22 +4747,28 @@ static tribe_late::Wait founding_wait(uint8_t partner, double now)
     s.pending = found_pending_of(partner) != nullptr;
     const uint32_t creature = creations::player_key(partner, creations::kCreature).instance;
     s.has_creature = creature && creations::player_species(partner);
-    s.settled = s.has_creature && founder_creature_settled(partner, now); // its creature for this world may still come
+    // its creature for this world may still come; without any creature: told only once they play in this world (a
+    // partner still receiving the world sends no creature yet)
+    s.settled = founder_creature_settled(partner, now) && (s.has_creature || (C.here && C.here(partner)));
     s.host_creation = s.has_creature && creations::plays_host_creation(partner, creations::kCreature);
     s.founder_species = s.has_creature && founder_species(creature);
     return tribe_late::founding_wait(s, g_found_settle_fix, g_founding_skip);
 }
 
-// the partner is ready for a village of their own (BUG-9137 guards, BUG-9138); `why`: a reason worth telling
-static bool founding_ready(uint8_t partner, double now, std::string* why)
+// the partner is ready for a village of their own (BUG-9137 guards, BUG-9138); `why`: a reason worth telling, `kind`
+// its wait
+static bool founding_ready(uint8_t partner, double now, std::string* why, tribe_late::Wait* kind = nullptr)
 {
     const auto wait = founding_wait(partner, now);
+    if (kind) *kind = wait;
     if (why && tribe_late::told(wait)) {
         const std::string name = C.sess->name_of(partner);
         if (g_late_prompt) *why = tribe_late::wait_text(wait, name);
         else if (wait == tribe_late::Wait::HostCreation)
             *why = name + " plays one of your creatures here. They need a creature of their own for their own village.";
-        else *why = name + " plays the creature of another founder's village. They need a creature of their own for their own village.";
+        else if (wait == tribe_late::Wait::FounderSpecies)
+            *why = name + " plays the creature of another founder's village. They need a creature of their own for their own village.";
+        // a partner without any creature was not told before tribe.late_prompt
     }
     return wait == tribe_late::Wait::Ready;
 }
@@ -4771,7 +4778,7 @@ std::string founding_wait_line()
 {
     if (!g_late_prompt || !is_host() || !active() || g_founding_wait_player >= 0xFE) return {};
     for (const auto& p : C.sess->players())
-        if (p.id == g_founding_wait_player) return tribe_late::host_status(C.sess->name_of(p.id));
+        if (p.id == g_founding_wait_player) return tribe_late::host_status(g_founding_wait_kind, C.sess->name_of(p.id));
     return {};
 }
 
@@ -4923,13 +4930,18 @@ static void found_partners()
         return;
     }
     uint8_t partner = 0xFE, why_player = 0xFF;
+    tribe_late::Wait why_kind = tribe_late::Wait::Ready;
     std::string why;
     for (uint8_t p : unseated) {
         std::string reason;
-        if (founding_ready(p, now, &reason)) { partner = p; break; }
-        if (why.empty() && !reason.empty()) { why = reason; why_player = p; }
+        tribe_late::Wait kind;
+        if (founding_ready(p, now, &reason, &kind)) { partner = p; break; }
+        if (why.empty() && !reason.empty()) { why = reason; why_player = p; why_kind = kind; }
     }
-    if (partner >= 0xFE) g_founding_wait_player = why_player; // the host's status line names them (tribe.late_prompt)
+    if (partner >= 0xFE) { // the host's status line names them (tribe.late_prompt)
+        g_founding_wait_player = why_player;
+        g_founding_wait_kind = why_kind;
+    }
     if (partner >= 0xFE && !why.empty()) report(why);
     if (partner >= 0xFE) { founders_refresh(report); return; }
     // after a failure a checkpoint already due for founders saved before still runs
@@ -7168,6 +7180,22 @@ std::string debug(const std::vector<std::string>& a)
             out += row;
         }
         return out.empty() ? "No villages." : out;
+    }
+    // hut_level <0..4>: test setup (BUG-9135 phase 4), the host's village at an earned hut level, through the native
+    // upgrade pair shared_hut_upgrade uses (outside the frame); shared_hut_upgrade then gives it to every partner
+    if (a.size() == 2 && a[0] == "hut_level") {
+        const int level = atoi(a[1].c_str());
+        if (!active() || !is_host() || level < 0 || level > tribe_late::kMaxLevel) return "Set a level 0 to 4 on the Tribal host.";
+        H->run_outside_frame([](void* context) {
+            const int level = (int)(intptr_t)context;
+            void* home = player_tribe();
+            uintptr_t set = H->sym("SporeCoop::Community_SetLevel"), refresh = H->sym("SporeCoop::Tribe_UpdateHutModel");
+            if (!active() || !home || !intact_village(home) || !set || !refresh) return;
+            thiscall<void>(set, home, level);
+            thiscall<void>(refresh, home);
+            H->log(M, SK_INFO, "tribe: test hut level %d on the host's village", level);
+        }, (void*)(intptr_t)level);
+        return "Hut level " + std::to_string(level) + " queued for the host's village.";
     }
     if (a.size() == 1 && a[0] == "planned_sites") {
         if (!active() || !is_host()) return "Open a hosted Tribal campaign.";
