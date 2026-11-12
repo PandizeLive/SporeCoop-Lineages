@@ -11,11 +11,11 @@ versions: 0.7.8-lineages46-dev to 0.7.8-lineages53-dev (by design since the foun
 fixed_in:
 branch: feat/lineages-47
 commits:
-tests: tests/civ_seats_tests.cpp (unit, Civ seat rules)
+tests: tests/civ_seats_tests.cpp (unit, Civ seat rules), tests/tribe_seats_tests.cpp, tests/tribe_late_tests.cpp (unit, Tribe seats and late joiners)
 signature: host log has no "tribe automatic founders" line at all; session has 3 players (host + 2 partners)
 docs: docs/re/civ.md#civ-multi-founders
 related: BUG-9040 BUG-9134 BUG-9054 BUG-9056 BUG-9073
-switch: tribe.auto_founders, civ.multi_founders
+switch: tribe.auto_founders, civ.multi_founders, tribe.multi_founders, creature.own_nests, tribe.late_prompt, tribe.late_catch_up, tribe.late_create_editor, civ.late_capital
 ---
 
 ## Report
@@ -282,3 +282,10 @@ To verify in a live Civilization game (no lab run here; the main session):
 8. Evidence for the open items: `coop.civ late` word38 of the host's grown capital and a fresh one (a city level?),
    the logged distance to the host's capital, `coop.civ sites` before and after the founding (the site record's
    position field).
+
+## Phase 4 live test, Tribe (2026-11-12, feat/lineages-47)
+Two PCs, the Jiff test save (3 reserved founders): a joiner on the host's creature was told why it had no village and
+got the Co-op window prompt; its pick founded seat 3 with the catch-up (hut level 1, +4 members, racks 1 and 5); the
+MSI's late village (seat 2) the same; all games agree on four founder villages; the old seat 1 kept its shape. Not
+live yet: BUG-9138's case (a waiting partner before a ready one), the editor button, the Civ late capital. Found: a
+fourth player is refused "session is full" when the campaign reserved 3 founders (owner decision asked, docs/ROADMAP.md).

@@ -14,6 +14,15 @@
   gets the same village back (BUG-9135, roadmap phase 3).
 - Civilization: up to four founder nations, one capital per Tribe founder
   (BUG-9135, roadmap phase 5; not yet tested in a live game).
+- Joining late: a player who joins a Tribe game without a creature of their own
+  is told why they have no village and can pick one of their own creatures in
+  the Co-op window (F9); their village is then founded right away and caught
+  up to the host's (hut level, villagers, tool racks). In Civilization a late
+  joiner gets one capital with the host capital's buildings and turrets
+  (BUG-9135, roadmap phase 4; the Civilization part is not yet tested in a
+  live game).
+- Tribe: a partner on the host's species no longer stops the village founding
+  of the partners who joined after them (BUG-9138).
 
 ## [0.7.8-lineages54-dev] - 2026-11-12
 

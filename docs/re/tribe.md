@@ -3581,3 +3581,18 @@ already in overrides_dc04aee5.sym.
 * Tests: `coop.tribe shapes` lists every village of this game (faction, species, player, level, adults, babies, rack
   mask), on a guest its own loaded world; `coop.tribe late` the late-joiner state (guest: prompt, has_village,
   plays_own; host: waiting, catch-ups, members and racks added); `coop.tribe` prints a `tribe late:` line.
+* ✔ Live (2026-11-12, feat/lineages-47, two PCs, the Jiff test save with 3 reserved founders): a joiner with no
+  choice and no campaign memory played the host's 291EE5B5; host log "Late plays one of the host's creatures, so
+  they have no village of their own ..." 13 s after their seat; their Co-op window (opened by `coop.uistate 1`):
+  "You have no village: you play one of the host's creatures. Choose your own below." and "Choose your own creature
+  for this game: none yet" with the arrows. `coop.creations next creature` (the arrow): village for seat 3 about
+  2 min later at 5 FPS ("77 m from the host's"), `tribe late catch-up: seat 3 ...: hut level 1, members +4 of 4,
+  racks 1 5`, one checkpoint; all three connected games list the same four founder villages (`coop.tribe shapes`);
+  the joiner's prompt is gone, 7 villagers selected, a gather done (0 rejected). The MSI's earlier late village
+  (seat 2) got the same catch-up; the old seat 1 village kept its 2 adults and racks (decision 9).
+* ~ A guest's `coop.creations choose creature none` does not make it play the host's species when it has a campaign
+  creature for this planet (choices.ini [landfall]): "none" clears the explicit choice and the campaign memory
+  answers (seen on the MSI: it founded with Duckulon). Use `coop.creations unchoose creature` on a profile without
+  that campaign's memory to test a joiner without a creature.
+* ? The MSI's late village went from 7 adults to 5 within about 10 minutes with nobody ordering it (an epic creature
+  visited the area at that time); not looked into.
