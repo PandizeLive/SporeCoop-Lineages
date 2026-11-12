@@ -3620,3 +3620,19 @@ read_stand_ins / add_stand_in, tribe.cpp found_partners / wrong_founder_tick / l
   late_prompt 3 (choose) / 4 (chosen, coming); 0 once the members wear its own creature.
 * ~ Open: a seat still on its stand-in at the Tribe -> Civ graduation gets a capital with the stand-in species
   (outfits.current); a player who never comes back keeps a village that looks like the host's.
+
+## A guest commands its own village with the game's own controls (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-native-control"></a>
+
+BUG-9152. Switch `tribe.guest_native` (on).
+* ✔ (live) Before: on a guest's game the native selection and right-click orders only reach the host's village (the
+  player tribe there); the guest's own village is an NPC tribe in its game. The terrain cursor's candidate list
+  (GetTerrainCursor B30EB0, cursor +0x164) is a borrowed vector pointer: civ.cpp h_TerrainCursor now points it at the
+  guest's own village's mSelectableMembers (+0x354) in Tribe (the MSI read back its village's +0x354, 3 members), and
+  h_TribePlayerOwned answers true for that village on the guest's game. With its villagers selected, a real
+  right-click on the ground went to the host as a walk (h_WalkSelected) and all three walked.
+* ? Not yet seen: a real box around the guest's villagers (they went home before the box), and each Village page
+  action natively (raid, tools and racks, the hut's baby, eating, gifts, performances). The right-hand member cards on a
+  guest's game still show the host's villagers.
+* Seen on the way: a guest's villagers walk back home soon after a walk order ends (the host's idle AI).
+

@@ -39,6 +39,9 @@
   ends the session: the slots rise to fit everyone, and the chat says so
   (BUG-9143).
 - Co-op window: the "Give To" button is gone (BUG-9148).
+- Tribe: a connected player's right-click orders now reach their own villagers
+  with the game's own controls; before, only the Co-op window's Village page
+  could order them (BUG-9152).
 - Tribe: a friend who joins without a creature of their own gets their village
   right away, wearing the host's creature for now; when they choose or make
   their own creature, the same villagers take it on (BUG-9150).

@@ -1269,6 +1269,13 @@ static void* SK_CDECL h_TerrainCursor()
 {
     void* cursor = o_TerrainCursor();
     if (!cursor) return cursor;
+    // BUG-9152: a guest in Tribe selects its own village's members (tribe.guest_native)
+    if (void* own = tribe::guest_cursor_candidates()) {
+        g_bound_cursor = cursor;
+        g_bound_candidates = own;
+        F<void*>(cursor, 0x164) = own;
+        return cursor;
+    }
     void* country = nullptr;
     if (g_founder_control && active() && is_guest() && local_founder_faction()) // BUG-9135: the own seat's nation
         country = thiscall<void*>(a_CivByPol, nm(), local_founder_faction());
@@ -1283,7 +1290,8 @@ static void* SK_CDECL h_TerrainCursor()
         // Never overwrite a list another stage has already installed.
         if (F<void*>(cursor, 0x164) == g_bound_candidates) {
             void* home = g_ok && game::mode_id() == modes::kCiv && nm() ? player_civ() : nullptr;
-            F<void*>(cursor, 0x164) = home ? (uint8_t*)home + 0xD4 : nullptr;
+            void* tribe_list = tribe::native_cursor_candidates(); // BUG-9152: back to the player tribe's own list
+            F<void*>(cursor, 0x164) = home ? (uint8_t*)home + 0xD4 : tribe_list;
         }
         g_bound_cursor = g_bound_candidates = nullptr;
     }
@@ -6028,7 +6036,7 @@ void on_session_end()
     g_founder_nations = {};
     g_progress_queued = false;
     g_progress_poll = g_campaign_share_at = 0;
-    if (o_TerrainCursor && game::mode_id() == modes::kCiv) h_TerrainCursor();
+    if (o_TerrainCursor && (game::mode_id() == modes::kCiv || game::mode_id() == modes::kTribe)) h_TerrainCursor(); // BUG-9152
     caption_disarm(); // BUG-0224
     if (g_fix_boost)
         clear_coop_tables(true);

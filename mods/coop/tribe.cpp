@@ -1114,12 +1114,47 @@ static bool registered_guest_village(void* t, void* home);
 static bool g_guest_ai_fix = true;
 COOP_FIX("tribe.guest_ai", "BUG-9020", g_guest_ai_fix,
          "tribe: recognize the registered guest village as player-owned for native citizen AI");
+// BUG-9152 (owner 2026-11-12: "why can't they play their village? ... We shouldn't need this button"): on a guest's game
+// the game's one player tribe is the host's village; the guest's own village is an NPC tribe there, so the native
+// selection (box, click: the terrain cursor's candidate list, cursor +0x164 = the player tribe's mSelectableMembers
+// +0x354) and the right-click orders never reached it (the Village page's buttons were the only way). Now, as the Civ
+// side does for a guest's nation (civ.cpp h_TerrainCursor, BUG-9135), the cursor's candidates are the guest's own
+// village's selectable members and that village counts as player-owned on the guest's game; its orders go to the host
+// through the existing hooks (h_DoActionForObjects, h_WalkSelected). `coop.fix tribe.guest_native off`: as before.
+static bool g_guest_native = true;
+COOP_FIX("tribe.guest_native", "BUG-9152", g_guest_native,
+         "tribe: a guest selects and orders its own villagers with the game's own controls (box, click, right-click)");
+static void* g_own_village;      // guest: its own village (members it owns outside the host's), refreshed by guest_tick
+static uint32_t g_own_village_binds;
+static void* own_village_now()
+{
+    void* home = player_tribe();
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner == C.sess->my_id() && game::object_alive(m.c))
+            if (void* t = F<void*>(m.c, kOwnerTribeOff); t && t != home && game::object_alive(t)) return t;
+    return nullptr;
+}
+void* guest_cursor_candidates()
+{
+    if (!g_guest_native || !active() || !is_guest() || local_play() || !g_own_village || !game::object_alive(g_own_village))
+        return nullptr;
+    ++g_own_village_binds;
+    return (uint8_t*)g_own_village + 0x354;
+}
+void* native_cursor_candidates()
+{
+    void* home = game::mode_id() == modes::kTribe ? player_tribe() : nullptr;
+    return home ? (uint8_t*)home + 0x354 : nullptr;
+}
 using TribePlayerOwned_t = bool(SK_THISCALL*)(void*);
 static TribePlayerOwned_t o_TribePlayerOwned;
 static bool SK_THISCALL h_TribePlayerOwned(void* spatial)
 {
     if (g_guest_ai_fix && active() && is_host() && g_order_roster.guest().faction &&
         registered_guest_village((uint8_t*)spatial - 0x120, player_tribe())) return true;
+    // BUG-9152: on a guest's game its own village is its player's (selection, the right-click's choice of order)
+    if (g_guest_native && g_own_village && active() && is_guest() && !local_play() &&
+        (uint8_t*)spatial - 0x120 == (uint8_t*)g_own_village) return true;
     return o_TribePlayerOwned(spatial);
 }
 static bool g_shared_capacity = true;
@@ -3722,6 +3757,11 @@ static void mirror_drive(GMember& g, double now)
 
 static void guest_tick(double now)
 {
+    static double own_village_at;
+    if (now - own_village_at > 0.5) { // BUG-9152
+        own_village_at = now;
+        g_own_village = local_play() ? nullptr : own_village_now();
+    }
     if (local_play())
         return; // the last states would hold the members for 3 s
     auto live_members = g_mirror_member_lifetime ? native_member_owners() : MemberOwners{};
@@ -6928,6 +6968,7 @@ static void forget_world_tables()
     g_build_kind = 0;
     g_restore_village_orders = true;
     g_founder_rescues = {};
+    g_own_village = nullptr; // BUG-9152: a world change frees the old villages
     g_remote_rescues = {};
     g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
     if (g_fix_chiefs) {

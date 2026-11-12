@@ -57,6 +57,10 @@ void finish_own_outfit(bool saved); // guest: called after own editor adoption/c
 bool outfits_pending(); // defer campaign saves until a voted guest result is applied
 bool rescue_pending();
 float revive_seconds(void* citizen); // zero unless this last villager is waiting for its partner
+// BUG-9152 (guest, Tribe): the terrain cursor's candidate list for this game: the own village's selectable members
+// (null: leave the cursor as it is); native_cursor_candidates: the player tribe's own list (to restore)
+void* guest_cursor_candidates();
+void* native_cursor_candidates();
 float revive_total();                 // BUG-9141: a downed last villager's whole wait (30 s; 10 with tribe.down_30 off)
 float revive_progress(void* citizen); // BUG-9141: host: a partner villager's revive so far (0..1); guests: 0
 std::string village_food_line(); // cached for the HUD, no game pointers needed

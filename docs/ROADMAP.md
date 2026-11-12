@@ -113,6 +113,17 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
 
 ## Open decisions
 
+Decision IDs (owner, 2026-11-12): every decision has a permanent ID, topic number + letter ("3J"); letters keep
+counting within a topic and are never reused; answers read "3JA". Topics so far:
+
+| Topic | Subject | Asked so far | Answers |
+|---|---|---|---|
+| 1 | Party wipe (Tribe, Civ) | 1A (every part of the wipe design) | 1A: A, all recommended (2026-11-12) |
+| 2 | Downed players (dying pose, spectating) | 2A (look), 2B (spectating) | 2A: A; 2B: A, with Tab and left / right arrows next to the spectated name (2026-11-12) |
+| 3 | Space and the MMO goal | 3A-3F (first briefing), 3G-3J (rethought: players leaving the planet at different times, party or not) | open |
+| 4 | Creature personal evolving (the egg) | 4A-4D | open (re-asked 2026-11-12) |
+| 5 | Guests playing their village natively, the editor on join | 5A (the Village page), 5B (the editor on join) | open. Owner 2026-11-12: "If a player connects, they should be sent to creature editor, and be given a village location. We shouldn't need this button." Native right-click orders for guests built (BUG-9152). |
+
 * (2026-11-12, both answered: decisions 12 and 13.) Seats added mid-stage: built and live-tested 2026-11-12 on the
   Jiff test copy: 3 reserved, a fourth player refused ("session is full"); `coop.seats 4 now` on the host; the host,
   both guests and then the fourth player read seats=4 (enemy health 130% -> 145%) at once; the fourth player joined
