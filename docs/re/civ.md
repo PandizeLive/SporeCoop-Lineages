@@ -1916,3 +1916,56 @@ BUG-0593. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and lab lane 7 (civ_
 * ~ civ_coop's `Civilization:state:money` row ("-800 on the host, 0 on the guest"): the test's `coop.civ build`
   on the host spends without the game's price check (the host's wealth went 400 -> -800); a guest's shared total
   is floored at 0 (res.floor, BUG-0106). Not a player's case (the game refuses a building it cannot pay); not changed.
+
+## Founder nations of up to four players (2026-11-12, feat/lineages-47)
+<a id="civ-multi-founders"></a>
+
+BUG-9135, roadmap phase 5. Switch `civ.multi_founders` (on; off = the two nations of
+[civ-automatic-founders-control](#civ-automatic-founders-control) exactly as before). Code: civ.cpp `founders_multi`,
+`refresh_founder_seats`, `founder_owner`; the pure rules in mods/coop/civ_seats.h (tests/civ_seats_tests.cpp).
+Nothing here is new reverse engineering; the open game question is marked ?.
+
+* Seats: Civilization seat i is the Tribe roster's seat i (founders::can_record refuses a Civ seat whose species is
+  not a look of that tribal founder, `.duooutfits`). Seat 0 is the host's nation (the native player country), seats
+  1..3 the partners'. A partner without a Tribe seat gets no capital here (joining late is roadmap phase 4).
+* Founding, one capital at a time in seat order (`civ_seats::next_capital_seat`, at most founders::kPlaySeats):
+  the next seat's species is `outfits.current(seat)` (it must be a known resource and differ from every seated one);
+  `SpawnNextCity(ex, 0, 0)` only while every live city belongs to the host's or a seated founder's nation
+  (`only_founder_cities`; before: only the graduation's single capital), so the new nation is the only unknown one
+  (`new_capital`: one new nation whose city and nation species keys are blank, else "already has a species"). The
+  roster (CIV1 for two founders without identities, else CIV2) is written after each capital; the world is saved or
+  shared once after the last capital (or when the next one cannot be founded now). While a seat's capital is
+  founding, the AI of every nation that is neither the player's nor seated is held (h_CivAI), as before for one.
+* Recovery after an interrupted native save: the first saved seat without a live capital is founded again, one at a
+  time, only while every city is a founder's; the native political ids follow the founding order. ~ (by the
+  two-founder evidence; not run with three seats)
+* Who commands a seat's cities and vehicles (`founder_owner`, IsPlayerOwned hooks, host owner tables):
+  * host: `party::founder_player_of(roster, seat, founder_legacy_match)`: the seat's identity (Founder::player), else
+    the connected partner playing its species (the nation's species or any look in the seat's outfit history), else
+    in a two-founder roster with exactly one partner present that partner (the rule before BUG-9135: every partner
+    commanded the second nation). An away seat is the host's while offline control is on, else nobody's (0xFE).
+    Cached every 0.25 s and on a join or leave; a changed seat player re-assigns the founder nations' vehicles.
+  * guest: its own seat (`civ_seats::own_seat`): its identity (identity::own) in its copy of the roster (the save the
+    host shared), else its creature's species, else the two-founder rule. Other partners' nations are someone else's
+    (0xFC, never sent); the host's vehicle owners in MSG_CIV_STATE still decide gifts.
+* Identity: a seat without one learns the identity of the connected partner who alone plays its species (written to
+  the roster once; the roster becomes CIV2). The guests' copies change only with the next world share; until then a
+  guest finds its seat by species or the two-founder rule.
+* Per seat now: the guest's purchase dialogue buyer (`purchase_ui_buyer`) and terrain cursor list are its own
+  nation's; CMD_CITY_PURCHASE buys for the sender's seat; the host's offline selection merges every absent seat's
+  nation list (before: the one partner's, only while the host was alone); `campaign_tick` merges tech (+0x298),
+  highest count (+0x4D0) and the twelve unlock bytes (+0x484) over every founder nation; the HUD progress (CF8F80
+  caller) adds every partner nation's city count. Captures by any founder already counted for the team
+  ([civ-founder-campaign-credit](#civ-founder-campaign-credit)) and every seated nation already ran the AI's player
+  branch (h_CivAI, contains_faction).
+* Offline control: `.duo-command` (CMD1) binds the home and seat 1 factions and its one flag; the flag now covers
+  every absent partner seat. A permission bound to every seat's faction needs a new format (CMD2, founders.cpp).
+* `coop.civ bind_guest <nation> [player]` (stage-chooser saves without a Tribe roster) binds the next seat; the
+  player id is needed when more than one partner has no nation. `coop.civ` status prints a `founders:` line (seats,
+  each seat's political id, species, identity known, commanding player; a guest's own seat).
+* ? Choosing the free city site nearest a partner's former Tribe village: SpawnNextCity takes the free site with the
+  lowest appearance order ([its arguments](#civ-spawn-next-city-args); records at cCivExpansion +0x14, stride 0x64,
+  +0x2C order, +0x30 appeared, +0x38 owner); the record's position field is not known, and a guest replays the
+  founding as "the next site" too, so a chosen site would need the guests told which one. For now the founding logs
+  `seat N capital <pol> at (x y z), D m from its former village` (the cTribe with the Tribe roster seat's political id
+  at +0x30, or "is gone"), and `coop.civ sites` dumps every record's 25 words (hex and float) to find the position.
