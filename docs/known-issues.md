@@ -2171,3 +2171,9 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 
 * Reopened after the Lineages 50 fix (no autohatch effect on the partner's puppet): the owner's screen still acts as if
   they respawn when a partner respawns (3-player session). Not reproduced on Windows QA yet. Ticket: BUG-9122.
+
+## Tribe: a connected player cannot add a baby, build a tool or rebuild a partner's village (2026-11-12, BUG-9153)
+
+* The Co-op window's Village page, which had those buttons, was removed (owner decision 2L). Their native versions (the
+  own hut's Add Baby, the tool menu, automatic rebuilding) are being built. For tests the page comes back with
+  `coop.fix ui.village_page on`. Ticket: BUG-9153.

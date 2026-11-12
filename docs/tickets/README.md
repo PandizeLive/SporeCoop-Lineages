@@ -767,3 +767,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9150](BUG-9150-tribe-a-late-joiner-s-village-starts-with-a-stan.md) | fixed | feature | Tribe | 2026-11-12 | unreleased | tribe: a late joiner's village starts with a stand-in of the host's creature and takes theirs in place |
 | [BUG-9151](BUG-9151-creature-after-a-partner-s-editor-their-own-nest.md) | open | bug | Creature | 2026-11-12 |  | creature: after a partner's editor their own nest is rebuilt for the new species and the old one stays |
 | [BUG-9152](BUG-9152-tribe-guests-cannot-select-and-order-their-own-v.md) | open | bug | Tribe | 2026-11-12 |  | tribe: guests cannot select and order their own villagers with the game's own controls |
+| [BUG-9153](BUG-9153-village-page-removed-guests-play-their-village-w.md) | open | feature | tribe | 2026-11-12 |  | Village page removed: guests play their village with the game's own controls |

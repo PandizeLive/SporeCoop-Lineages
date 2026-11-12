@@ -3636,3 +3636,26 @@ BUG-9152. Switch `tribe.guest_native` (on).
   guest's game still show the host's villagers.
 * Seen on the way: a guest's villagers walk back home soon after a walk order ends (the host's idle AI).
 
+## A guest's game with its own village as the player's (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-own-player-village"></a>
+
+BUG-9153 (the Village page goes, decision 2L). Experiment `coop.tribe perspective own|host|status` (guest).
+* ✔ (live, MSI guest) The guest's own village made the player tribe with the native setter
+  (cGameNounManager::SetPlayerTribe B1FD50, manager +0x70; the former tribe AddRef'd by us while swapped): the HUD's food
+  counter shows the own village's food at once, the villager cards on the right become the own villagers, a card click
+  selects the own chief (selected flag on the guest), and the game's own "Populate: click on your hut and add a baby"
+  hint appears. The mod keeps `player_tribe()` = the host's village while swapped (74 uses in tribe.cpp assume it).
+* ✔ (live) Crash on the first try, about 15 s after the swap (MSI crash-20261112-140751, read of 0x154): the Tribe UI's
+  ring code, from TribalGame_HandleMessage (CD81F0) message type 3 at CD8268 -> CD5190 (TribeUI +0x240 ring owner, the
+  object cast with interface 4F176642) -> CCC580 -> CC95E0 -> Tribe_HutStateIs2 C90730 (`mov ecx,[ecx+368]` mpHut,
+  `add ecx,120`, getter 8E8230 `mov eax,[ecx+34]`, al = (eax == 2), no null check) with the owner (+0x1014, getter
+  C230B0) of a citizen whose hut was null. Both founder villages had huts (+0x368 read on the MSI); which tribe had none is
+  not known. Guarded (h_HutState: a tribe without a hut is not in state 2). With the guard the swap ran over 6 minutes, 0
+  faults, the guard never needed.
+* ✔ (live) The camera stays at the host's village after the swap: the minimap click, Home and the A key did not move it to
+  the own village (at 5 FPS a console `key` may be too short for the camera; not checked further).
+* ? Not yet tried: the own hut's panel and Add Baby (button 0625CD52), the tool planner, gathering into the own food,
+  what the guest's game does with the host's village as an NPC tribe over a long time, the swap across stage and world
+  changes and a rejoin.
+* Method: no Ghidra on the Windows PC; `tools/qa_win/dis.py` disassembles code read from a running QA game and turns a
+  crash's stack scan into real call sites (docs/06-testing.md#testing-dis-without-ghidra).

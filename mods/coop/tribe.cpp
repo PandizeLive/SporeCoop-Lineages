@@ -79,10 +79,34 @@ COOP_FIX("tribe.away", "BUG-0151", g_fix_away, "tribe: while the host is away th
 static uint32_t g_away_orders;
 static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 
-static void* player_tribe()
+// BUG-9153 (experiment): while a guest's game shows its own village as the player's (`coop.tribe perspective own`),
+// the mod keeps meaning the host's village by player_tribe(); native_player_tribe() is the game's field
+static void* g_persp_host;
+static void* native_player_tribe()
 {
     void* nm = game::noun_manager();
     return nm ? thiscall<void*>(a_GetPlayerTribe, nm) : nullptr;
+}
+static void* player_tribe()
+{
+    if (g_persp_host) return g_persp_host;
+    return native_player_tribe();
+}
+// BUG-9153: Tribe_HutStateIs2 (C90730) reads tribe->mpHut without a null check; the Tribe UI's ring code called it
+// for a citizen whose owner had no hut right after a guest's game showed its own village as the player's (MSI crash
+// 2026-11-12 14:07, read of 0x154). A tribe without a hut has no hut in that state: false.
+static uint32_t g_hutless_reads;
+static void* g_hutless_last;
+using HutState_t = bool(SK_THISCALL*)(void*);
+static HutState_t o_HutState;
+static bool SK_THISCALL h_HutState(void* tribe)
+{
+    if (!tribe || IsBadReadPtr((uint8_t*)tribe + 0x368, 4) || !F<void*>(tribe, 0x368)) {
+        ++g_hutless_reads;
+        g_hutless_last = tribe;
+        return false;
+    }
+    return o_HutState(tribe);
 }
 
 static bool is_citizen(void* c) { return c && !IsBadReadPtr(c, 8) && *(uintptr_t*)c == a_CitizenVt; }
@@ -1975,6 +1999,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_BTTick, (void*)h_BTTick, (void**)&o_BTTick);
     if (uintptr_t key = H->sym("SporeCoop::AbilityBar_OnKey"))
         H->hook_create(M, (void*)key, (void*)h_AbilityKey, (void**)&o_AbilityKey);
+    if (uintptr_t hut = H->sym("SporeCoop::Tribe_HutStateIs2")) // BUG-9153
+        H->hook_create(M, (void*)hut, (void*)h_HutState, (void**)&o_HutState);
     if (uintptr_t owned = H->sym("SporeCoop::Tribe_IsPlayerOwned"))
         H->hook_create(M, (void*)owned, (void*)h_TribePlayerOwned, (void**)&o_TribePlayerOwned);
     if (uintptr_t capacity = H->sym("SporeCoop::Tribe_MaxPopulation"))
@@ -8160,6 +8186,37 @@ std::string debug(const std::vector<std::string>& a)
         auto planet = world::current_game_key();
         if (!founders::can_record(planet, roster, err) || !creations::archive_guest_model(guest, planet, err)) return err;
         return founders::record(planet, roster, err) ? founders::describe(roster) : err;
+    }
+    if (a.size() == 2 && a[0] == "perspective") { // BUG-9153 experiment: own | host | status
+        uintptr_t set = H->sym("Simulator::cGameNounManager::SetPlayerTribe");
+        void* mgr = game::noun_manager();
+        if (!set || !mgr || !active() || !is_guest()) return "Requires a guest in Tribe Stage.";
+        if (a[1] == "status") {
+            char b[192];
+            snprintf(b, sizeof b, "perspective native=%p host=%p own=%p hutless=%u last=%p vt=%08X", native_player_tribe(),
+                     g_persp_host, g_own_village, g_hutless_reads, g_hutless_last,
+                     g_hutless_last && !IsBadReadPtr(g_hutless_last, 4) ? *(uint32_t*)g_hutless_last : 0u);
+            return b;
+        }
+        if (a[1] == "own") {
+            if (g_persp_host) return "Already showing the own village.";
+            void* own = g_own_village;
+            void* host = native_player_tribe();
+            if (!own || !host || own == host || !game::object_alive(own)) return "No own village yet.";
+            vcall<int>(host, 0); // AddRef: the manager lets go of it
+            g_persp_host = host;
+            thiscall<void>(set, mgr, own);
+            return native_player_tribe() == own ? "The game now shows the own village as the player's." : "Swap failed.";
+        }
+        if (a[1] == "host") {
+            if (!g_persp_host) return "Not swapped.";
+            void* host = g_persp_host;
+            if (game::object_alive(host)) thiscall<void>(set, mgr, host);
+            g_persp_host = nullptr;
+            vcall<int>(host, 1); // Release our hold
+            return "Restored the host's village as the player's.";
+        }
+        return "perspective own | host | status";
     }
     if (a.size() == 2 && a[0] == "test_perspective") {
         if (!active() || !is_guest()) return "Requires a guest in Tribe Stage.";

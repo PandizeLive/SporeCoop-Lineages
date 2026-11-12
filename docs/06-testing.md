@@ -5264,3 +5264,16 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   (the weapon drag needed slower moves: 20 steps of 0.25 s at 5 FPS), "You are about to enter Civilization", and the
   Civ tutorial (BUG-9052's recipe: both buttons held and moved, `key up down` repeated, `wheel`, a click on the vehicle's
   panel icon, then the tutorial checks FFFFFFF1): the partner capitals came only after the tutorial released the time.
+
+## Game code without Ghidra on the Windows PC (2026-11-12, feat/lineages-47)
+<a id="testing-dis-without-ghidra"></a>
+
+* The Steam exe on disk is encrypted and Ghidra is not set up on the Windows PC: `tools/qa_win/dis.py <instance|msi> dis
+  <sym address> [bytes]` reads the code from a running QA game (`mem.read`) and disassembles it with llvm-objdump
+  (LLVM_MINGW). Addresses are .sym addresses (base 0x400000).
+* The Steam / GOG 2024 exe is relocated (ASLR): TITAN's QA copy loaded at 0x630000, the MSI's at 0x490000 (each run can
+  differ; `info` shows `base=`). `sym <name>` prints the relocated address; subtract `base - 0x400000` for the .sym one.
+* A crash report's "stack scan" lists every code-looking value on the stack, most of them stale, named by the nearest
+  known symbol (often far away: "Tribe_SetChieftain+0x861" was C90741). `dis.py <game> calls <crash base> <addr>...`
+  keeps the entries with a call right before them and prints the call targets: crash-20261112-140751 became
+  TribalGame_HandleMessage -> CD5190 -> CCC580 -> CC95E0 -> C90730 -> 8E8230 (docs/re/tribe.md#tribe-guest-own-player-village).

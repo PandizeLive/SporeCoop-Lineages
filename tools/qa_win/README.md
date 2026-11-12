@@ -10,6 +10,7 @@ Background and pitfalls: docs/06-testing.md#testing-two-pc-msi.
 | `launch.ps1 -Instance N -Profile P [-Resolution WxH]` | Starts a QA game (800x600 by default; 5 FPS from the QA copy's sporekit.ini). |
 | `msi.ps1 deploy / start / stop / tunnel` | Copies the build to the MSI, starts or stops Spore there, opens the console tunnel. |
 | `respawn_fade.py <dier> <watcher>...` | Cell: a respawn must not darken the other screens (BUG-9122). |
+| `dis.py <instance or msi> dis <address> [bytes]` / `calls <crash base> <addr>...` | Game code read from a running game and disassembled (no Ghidra here); a crash's stack scan reduced to real call sites. |
 | `social_hits.py msi <host> <npc>...` | Creature: befriending by real input on the MSI never hurts the creature on the host (BUG-9136). |
 
 Rules (owner, 2026-11-11 / 2026-11-12):

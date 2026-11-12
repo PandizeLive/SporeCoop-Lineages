@@ -77,6 +77,11 @@ static unsigned g_slots_shown; // the player slot count last written into the lo
 static bool g_give_button = false;
 COOP_FIX("ui.give_button", "BUG-9148", g_give_button,
          "co-op window: the Give To button for selected units and cargo spice (owner 2026-11-12: removed, off)");
+// BUG-9153 (owner 2026-11-12, decision 2L "B, prioritize this"): no "Village >" page; a guest plays its own village with
+// the game's own controls (selection and right-click orders: BUG-9152, instruments: keys 1-3). On: the old page.
+static bool g_village_page = false;
+COOP_FIX("ui.village_page", "BUG-9153", g_village_page,
+         "co-op window: the Village page with buttons for a guest's village orders (owner 2026-11-12: removed, off)");
 static int g_lan_first, g_lan_max, g_lan_wheel_delta;
 static bool g_lan_dragging;
 constexpr int kLanRows = 6;
@@ -1819,7 +1824,7 @@ static void refresh()
     }
     bool lobby = A.role() != 0;
     bool space = lobby && A.mode && A.mode() == modes::kSpace;
-    bool villages = lobby && A.mode && A.mode() == modes::kTribe && tribe::village_orders();
+    bool villages = lobby && g_village_page && A.mode && A.mode() == modes::kTribe && tribe::village_orders(); // BUG-9153
     bool nations = lobby && civ::offline_control_available();
     if (!space && !villages && !nations)
         g_space_page = false;
