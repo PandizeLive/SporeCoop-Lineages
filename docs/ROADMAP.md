@@ -79,7 +79,7 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 | 1 | Player identity and the 8-seat founder save formats (DUO2 / CIV2 / OFT2). | done 2026-11-11 (BUG-9135) |
 | 2 | Creature: own nest per player (decisions 2, 3, 6, 7, 8), via the game's herd-and-nest creation; respawn and hatch at the own nest; migration together. | done 2026-11-12, two-PC tested (docs/re/creature.md#creature-own-nests) |
 | 3 | Tribe: each player's village from their own nest through the game's Tribe-start logic; 3-4 founders in every rule that counts founders (objectives, rivals, alliances, hut upgrades); orders, food, rescue and outfits per seat. | built 2026-11-12 (`tribe.multi_founders`); live-tested with 3 players on two PCs on a copy of the owner's Jiff save: the old broken partner village repaired and bound, a third village founded, orders and food per seat, a rejoin keeps its seat. Not yet live: a fresh Creature -> Tribe start (needs the host's clicks), rescue / give-up, the outfit vote. (docs/re/tribe.md#tribe-multi-founders) |
-| 4 | Joining late (decisions 4, 5): detect a species, else the create-a-creature prompt; catch up to the host's home. | planned |
+| 4 | Joining late (decisions 4, 5): detect a species, else the create-a-creature prompt; catch up to the host's home. | in progress 2026-11-12 (two helpers: Tribe prompt and catch-up; Civ late capital and catch-up) |
 | 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built 2026-11-12 (`civ.multi_founders`), host unit test; not yet live (the Tribe -> Civ change needs the host's clicks: the owner's OK on this PC, or the MSI as host). (docs/re/civ.md#civ-multi-founders) |
 | 6 | Space: the personal launch per seat. | planned |
 | 1b | Stable species keys per identity (a partner's creature keeps its key across rejoins under another network id). | planned |
@@ -95,4 +95,7 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
 
 ## Open decisions
 
-None.
+* The live Civilization test (phase 5) needs the host to click through the Tribe -> Civ change (advance button,
+  History check, two captions, City Hall and vehicle editors, about 15 clicks). Decision 11 allows clicks only on the
+  MSI; the test host runs on the owner's PC. Asked 2026-11-12: clicks on the owner's PC's QA window once, or another
+  way.
