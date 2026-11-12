@@ -25,6 +25,8 @@ struct Fixes {
     bool lan_dedup = true; // BUG-0210: a host answering on two addresses is one LAN game (DiscoverReply id)
     // 0.7.5
     bool bulk_acks = true; // BUG-0405: an ack every 48 packets received; resend only on a later ack or a long silence
+    // Lineages 54
+    bool pacing = true; // BUG-9098: reliable packets are paced at the receiver's measured delivery rate (no bursts into a slow link)
 };
 inline Fixes g_fix;
 

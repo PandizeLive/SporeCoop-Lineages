@@ -74,3 +74,21 @@ SHA-256. One bulk write returned headers but delivered zero body bytes in 12 s.
 This isolates a size or burst sensitivity on the tested path even under TCP.
 Because the probe changed both write size and spacing, it does not establish
 the effective path MTU or the exact loss mechanism.
+
+## Pacing by the delivery rate (2026-11-11, feat/lineages-47, `net.pacing`, on)
+The transport had no rate control: each frame's flush sent every due reliable packet (up to 42 on the internet, 128
+on a LAN; 2048 messages may be in flight). A path that drops bursts lost most of every frame's burst and the resends
+added more. Now (connection.cpp, rtt 20 ms and more) packets with reliable messages take a token from a bucket refilled
+at `pace_rate_` packets per ms; once per 1.5 round trips the rate grows by a quarter while under 5 % of the packets
+carried a resend, follows the acknowledged rate x 1.25 under random loss, and the acknowledged rate at 20 % or more.
+A window without acknowledgements (a guest that loads) changes nothing; an idle sender does not measure the path.
+Not cutting on random loss keeps the existing bad-link and busy-receiver tests as fast as before.
+* tests/net_tests.cpp `test_bulk_choke` (a 200 packet/s bottleneck with a 16-packet queue, 60 ms each way, 1 %
+  loss, 1.5 MB): pacing off 8.1 s, 4100 packets sent, 2578 dropped at the queue; on 7.7 s, 1955 sent, 449 dropped
+  (3 seeds). The player state (first in every flush) arrives ~98 % either way. A slow link stays slow: pacing cuts the
+  waste, not the transfer time.
+* Two PCs (TITAN host, MSI over Tailscale relayed, rtt ~320-370 ms, 4.8 MB Vandh.spo): off 15.2 s, 3 % resends;
+  on 16.2 s, 2 % resends.
+* Pitfall seen while testing: a header change (connection.h) built without FORCE=1 left session.cpp with the old
+  Connection layout; both guests faulted in build_packet's erase at a hot reload. Always FORCE=1 after a header change.
+The ticket stays open for the original separate-network path (not available to retest).

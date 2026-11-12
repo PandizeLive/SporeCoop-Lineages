@@ -987,6 +987,107 @@ static BusyResult bulk_busy_case(bool fix, bool busy, uint32_t delay, float loss
     return {got, (now - 1000) / 1000.0, a.stats.packets_sent, a.stats.resends};
 }
 
+// BUG-9098: a slow path that drops bursts (a phone hotspot / hotel Wi-Fi: a 250 KB/s bottleneck with a 16-packet queue,
+// 60 ms each way). The host's flush offers 42 packets a frame; without pacing most of every burst is dropped and sent
+// again. With net.pacing the reliable packets follow the rate the guest acknowledges.
+struct ChokeResult {
+    int got = 0;
+    double secs = 0;
+    uint32_t sent = 0, resends = 0, dropped = 0;
+    double state_ratio = 0; // the player-state packets (unreliable, one a frame) that arrived
+};
+static ChokeResult bulk_choke_case(bool pacing, int seed)
+{
+    bool was = g_fix.pacing;
+    g_fix.pacing = pacing;
+    struct Pk {
+        uint32_t t;
+        std::vector<uint8_t> d;
+    };
+    Connection a, b;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> U(0, 1);
+    std::deque<Pk> queue, wire, back; // the bottleneck's queue, then the propagation delay; the return path
+    const uint32_t kOneWay = 60, kServiceMs = 5; // 200 packets per second through the bottleneck
+    const size_t kQueue = 16;
+    uint32_t next_service = 0, dropped = 0;
+    const int N = 1500; // a cell world: ~1.5 MB in 1 KB chunks
+    int queued = 0, got = 0;
+    bool ordered = true;
+    uint32_t now = 1000;
+    std::vector<uint8_t> pkt;
+    int state_sent = 0, state_got = 0;
+    for (; got < N && now < 1000 + 180000; now += 1) {
+        if (now % 33 == 0) { // the host's frame
+            Writer st; // the player state: first in the flush, as Session sends it
+            st.u32(state_sent++);
+            std::vector<uint8_t> body(60, 1);
+            st.raw(body.data(), body.size());
+            a.send_unreliable(7, st, true);
+            size_t window = a.rtt_ms < 40 ? 600 : 160;
+            while (queued < N && a.pending_reliable() < window) {
+                Writer w;
+                w.u32(queued++);
+                std::vector<uint8_t> pad(1010, 0x55);
+                w.raw(pad.data(), pad.size());
+                a.send_reliable(42, w);
+            }
+            int burst = a.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+            for (int i = 0; i < burst && a.build_packet(now, pkt); i++) {
+                if (queue.size() < kQueue && U(rng) > 0.01f)
+                    queue.push_back({now, pkt});
+                else
+                    dropped++;
+            }
+            a.drop_unreliable();
+        }
+        if (!queue.empty() && now >= next_service) { // the bottleneck
+            wire.push_back({now + kOneWay, std::move(queue.front().d)});
+            queue.pop_front();
+            next_service = now + kServiceMs;
+        }
+        while (!wire.empty() && wire.front().t <= now) {
+            b.on_packet(wire.front().d.data(), wire.front().d.size(), now, [&](uint8_t type, Reader& r) {
+                if (type == 42 && r.u32() != (uint32_t)got++)
+                    ordered = false;
+                if (type == 7)
+                    state_got++;
+            });
+            wire.pop_front();
+        }
+        if (now % 33 == 16) // the guest's frame
+            while (b.build_packet(now, pkt))
+                back.push_back({now + kOneWay, pkt});
+        while (!back.empty() && back.front().t <= now) {
+            a.on_packet(back.front().d.data(), back.front().d.size(), now, [](uint8_t, Reader&) {});
+            back.pop_front();
+        }
+    }
+    g_fix.pacing = was;
+    CHECK(ordered);
+    return {got, (now - 1000) / 1000.0, a.stats.packets_sent, a.stats.resends, dropped,
+            state_sent ? state_got / (double)state_sent : 0};
+}
+
+static void test_bulk_choke()
+{
+    printf("bulk transfer through a 200 packet/s bottleneck with a 16-packet queue (BUG-9098)\n");
+    double off_s = 0, on_s = 0, off_state = 0, on_state = 0;
+    uint32_t off_drop = 0, on_drop = 0;
+    for (int seed = 1; seed <= 3; seed++) {
+        ChokeResult off = bulk_choke_case(false, seed), on = bulk_choke_case(true, seed);
+        printf("  seed %d: pacing off %d in %.1f s (sent %u, resends %u, dropped %u, player state arrived %.0f%%); on %d in %.1f s "
+               "(sent %u, resends %u, dropped %u, state %.0f%%)\n", seed, off.got, off.secs, off.sent, off.resends, off.dropped,
+               off.state_ratio * 100, on.got, on.secs, on.sent, on.resends, on.dropped, on.state_ratio * 100);
+        CHECK(on.got == 1500);
+        off_s += off.secs, on_s += on.secs, off_drop += off.dropped, on_drop += on.dropped;
+        off_state += off.state_ratio / 3, on_state += on.state_ratio / 3;
+    }
+    CHECK(on_s <= off_s * 1.05);       // not slower (the link is the limit either way)
+    CHECK(on_drop * 4 < off_drop);     // a fraction of the packets thrown away at the bottleneck
+    CHECK(on_state >= off_state - 0.02); // the player's state (first in every flush) arrives as before (~98 %)
+}
+
 static void test_bulk_busy_receiver()
 {
     printf("bulk transfer to a guest that loads (BUG-0405)\n");
@@ -2859,6 +2960,7 @@ int main(int argc, char** argv)
     test_civ_economic_packet();
     test_civ_religious_packet();
     test_bulk_busy_receiver();
+    test_bulk_choke();
     test_session();
     test_session_password();
     test_session_end_in_delivery();
