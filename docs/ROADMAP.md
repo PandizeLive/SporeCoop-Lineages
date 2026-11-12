@@ -82,7 +82,7 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 | 2 | Creature: own nest per player (decisions 2, 3, 6, 7, 8), via the game's herd-and-nest creation; respawn and hatch at the own nest; migration together. | done 2026-11-12, two-PC tested (docs/re/creature.md#creature-own-nests) |
 | 3 | Tribe: each player's village from their own nest through the game's Tribe-start logic; 3-4 founders in every rule that counts founders (objectives, rivals, alliances, hut upgrades); orders, food, rescue and outfits per seat. | built 2026-11-12 (`tribe.multi_founders`); live-tested with 3 players on two PCs on a copy of the owner's Jiff save: the old broken partner village repaired and bound, a third village founded, orders and food per seat, a rejoin keeps its seat. Not yet live: a fresh Creature -> Tribe start (needs the host's clicks), rescue / give-up, the outfit vote. (docs/re/tribe.md#tribe-multi-founders) |
 | 4 | Joining late (decisions 4, 5): detect a species, else the create-a-creature prompt; catch up to the host's home. | built 2026-11-12. Tribe live-tested with four founder villages on two PCs: a joiner on the host's creature is told why and gets the "choose your own creature" row in the Co-op window; their pick founds their village with no rejoin, caught up to the host's (hut level, members, racks); all games agree. Civ live-tested 2026-11-12 with four games: three late capitals (one per partner) caught up with the host capital; a joiner without a creature now gets the same prompt in Civ (fixed after the test showed only a chat notice). Not yet live: the "Create New Creature" editor button (off), BUG-9138's two-waiting-partners case. (docs/re/tribe.md#tribe-late-joiners, docs/re/civ.md#civ-late-capital) |
-| 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built 2026-11-12 (`civ.multi_founders`), host unit test; not yet live (the Tribe -> Civ change needs the host's clicks: the owner's OK on this PC, or the MSI as host). (docs/re/civ.md#civ-multi-founders) |
+| 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built 2026-11-12 (`civ.multi_founders`), host unit test. The founder roster, seat owners and shared money live-tested with four nations through late capitals (phase 4). The graduation itself (Tribe -> Civ with 3-4 founder villages) is not yet live: it needs a Tribe save with five objectives done; none exists on this PC and the game has no stage-advance cheat (docs/06-testing.md#testing-two-pc-msi). (docs/re/civ.md#civ-multi-founders) |
 | 6 | Space: the personal launch per seat. | planned |
 | 1b | Stable species keys per identity (a partner's creature keeps its key across rejoins under another network id). | planned |
 | 7 | Adventure creatures simulated by the host (BUG-9114). | waiting (needs clicks on the owner's PC or the MSI) |
@@ -102,4 +102,12 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
   both guests and then the fourth player read seats=4 (enemy health 130% -> 145%) at once; the fourth player joined
   (4/4) and commanded their old village again (seat 1, by identity).
 * The late joiner's creature (owner's question, 2026-11-12): "Why are we having them pick a village and creature on
-  late join? Shouldn't they be creating a creature while the village is setup?" Answer and choices sent; waiting.
+  late join? Shouldn't they be creating a creature while the village is setup?" Answer: they pick no village (it is
+  placed for them); a village (and a capital) is born with its species, so it waits for the creature; the "choose from
+  your creations" row was built because the editor path (decision 4's "create") is untested and off. Asked: A open
+  the creature editor at once and prepare the site and catch-up meanwhile (the home appears about 15 s after they
+  save; existing creations stay as a shortcut), B found the home at once with the host's creature and swap every
+  villager afterwards, C keep the choice row with the editor button beside it.
+* The Tribe -> Civ graduation test with four founder villages (phase 5): needs a Tribe save with five objectives.
+  Asked 2026-11-12: run the lab's scripted raids on the test host window (about an hour of clicks), test it in the
+  owner's next co-op game, or wait.

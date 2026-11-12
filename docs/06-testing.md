@@ -5231,3 +5231,15 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   tools/build_windows.sh now rebuilds every object whose included headers changed.
 * The tools: tools/qa_win/ (qa.py console with the QA-copy and tunnel guards, launch.ps1, msi.ps1, respawn_fade.py,
   social_hits.py); see tools/qa_win/README.md. Test games run at 5 FPS in 800x600 windows unless a test needs a size.
+* Getting to Civilization on the Windows QA copy (2026-11-12, feat/lineages-47):
+  * No native stage-advance cheat: `cheat evoAdvance` and `cheat refillMotive` return false (also after
+    `App::cCheatManager::func4Ch 1`, docs/re/creature.md#creature-cheat-console-flag); `cheat help` and the kit's own
+    `sk` / `coop` cheats work. The Tribe -> Civ graduation needs five real tribe objectives.
+  * No QA profile on this PC has a Tribe save with any objective done: DuoQAJiffHost (Jiff Peanutbutter, 4 founder
+    villages) and DuoQAClythHost (Clyth, 2 founders) both read 0 victories (host totem +0x11C..+0x120). The Linux
+    lab's five-victory Clyth is not this file. tools/tests/duo_tribe_campaign.py earns them with native raids (real
+    drags and right-clicks in the host window).
+  * A Civ game without graduation: DuoQACivHost / Abber.spo (a co-op campaign with .duo-seats, one host capital,
+    no founder roster). Good for late capitals (docs/re/civ.md#civ-late-capital); its first minutes show the Civ
+    tutorial's captions on the host (the game time stands still until they are clicked away).
+  * A changed profile is restored from the copies kept before the test (scratchpad backups of 2026-11-12).
