@@ -54,10 +54,7 @@ static bool is_guest() { return S && S->role() == net::Role::Client && S->connec
 // once the whole-planet re-alignment had removed villages the host's world has not, the event's start faulted
 // on a null (0xD521BA, data 0x120, lab 20261104-211318). The host's world has its own attacks (its members and
 // the animals' mirrors are what the guest shows): on a guest in Tribe the kind does not start.
-// `coop.fix tribe.guest_attacks off`: a guest starts it (0.7.6).
-static bool g_guest_attacks_fix = true;
-COOP_FIX("tribe.guest_attacks", "BUG-0564", g_guest_attacks_fix,
-         "tribe: a guest's own game starts no creature attack on a village (Drama Manager event of the host's world)");
+// (Its switch tribe.guest_attacks was retired 2026-11-12, roadmap 0e: stable since 0.7.7.)
 
 // SporeCoop::DramaManager_StartEvent: thiscall(cDramaManager*, event*, int) ret 8: marks the event
 // active (+0xC = 1), counts down its uses (+0x18) and calls its start (vt+0x30); the kind is +0x14
@@ -81,7 +78,7 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
             H->log(M, SK_INFO, "drama: %s is the host's world event: not started on its own here (creature.shared_events)", kKind[kind]);
         return;
     }
-    bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
+    bool tribe_attack = kind == 7 && game::mode_id() == modes::kTribe;
     // BUG-9129: a guest's summon is the host's (its Summon Flock goes to the host as a request)
     tribe_attack = tribe_attack || (kind == 8 && guest_pack::enabled());
     if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest() && !g_from_host) {

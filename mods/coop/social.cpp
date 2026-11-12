@@ -315,8 +315,7 @@ static void* g_goal = nullptr; // the card being updated
 static uint32_t g_goal_dna_dropped = 0, g_goal_dna_paid = 0;
 // BUG-0205: a guest's goal reward (K_GOAL) that reaches the host while it has no creature (an editor,
 // a load) waits here and is checked and paid when the host's creature is back. false: dropped (tests)
-bool g_goal_owe_fix = true;
-COOP_FIX("core.away_goal", "BUG-0205", g_goal_owe_fix, "creature: a goal reward that reaches a host without a creature is paid later");
+// (its switch core.away_goal was retired 2026-11-12, roadmap 0e: stable since 0.7.3.2)
 struct OwedGoal {
     ResourceKey k;
     int outcome;
@@ -1121,7 +1120,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // a card pays when its species became allied (6) or extinct (5): the host's own table (the
         // one every guest follows) must say so too
         bool sane = r.ok() && std::isfinite(dna) && dna > 0 && dna < 10000 && (outcome == 5 || outcome == 6);
-        if (sane && !game::avatar() && g_goal_owe_fix) {
+        if (sane && !game::avatar()) {
             if (g_goal_owed.size() < 64)
                 g_goal_owed.push_back({k, outcome, dna});
             return;

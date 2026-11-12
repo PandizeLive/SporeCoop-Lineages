@@ -75,7 +75,7 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 | 0b | One ownership layer (`party`): identity -> seat -> owned things (species, nest, pack, village, city) for every stage; the 4-player work goes through it instead of patching the `guest()` spots in place. | done 2026-11-12 (party.cpp, .duoparty) |
 | 0c | Split tribe.cpp and civ.cpp along the seams that work touches (founding, ownership and orders, campaign rules); no big-bang rewrite. | decided |
 | 0d | The two-PC test harness (MSI tunnel, launch, checks) into tools/ as repeatable tests. | done 2026-11-12 (tools/qa_win) |
-| 0e | Switch retirement: a fix stable for 3+ releases loses its switch and old path, in small tested batches. | decided |
+| 0e | Switch retirement: a fix stable for 3+ releases loses its switch and old path, in small tested batches. | batch 1 done 2026-11-12 (5 of 506: tribe.guest_attacks, effects.other_stages, core.away_goal, team.rescue_reset, civ.citizen_far; only switches no test or tool flips) |
 | 1 | Player identity and the 8-seat founder save formats (DUO2 / CIV2 / OFT2). | done 2026-11-11 (BUG-9135) |
 | 2 | Creature: own nest per player (decisions 2, 3, 6, 7, 8), via the game's herd-and-nest creation; respawn and hatch at the own nest; migration together. | done 2026-11-12, two-PC tested (docs/re/creature.md#creature-own-nests) |
 | 3 | Tribe: each player's village from their own nest through the game's Tribe-start logic; 3-4 founders in every rule that counts founders (objectives, rivals, alliances, hut upgrades); orders, food, rescue and outfits per seat. | planned |

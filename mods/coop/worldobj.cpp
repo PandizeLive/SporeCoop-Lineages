@@ -478,15 +478,14 @@ static uint32_t g_cit_walks, g_cit_puts, g_cit_far;
 // game to the city the guest looks at: left there (it was put back at the host's city, the guest's city empty).
 // `coop.fix civ.citizen_far off`: put back however far (0.7.5).
 constexpr float kCitizenFar = 60.f;
-static bool g_cit_far_fix = true;
-COOP_FIX("civ.citizen_far", "BUG-0553", g_cit_far_fix, "civ: a guest's citizens the game moved to the city its camera is at stay there");
+// (its switch civ.citizen_far was retired 2026-11-12, roadmap 0e: stable since 0.7.6)
 
 static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, Follow& st, double now)
 {
     float t = (float)std::min(age, 1.5);
     net::Vec3 at{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
     float d = net::dist(l.pos, at);
-    if (g_cit_far_fix && d > kCitizenFar) {
+    if (d > kCitizenFar) {
         g_cit_far++;
         return;
     }

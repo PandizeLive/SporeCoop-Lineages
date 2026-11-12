@@ -45,10 +45,7 @@ static bool nobody_here() { return g_here_fix && C.anyone_here && !C.anyone_here
 // sent. Created in the receiver's game effect world it has no painter and faults every frame while it lives
 // (docs/re/creature.md#creature-effects-painter). `effects.main_world` (on) sends only effects of the game's
 // own effect world and never plays an id this game saw only in another world; with it, Tribe and Civilization
-// relay again (`effects.other_stages`, on). Off: the 0.7.4 behaviour (no effect starts there; stops pass).
-static bool g_other_stages = true;
-COOP_FIX("effects.other_stages", "BUG-0451", g_other_stages,
-         "effects: also relayed in Tribe and Civilization (off: Cell and Creature only, as 0.7.4)");
+// relay again (the switch effects.other_stages was retired 2026-11-12, roadmap 0e: stable since 0.7.4).
 // Space: not verified (no effect of the own UFO could be made in a test, docs/re/creature.md); off as in 0.7.4
 static bool g_space = false;
 COOP_FIX("effects.space", "BUG-0451", g_space, "effects: also relayed in Space (unverified, off by default)");
@@ -94,7 +91,7 @@ static uint32_t g_stage_skipped;
 static bool stage_off()
 {
     uint32_t m = game::mode_id();
-    bool off = m == modes::kSpace ? !g_space : (m == modes::kTribe || m == modes::kCiv) ? !g_other_stages : false;
+    bool off = m == modes::kSpace && !g_space;
     if (off)
         g_stage_skipped++;
     return off;
@@ -1040,8 +1037,8 @@ std::string status()
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
-    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d other_stages=%d space=%d stage_skipped=%u own_screen_kept=%u\n",
-             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_other_stages, (int)g_space, g_stage_skipped, g_own_screen_kept);
+    snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u here_fix=%d space=%d stage_skipped=%u own_screen_kept=%u\n",
+             g_elsewhere_tx, g_elsewhere_rx, (int)g_here_fix, (int)g_space, g_stage_skipped, g_own_screen_kept);
     s += b;
     snprintf(b, sizeof b,
              "effects foreign world: created=%u last=%08X queued=%u near=%u not played=%u known ids=%u main_world_fix=%d\n",

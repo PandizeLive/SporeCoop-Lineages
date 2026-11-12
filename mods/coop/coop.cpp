@@ -6114,8 +6114,7 @@ int c_corefix(void*, int argc, const char* const* argv, SkOut* out)
                 {"lan_pages", &coop_ui::g_lan_pages_fix},
                 {"status_block", &g_status_block_fix}, {"window_recenter", &coop_ui::g_recenter_fix},
                 {"text_utf8", &utf8::g_cut_fix}, {"notify_text", &notify_text::g_fix},
-                {"away_dna", &g_away_dna_fix}, {"away_editor", &g_away_editor_fix},
-                {"away_goal", &social::g_goal_owe_fix}};
+                {"away_dna", &g_away_dna_fix}, {"away_editor", &g_away_editor_fix}};
     for (auto& x : sw)
         if (argc > 2 && !strcmp(argv[1], x.name))
             *x.on = atoi(argv[2]) != 0;

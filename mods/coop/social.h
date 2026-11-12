@@ -47,7 +47,6 @@ bool debug_answer(uint16_t id, uint32_t type); // coop.social answer <npc id> <h
 std::string abilities_dump(int id); // coop.social abil <npc id | -1> (tests, BUG-0525): abilities and prompt candidates
 std::string relations_dump(); // coop.social rel (tests, BUG-0462): each NPC's relation to the own avatar as the game sees it
 bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, tests: a goal card's reward (K_GOAL)
-extern bool g_goal_owe_fix; // BUG-0205: a K_GOAL without a host creature waits for it (false: dropped)
 bool debug_set_record(uint32_t crt_instance, int relation, uint32_t impressed); // host, tests: a record of the table
 // host (roadmap phase 2, decision 7): a party species is allied (relation 6) in the host's table
 bool set_party_ally(uint32_t crt_instance);
