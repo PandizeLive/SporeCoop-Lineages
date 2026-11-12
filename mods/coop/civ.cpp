@@ -6498,6 +6498,17 @@ std::string debug(const std::vector<std::string>& a)
                      (int)j.species_ready, j.nation_seat, civ_seats::late_why_text(why[i]));
             out += line;
         }
+        // every founder nation's capital (its first city): buildings, turrets and the word at +0x38, the level of a
+        // cCommunity (Community_SetLevel, tribes); ? whether a cCity has a level there (docs/re/civ.md#civ-late-capital)
+        for (size_t s = 0; s < g_founder_nations.seats() || (s == 0 && !g_founder_nations.seats()); ++s) {
+            void* nation = s == 0 ? player_civ() : thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[s].faction);
+            auto cs = nation ? vec_of((uint8_t*)nation + kCivCities) : std::vector<void*>{};
+            if (cs.empty()) continue;
+            snprintf(line, sizeof line, "  seat %zu capital %08X: buildings=%zu turrets=%zu word38=%d slots=%zu\n", s,
+                     pol_of(cs[0]), late_buildings(cs[0]).size(), vec_of((uint8_t*)cs[0] + kCityTurrets).size(),
+                     F<int>(cs[0], 0x38), late_slots(cs[0]).size());
+            out += line;
+        }
         return out;
     }
     if (a.size() == 1 && a[0] == "sites") { // BUG-9135 RE: the native city site records (docs/re/civ.md#civ-multi-founders)
