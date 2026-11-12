@@ -19,6 +19,9 @@ Rules (owner, 2026-11-11 / 2026-11-12):
 * Console `click`, `drag`, `wheel`, `key` move the real mouse and keyboard: on this PC only with the owner's OK; on the
   MSI freely.
 * Up to 3 test games on this PC at 5 FPS in small windows, unless a test needs a size (Adventure clicks: 1440x1080).
+* A new build into a running game: copy it over the game's `mods/coop.dll`, then `mod.reload coop` only. Never
+  `sym.reload` on the QA copy: it reads no symbol file there and leaves the game with none (`load symbols missing`,
+  2026-11-12); restart that game.
 * A header change needs no FORCE=1 any more (tools/build_windows.sh tracks includes since 2026-11-12), but the MSI
   and the QA copy always get the whole new build.
 

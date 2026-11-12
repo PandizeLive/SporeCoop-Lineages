@@ -4566,6 +4566,13 @@ static bool founding_site(void* home, net::Vec3& result)
     for (auto village : all_tribes()) occupied.push_back(tribe_pos(village));
     size_t target = occupied.size() + 1;
     add_clear_sites(tribe_pos(home),occupied,target);
+    // BUG-9135: a third or fourth founder: the rings around the host's village can be full (its rivals, the other
+    // partners; seen 2026-11-12 on the owner's Jiff save: no site for seat 2). The other founders' villages are
+    // inhabited, dry, level sites too: the same search around each of them keeps the founders' villages together.
+    if (g_multi_founders)
+        for (int seat = 1; occupied.size() != target && seat < (int)founder_seats(); ++seat)
+            if (void* village = founder_village(seat); village && village != home)
+                add_clear_sites(tribe_pos(village), occupied, target);
     if (occupied.size() != target) return false;
     result = occupied.back();
     return true;

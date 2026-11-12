@@ -162,3 +162,12 @@ To verify live (host + two partners, three games; then once with the switch off)
    seat; with an older save (seat 1 without identity) the seat-1 partner is recognised by creature and bound.
 7. Campaign: a rival appears with three founders, goals count founders + NPCs (`coop.tribe npc_budget`), hut upgrades
    reach both partner villages.
+
+## Phase 3 live test (2026-11-12, feat/lineages-47)
+Three games on two PCs (QA host + QA partner on TITAN at 5 FPS, the MSI as the third), a fresh copy of the owner's
+Jiff Peanutbutter save (seat 1 founded with the host's creature, BUG-9137). Passed: checks 1 (on an existing Tribe
+save, not a fresh Creature start), 2 (orders of each partner reach only its own village: 5 done, 0 rejected), 3 (food
+lines), 6 (a rejoin keeps the seat; a later partner gets the next seat; the older seat is claimed and bound). Fixed on
+the way: the free-site search found no spot for seat 2 (rings around the host's village only); it now also searches
+around the other founder villages (docs/re/tribe.md#tribe-multi-founders). Not yet live: checks 4, 5, 7, 8 and a fresh
+Creature -> Tribe start (needs the host's clicks), and all of phase 5 (Civilization).

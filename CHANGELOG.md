@@ -7,6 +7,13 @@
   host's nest when the species migrates, and if it died out while they were
   away it is made again when they come back. Nobody in the party can hunt
   another player's species (BUG-9135, roadmap phase 2).
+- Tribe: up to four founders. Every partner with their own creature gets
+  their own village (next to their Creature nest when it is still there,
+  else the nearest free level spot by any founder's village), commands only
+  that village, and sees its own food. A partner who leaves and comes back
+  gets the same village back (BUG-9135, roadmap phase 3).
+- Civilization: up to four founder nations, one capital per Tribe founder
+  (BUG-9135, roadmap phase 5; not yet tested in a live game).
 
 ## [0.7.8-lineages54-dev] - 2026-11-12
 

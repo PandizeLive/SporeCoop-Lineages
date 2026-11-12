@@ -3454,3 +3454,18 @@ in a game (to verify with three game instances, see the ticket).
 * Still for two founders only (fixtures, not campaign play): `coop.tribe register_guest`, `found_guest`,
   `refound_guest` (tests with exactly one guest). A guest's own game sees the other partners' villages as NPC
   villages holding mirrors of their members.
+* ✔ Live, three players on two PCs (2026-11-12, feat/lineages-47; host and one partner on the QA copy at 5 FPS, the
+  MSI as the third; a fresh copy of the owner's Jiff Peanutbutter save, whose seat 1 was founded with the host's
+  291EE5B5, BUG-9137): the first partner alone claimed seat 1 (`seat 1 ... belongs to player identity ... now`), the
+  BUG-9137 repair put its own creature on the village once it played it; the MSI, joining next, got party seat 2 and
+  a founded village (`village for player 2 (seat 2, ...) ... 224 m from the host's, at the next free site`), one
+  checkpoint; all three games list the same three villages; `select_village` + `gather` on each guest: 5 orders
+  done (2 + 3 villagers), 0 rejected; HUD food: host `Host 12.00   Guests 72.88, 15.00`, each guest `You` its own
+  village's; the MSI left and joined again: the same seat 2 and commander, no new village.
+* ✔ CORRECTION of the free-site search for 3+ founders (2026-11-12): the rings 100-180 m around the host's village
+  (16 directions, ground 0-3 m above the home's, level within 3 m 20 m out, 70 m from every village) had no spot for
+  seat 2 on that save ("No clear, level founding site near your village is available yet."). founding_site now also
+  searches the same rings around every other founder village (inhabited, dry and level, so the rule stays as strict):
+  found 224 m from the host's, beside seat 1's village.
+* Not yet live: a fresh Creature -> Tribe start with three own nests (the founding at the own nest), rescue and
+  give-up per seat, the three-way outfit vote, the switch off with two players.
