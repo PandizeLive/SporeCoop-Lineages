@@ -3392,3 +3392,65 @@ BUG-9137, `tribe.founder_settle`. Windows QA, a copy of the owner's save in prof
   the creature arrived, commander=1 after the reload; a new founding with the host's creation: refused with the switch
   on, went on to the site search with it off.
 * `coop.tribe` (host) prints `commander= founder_guest= outfit_guest= founder_repairs=`.
+
+## Up to four founders: a village for every partner (2026-11-12, feat/lineages-47)
+<a id="tribe-multi-founders"></a>
+
+BUG-9135, roadmap phase 3 (Tribe), `tribe.multi_founders` (off: the two-founder co-op exactly as before: two players,
+seat 1 the only partner). Code: tribe.cpp, the pure parts in tribe_seats.h (tests/tribe_seats_tests.cpp). Not yet run
+in a game (to verify with three game instances, see the ticket).
+
+* Seats are the founder roster's (founders::Roster, `.duofounders`): 0 the host's village (the native player tribe),
+  1.. the partners' villages in the order they were founded, contiguous, up to founders::kPlaySeats (4). They are not
+  the party's seats (`.duoparty`): a roster cannot have gaps, so a partner who was offline at the Tribe start gets the
+  next free founder seat.
+* Binding: `seat_of_player(player)` = party::founder_seat_of (identity first: Founder::player; for a seat of an older
+  save without identity the creature match the two-founder co-op used: the player's creature is the seat's founder or
+  one of its outfits); `player_of_seat(seat)` = party::founder_player_of (0xFE: nobody). `seat_of_village(t)`: by the
+  village's faction (+0x30), then its species must be the seat's founder or an outfit. `founder_village(seat)`.
+  `village_commander()` stays for the switch-off path (and `commander=` in `coop.tribe`, now seat 1's player).
+* A seat without identity learns it once (bind_founder_identities, outside the frame, founders::record: DUO1 becomes
+  DUO2) when a connected partner matches it by creature, its creature settled (15 s after the world, 10 s after its
+  last change) and not one of the host's creations. `coop.tribe bind_founder <seat> <player>` (host) binds by hand.
+* Founding (auto_founders_multi / found_partners, every 5 s, one partner per tick, outside the frame): every connected
+  partner without a seat (party::unseated_partners) gets a village, with the BUG-9137 guards per partner (settled own
+  creature, never one of the host's creations); a village made but not yet saved is remembered per partner (by
+  identity, else network id) and reused, never made twice. Site: the partner's own Creature nest when one is usable
+  (a live, not extinct nest herd of their species within 400 m of the host's village, level within 3 m 20 m away to
+  four sides, ground within 6 m of the host village's height, 70 m from every village; the nest herd stays), else the
+  next free site of founding_site (100/140/180 m rings, 70 m from every village). The new seat records the partner's
+  identity. The checkpoint reload runs once after the last partner ready now (a later failure still runs a due one).
+* Founding waits while a seat without identity has no connected player (its partner may be here with another creature:
+  a second village would be theirs twice): tribe_seats::founding_held. Exception (BUG-9137 with several partners): a
+  seat founded with one of the host's creations and no outfit since is taken over by the only unseated partner
+  (tribe_seats::claimable_seat): its identity is bound and wrong_founder_tick gives the village that partner's
+  creature. More than one unseated partner and such a seat: nobody takes it, founding waits (`bind_founder` decides).
+* Ownership and orders: each partner village's members belong to its seat's player in MSG_TRIBE_STATE (0xFE while
+  offline: the village runs as before for an absent partner). host_command takes the sender's seat: build, baby,
+  forage, equip (the tool of its own village), the member's village check, performances and instruments, give-up.
+* Rules counting founders: h_NounData hides every partner village present from the two counting callers (each seat
+  once); pace_holds skips every partner faction; missing_last_objective expects founders + 4 villages (two founders:
+  6) and the backfill founders + 5 (7); the six-rival trial founders + 6 (8); h_FactionFlag needs an alliance with
+  every founder; village_allied_with_founder any founder; shared_hut_upgrade gives the host's earned level to every
+  partner village; the population rewind is held while any partner village has a living member.
+* Rescue (BUG-9118) per seat: g_founder_rescues / g_remote_rescues by seat. A downed founder is protected when its
+  seat's player is here and another founder village of a player who is here has a living member (two founders: as
+  before, both players); any other founder village's living member within 15 m revives; capture and rebuild name the
+  seat. CMD_REBUILD and CMD_GIVE_UP carry a seat in their action word (seat + 1, 0 = not given; older hosts ignore the
+  action of both): rebuild without a seat takes the captured founder village other than the helper's; give-up's seat
+  must be the sender's own. `coop.tribe rebuild [seat]`.
+* Outfit vote per seat: one vote per connected partner seat (g_votes), each result recorded to its seat
+  (record_outfit) and applied to its village (apply_guest_model with the seat), one checkpoint for all.
+* Wire (MSG_TRIBE_STATE): two seats keep every form byte for byte. Food entries: one per founder village (a guest with
+  the switch accepts up to 8; before 2, a third dropped the whole packet); the guest's own food is the village of its
+  own members. Rescue trailer, read from the end of the packet: TRRV (u32 0x56525254, 2 x {u16 member, u16 tenths})
+  for two seats; TRRS for 3+: n x {u16 member, u16 tenths}, u8 n, u32 0x53525254 (tag last, so the variable block is
+  found from the end; n 3..8). HUD: host `Village food   Host X   Guests Y, Z` (two seats: `... Guest Y` as before),
+  guest `Village food   Host X   You Y`.
+* `coop.tribe` (host) adds `tribe founders: multi= seats= made= at_nest= identities_bound= pending=` and a line per
+  seat (species, faction, identity, commander, outfit, village, food). `coop.tribe outfits` lists seats 2.. too.
+* ? Whether a partner's Creature nest herd (home_nests.cpp) still exists in the Tribe world (the stage change may
+  drop or keep other species' nests): the site falls back to the free-site search either way.
+* Still for two founders only (fixtures, not campaign play): `coop.tribe register_guest`, `found_guest`,
+  `refound_guest` (tests with exactly one guest). A guest's own game sees the other partners' villages as NPC
+  villages holding mirrors of their members.
