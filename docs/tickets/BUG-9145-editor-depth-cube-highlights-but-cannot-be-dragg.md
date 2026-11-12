@@ -10,7 +10,7 @@ role: all
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: c1ec1834
 tests: tests/editor_depth_axis_tests.cpp
 signature:
 docs: mods/coop/editor_depth_axis.h

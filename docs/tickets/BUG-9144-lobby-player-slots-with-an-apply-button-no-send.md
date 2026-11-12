@@ -10,7 +10,7 @@ role: host
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: c1ec1834
 tests: tools/tests/coop_ui_explain.py (updated); the renamed status in the duo_* lab tests; QA 2026-11-12
 signature:
 docs:

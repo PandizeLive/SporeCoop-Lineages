@@ -10,7 +10,7 @@ role: all
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: c1ec1834
 tests: tests/ring_timer_tests.cpp (geometry, colours); QA 2026-11-12 four games (Creature)
 signature:
 docs: mods/coop/ring_timer_logic.h

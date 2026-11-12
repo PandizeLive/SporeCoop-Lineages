@@ -10,7 +10,7 @@ role: all
 versions: every version with creature_rescue
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: c1ec1834
 tests: tools/qa_win (manual two-PC run 2026-11-12; no lab test yet)
 signature:
 docs:

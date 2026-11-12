@@ -23,10 +23,22 @@
   (BUG-9135, roadmap phase 4).
 - Tribe: a partner on the host's species no longer stops the village founding
   of the partners who joined after them (BUG-9138).
-- Co-op window: the host's seat button is now "Set Seats". More seats apply at
-  once in the middle of a stage, so a friend who joins late fits right away;
-  the difficulty of the extra seats applies at once too. Fewer seats still
-  apply from the next stage (BUG-9135).
+- Co-op window: "Player Slots" with an Apply button. More slots apply at once
+  in the middle of a stage, so a friend who joins late fits right away; the
+  difficulty of the extra slots applies at once too. Fewer slots still apply
+  from the next stage (BUG-9135, BUG-9144).
+- Co-op window: no "Send World" button any more: the world goes to every
+  player by itself. During a ready vote the host's "Start Now" stays
+  (BUG-9144).
+- A downed player's countdown is now a ring that drains as time runs out,
+  with a green fill while a partner revives: in Cell, Creature, Adventures and
+  Tribe (BUG-9141).
+- Creature and Adventures: with three or four players a downed player can be
+  revived by any partner. Before, only two-player games had the knockout; with
+  more players a lethal hit was a plain death (BUG-9146).
+- Creature editor: the depth cube can be dragged in every view. When a part
+  faced the camera or the screen's edge, the cube lit up but did not move; a
+  part facing the camera now moves out when you drag up (BUG-9145).
 
 ## [0.7.8-lineages54-dev] - 2026-11-12
 
