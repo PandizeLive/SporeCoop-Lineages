@@ -25,6 +25,8 @@ bool can_resume_world(uint64_t receipt); // host: same Cell world, save and prog
 // On the galaxy menu the requested size applies to a new planet. An existing
 // named save keeps its own rules. Legacy saves keep the original defaults.
 founders::CampaignRules rules_for_current();
+// guest: the host sent its campaign rules for this world and stage (a co-op campaign, not a stage-chooser game)
+bool host_campaign();
 void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& packet);
 void native_campaign_loaded(const std::string& key);
 void campaign_guest_joined(net::Session& session);

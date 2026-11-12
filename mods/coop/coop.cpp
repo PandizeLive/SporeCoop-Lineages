@@ -5887,8 +5887,9 @@ void init_ui()
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
     a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {
-        // BUG-9135 phase 4: in Tribe for a partner without a village of their own (tribe.late_prompt)
-        const bool late = g_mode == modes::kTribe && tribe::late_prompt() != 0;
+        // BUG-9135 phase 4: in Tribe for a partner without a village of their own (tribe.late_prompt), in Civ without
+        // a nation of their own (civ::late_prompt)
+        const bool late = (g_mode == modes::kTribe && tribe::late_prompt() != 0) || (g_mode == modes::kCiv && civ::late_prompt() != 0);
         if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace || late))
             return false;
         creations::Kind k = g_mode == modes::kCell ? creations::kCell
@@ -5899,7 +5900,7 @@ void init_ui()
         own = (int)creations::options(k).size();
         return true;
     };
-    a.late_prompt = [] { return g_mode == modes::kTribe ? tribe::late_prompt() : 0; };
+    a.late_prompt = [] { return g_mode == modes::kTribe ? tribe::late_prompt() : g_mode == modes::kCiv ? civ::late_prompt() : 0; };
     a.create_creature_offered = late_create_offered;
     a.create_creature = [] {
         H->run_outside_frame([](void*) {

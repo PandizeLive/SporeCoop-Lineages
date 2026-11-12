@@ -54,6 +54,9 @@ std::vector<syncdbg::Entry> sync_entries(); // coop.sync (tests)
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 bool active();
+// BUG-9135 roadmap phase 4 (decision 4, guest): this player has no founder nation in the host's Civ world; 1 they play
+// no creature of their own (the Co-op window asks them to choose one), 2 their own creature (the capital comes); 0 none
+int late_prompt();
 bool offline_control_available();
 bool founder_space_ready();
 bool offline_control_enabled();

@@ -1496,6 +1496,11 @@ founders::CampaignRules rules_for_current()
     return g_rules_value;
 }
 
+bool host_campaign()
+{
+    return g_remote_rules.world && g_remote_rules.world == modes::current_world() && g_remote_rules.mode == game::mode_id();
+}
+
 void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& r)
 {
     if (session.role() != net::Role::Client || from != 0) return;

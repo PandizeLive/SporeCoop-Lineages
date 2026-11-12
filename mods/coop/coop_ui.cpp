@@ -1223,7 +1223,8 @@ static void build_dialog()
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 416, 560, 444}, "", kGold); // a row of its own under the chat box
     D.creation_prev = add_button(L, "cprev", {570, 415, 640, 445}, "<", [] {
-        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
+        // in Civ the row is the role, except for a late joiner without a nation (civ::late_prompt): their creature
+        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle && !(A.late_prompt && A.late_prompt()))
             A.civ_role_cycle(-1);
         else if (A.creation_cycle)
             A.creation_cycle(-1);
@@ -1246,7 +1247,8 @@ static void build_dialog()
         g_dirty = true;
     });
     D.creation_next = add_button(L, "cnext", {650, 415, 720, 445}, ">", [] {
-        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
+        // in Civ the row is the role, except for a late joiner without a nation (civ::late_prompt): their creature
+        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle && !(A.late_prompt && A.late_prompt()))
             A.civ_role_cycle(1);
         else if (A.creation_cycle)
             A.creation_cycle(1);
@@ -1539,13 +1541,19 @@ static void refresh_lobby()
     }
     std::string wl = A.world_line ? A.world_line() : "";
     // BUG-9135 roadmap phase 4: a partner in Tribe without a village of their own (tribe.late_prompt)
+    // (and in Civ without a nation of their own, civ::late_prompt: a capital instead of a village)
     const int late = A.late_prompt ? A.late_prompt() : 0;
+    const bool late_civ = late && A.mode && A.mode() == modes::kCiv;
     if (wl.empty() && g_status.empty() && late == 1)
-        wl = T("You have no village: you play one of the host's creatures. Choose your own below.",
-               "У вас нет деревни: вы играете существом хоста. Выберите своё ниже.");
+        wl = late_civ ? T("You have no city: you play the host's species. Choose your own creature below.",
+                          "У вас нет города: вы играете видом хоста. Выберите своё существо ниже.")
+                      : T("You have no village: you play one of the host's creatures. Choose your own below.",
+                          "У вас нет деревни: вы играете существом хоста. Выберите своё ниже.");
     else if (wl.empty() && g_status.empty() && late == 2)
-        wl = T("You play your own creature: the host founds your village with it shortly.",
-               "Вы играете своим существом: хост скоро создаст с ним вашу деревню.");
+        wl = late_civ ? T("You play your own creature: the host founds your capital with it shortly.",
+                          "Вы играете своим существом: хост скоро создаст с ним вашу столицу.")
+                      : T("You play your own creature: the host founds your village with it shortly.",
+                          "Вы играете своим существом: хост скоро создаст с ним вашу деревню.");
     int share_why = share_blocked();
     if (wl.empty() && g_status.empty() && share_why) // BUG-0597: a host alone can play now
         wl = share_why == 1 && rows.size() <= 1

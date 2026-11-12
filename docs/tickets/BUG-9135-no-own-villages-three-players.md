@@ -309,3 +309,12 @@ call path: set_seats -> raise_seats_now), Cell, Creature and Civ.
 Seen on the way: the three villages left alone for 4 hours (5 FPS) were down to their chief (7 -> 1); the co-op epic
 (tribe.cpp, "an epic creature comes!") visits the host's village every 10 minutes and nobody defended. This explains
 the MSI village's loss of 7 -> 5 noted in docs/re/tribe.md#tribe-late-joiners; normal play, not a bug.
+
+## Phase 4 live test, Civ (2026-11-12, feat/lineages-47)
+Four games (TITAN host + 2 TITAN guests + the MSI) on the Abber Civ campaign save: three late capitals, one per
+partner, each caught up with the host capital (4 of 4 buildings, 2 of 2 turrets), each commanded by its player, kept
+after a rejoin; the same capitals, owners and money on every game; 0 faults. Found and fixed: a late joiner without a
+creature of their own got only a chat notice in Civ (the Co-op window had no creature choice there): civ::late_prompt
+now shows the Tribe prompt in Civ, and the row's arrows choose the creature; a real click on the MSI then founded its
+capital within 40 s. Details: docs/re/civ.md#civ-late-capital. Not live yet: the Tribe -> Civ graduation with 3-4
+founder villages (phase 5).

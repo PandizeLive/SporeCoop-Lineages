@@ -2034,3 +2034,27 @@ symbol: every call is one the co-op already makes. Not yet run in a game.
 * Open: a late capital whose roster reached disk but whose city did not reach the save (a crash between the bind
   and the save) is not founded again once NPC nations exist (the recovery in founders_multi needs a world without NPC
   nations, as before); the log then repeats "Waiting for the saved partner capital to finish founding.".
+* Live (2026-11-12, feat/lineages-47, TITAN host + two TITAN guests + the MSI; the Abber Civ test save of the
+  DuoQACivHost profile: a co-op campaign with 2 reserved founders, no founder roster, one host capital):
+  * `coop.seats 4 now` on the host (decision 13) let the three partners join a 2-seat campaign mid-stage.
+  * The host capital was grown first with `coop.civ build 0 house|factory|fun` and `coop.civ addturret 0` (4
+    buildings, 2 turrets).
+  * Late (own creature 7C0B35F6): "gets a capital"; SpawnNextCity founded a city with a blank nation (000021CD) at
+    once, but the bind waited while the host sat in the Civ tutorial's captions (the game's time stood still: the
+    60 s are of running game) and came 3 minutes later after two caption clicks: "seat 1 (Late) capital 000021CD at
+    (167 -479 -3), 335 m from the host's capital; roster written", "caught up with the host's capital: 4 of 4
+    buildings, 2 of 2 turrets". Late's own game: local_seat=1, city 1 owner=1.
+  * Fourth (own creature): seat 2 capital at (494 100 -16), the same catch-up, within 30 s (no tutorial caption by
+    then).
+  * The MSI (no creature of its own on this save): "plays the host's species: no capital until they create a creature
+    of their own" (a notice to everybody), but its Co-op window showed only the Civ role row: no way to choose a
+    creature in Civ. Fixed the same day: civ::late_prompt (the guest has no founder nation in a game that gets late
+    capitals, 15 s after the world) shows the Tribe prompt in Civ words ("You have no city: you play the host's
+    species. Choose your own creature below.") and turns the row's arrows from the role to the creature. With the fix,
+    a real click on ">" on the MSI chose its creature; the host founded seat 3's capital about 40 s later with the
+    same catch-up; the MSI read local_seat=3, city 3 owner=3.
+  * After a rejoin under new network ids, every late seat kept its owner (by identity; Fourth's creature came back
+    under another species key, roadmap 1b).
+  * All four games: the same four capitals and owners, the same shared money (39,240), 0 faults.
+  * ? `word38` (the +0x38 "level" candidate) read 0 on the host capital and every late capital: no city level found
+    there.

@@ -80,6 +80,7 @@ static bool g_late_capital = true;
 COOP_FIX("civ.late_capital", "BUG-9135", g_late_capital,
          "civ: a partner without a nation gets one capital, caught up to the host's capital, also once NPC nations exist");
 static bool g_late_requested;   // host: a late capital was requested and has not appeared yet
+static double g_late_prompt_since; // guest: this Civ world (or session) began then (late_prompt waits 15 s)
 static bool g_late_spawning;    // host: the late founding's own SpawnNextCity call is running
 static uint32_t g_late_deferred; // host: native foundings deferred while a late capital was on its way
 
@@ -122,6 +123,19 @@ COOP_FIX("civ.away", "BUG-0151", g_fix_away, "civ: while the host is away the gu
 static uint32_t g_away_orders;
 static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 bool active() { return g_ok && C.sess && C.sess->connected() && game::mode_id() == modes::kCiv; }
+
+// BUG-9135 roadmap phase 4 (decision 4), the Civ side of tribe::late_prompt (live test 2026-11-12: a late joiner on the
+// host's species was only told in the chat, the Co-op window offered no way to choose a creature): a guest in the
+// host's Civ world without a founder nation of its own, 15 s after the world, in a game that gets late capitals (a
+// founder roster, or the host's campaign rules: civ-late-capital). 1: plays no creature of its own (the Co-op window
+// asks them to choose one), 2: plays its own (the host founds the capital), 0: no prompt.
+int late_prompt()
+{
+    if (!g_late_capital || !g_multi_founders || !active() || !is_guest() || g_local_seat >= 1) return 0;
+    if (!g_founder_nations.seats() && !world::host_campaign()) return 0;
+    if (H->time_seconds() - g_late_prompt_since < 15) return 0;
+    return creations::plays_own_creature() ? 2 : 1;
+}
 
 static void* nm() { return game::noun_manager(); }
 static std::vector<void*> vec_of(void* v)
@@ -3693,6 +3707,7 @@ static void reset_founder_seats()
     g_late_told.clear();
     g_late_site_told.clear();
     g_late_pending_ticks = 0;
+    g_late_prompt_since = H ? H->time_seconds() : 0;
 }
 
 static void founder_tick(double now)

@@ -18,9 +18,9 @@
   is told why they have no village and can pick one of their own creatures in
   the Co-op window (F9); their village is then founded right away and caught
   up to the host's (hut level, villagers, tool racks). In Civilization a late
-  joiner gets one capital with the host capital's buildings and turrets
-  (BUG-9135, roadmap phase 4; the Civilization part is not yet tested in a
-  live game).
+  joiner gets one capital with the host capital's buildings and turrets, and
+  one without a creature of their own gets the same choice in the Co-op window
+  (BUG-9135, roadmap phase 4).
 - Tribe: a partner on the host's species no longer stops the village founding
   of the partners who joined after them (BUG-9138).
 - Co-op window: the host's seat button is now "Set Seats". More seats apply at
