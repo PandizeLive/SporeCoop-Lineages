@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Creature: every player who plays their own creature gets their own nest,
+  about 60 m from the host's. They hatch and respawn there, it moves with the
+  host's nest when the species migrates, and if it died out while they were
+  away it is made again when they come back. Nobody in the party can hunt
+  another player's species (BUG-9135, roadmap phase 2).
+
 ## [0.7.8-lineages54-dev] - 2026-11-12
 
 - Creature: a connected player's sing, dance, charm and pose no longer reach

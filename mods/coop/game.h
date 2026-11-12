@@ -206,6 +206,8 @@ Key species_key(void* c);
 void* species_by_key(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
+// a nest herd of `species` the game fills and keeps (CreateHerd with createNest), enabled; roadmap phase 2
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar);
 void* herd_of(void* c);
 bool nest_position(void* c, net::Vec3& out); // the nest of the creature's herd (false: no herd or no nest)
 void herd_quiet(void* herd); // target size 0, disabled: the game spawns no members into it

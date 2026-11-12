@@ -1,4 +1,6 @@
 #include "npc.h"
+#include "home_nests.h"
+#include "party.h"
 #include "adventure.h"
 #include "player_rules.h"
 #include "view_centres.h"
@@ -251,6 +253,7 @@ static double g_last_states_rx = -100; // guest: the last NPC state batch from t
 static uint32_t g_stale_dropped = 0;   // guest: proxies the host stopped talking about (ghosts)
 static uint32_t g_deaths_played = 0; // guest: proxy deaths replayed (Die + animation)
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
+static uint32_t g_party_hits_kept = 0; // roadmap phase 2: party members' hits on party species, dropped
 
 static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
 static uint32_t g_away_proxies = 0;
@@ -2163,6 +2166,12 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* npc = it->second;
         if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
             break;
+        // roadmap phase 2 (owner decision 7): a partner's hit lands here through apply_damage (no damage_filter): the
+        // party's species are best friends here too (a player's own nest family, also while that player is offline)
+        if (home_nests::enabled() && game::in_creature_stage() && party::party_species(game::species_key(npc).instance)) {
+            g_party_hits_kept++;
+            break;
+        }
         if (game::in_creature_stage()) encounter_enemy(npc);
         void* attacker = C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
@@ -2289,6 +2298,13 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         if (!game::is_puppet(c)) {
+            // roadmap phase 2 (owner decision 7): the party's species are best friends: no party member hunts them,
+            // also while their player is offline (their nest's family). Species outside the party keep the game's rules.
+            if (home_nests::enabled() && game::in_creature_stage() && (attacker == av || (attacker && game::is_puppet(attacker))) &&
+                party::party_species(game::species_key(c).instance)) {
+                g_party_hits_kept++;
+                return false;
+            }
             if (attacker == av)
                 damage = teamplay::on_player_hit(c, 0, damage);
             return true;
@@ -2375,8 +2391,8 @@ std::string status()
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
                  g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
         char b2[128]; // BUG-0512
-        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u\n", g_pack_targets_cleared,
-                 g_pack_stimuli_cleared);
+        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u party_hits_kept=%u\n",
+                 g_pack_targets_cleared, g_pack_stimuli_cleared, g_party_hits_kept);
         return std::string(b) + b2 + game::destroy_deferred_status() + "\n";
     } else {
         unsigned spawned = 0;

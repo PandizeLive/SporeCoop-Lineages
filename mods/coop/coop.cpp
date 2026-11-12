@@ -44,6 +44,7 @@
 #include "drama.h"
 #include "identity.h"
 #include "party.h"
+#include "home_nests.h"
 #include "cellsync.h"
 #include "audio.h"
 #include "census.h"
@@ -2899,6 +2900,7 @@ void avatar_change_check()
         if (!tribe::editor_world_fix()) // BUG-0217: else tribe::world_check() decides
             tribe::on_world_change();
             party::on_world_change(); // roadmap 0b
+            home_nests::on_world_change();
         if (!civ::world_epoch_fix()) // BUG-0223: else civ::world_check() decides
             civ::on_world_change(); // BUG-0059
     }
@@ -3415,6 +3417,7 @@ void on_frame(void*, int, void*)
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
     party::tick(now);                           // roadmap 0b
+    home_nests::host_tick(now);                 // roadmap phase 2
     tribe::tick(now);
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
@@ -6426,6 +6429,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     sc.blocked = [] { return g_menu_up.load() || coop_ui::is_open() || g_text_up.load(); };
     sc.pace = dna_pace_gain; // BUG-0510
     social::init(H, M, sc);
+    home_nests::Ctx hc; // roadmap phase 2
+    hc.sess = &g_sess;
+    hc.notice = [](const std::string& t) { notice(t, -1); };
+    home_nests::init(H, M, hc);
     game::set_damage_filter(npc::damage_filter);
     support_init();
     setup_callbacks();
@@ -6647,6 +6654,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return rc;
                    }, nullptr, SK_CMD_MAIN_THREAD);
     adventure::init(H, M, &g_sess);
+    H->command_add(M, "coop.homes", "coop.homes [make <seat>] - every player's own nest (roadmap phase 2, BUG-9135)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.identity", "coop.identity - this profile's persistent player identity and the ones the host knows (BUG-9135)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s%s", identity::status().c_str(), party::status().c_str());

@@ -1,4 +1,5 @@
 #include "nest.h"
+#include "home_nests.h"
 
 #include <windows.h>
 
@@ -307,7 +308,8 @@ static void host_tick(double now)
         g_snaps_tx++;
         net::Vec3 home;
         void* av = game::avatar();
-        if (g_home_fix && game::in_creature_stage() && av && game::nest_position(av, home)) {
+        // roadmap phase 2: each player's home is its own seat's nest (the host's for a player of the host's species)
+        if (g_home_fix && game::in_creature_stage() && av && home_nests::home_for(p.id, home)) {
             net::Writer h;
             h.u8(kKindHome);
             h.f32(home.x);
@@ -350,6 +352,15 @@ static void follow_home(double now)
         g_home_fails++;
         H->log(M, SK_WARN, "nest: the host's home nest (%.0f %.0f %.0f) has no nest herd here", g_host_home.x, g_host_home.y,
                g_host_home.z);
+        return;
+    }
+    // the game's claim reads the nest herd's members: an empty herd faulted in Creature_GetHerd (data 0x1674, an own
+    // nest made on a guest on 2026-11-12); its members are the host's family mirrored here, wait until they are
+    void* herd = field<void*>(f.nest, 0x128);
+    if (IsBadReadPtr(herd, 0x48) || field<uintptr_t>(herd, 0x44) == field<uintptr_t>(herd, 0x40)) {
+        if (g_home_fails++ < 20)
+            H->log(M, SK_INFO, "nest: our home nest (%.0f %.0f %.0f) has no members here yet: joined later", g_host_home.x,
+                   g_host_home.y, g_host_home.z);
         return;
     }
     cdecl_call<bool>(a_JoinNestHerd, f.nest);

@@ -3185,3 +3185,35 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   puts the creature there (QA Samuth.spo: (453.47 52.17 -221.05) next to the nest at (453.12 46.02 -223.02)).
   No cinematic is needed; 0 faults. Used by BUG-9128 (nest.follow_home). The same call on the host simulates a
   claim for tests (`coop.nest home x y z`).
+
+## Every player's own nest (2026-11-12, feat/lineages-47)
+<a id="creature-own-nests"></a>
+
+Roadmap phase 2 (BUG-9135, owner decisions 2, 3, 6, 7, 8 of docs/ROADMAP.md), home_nests.cpp, switch `creature.own_nests`.
+Two PCs: TITAN hosts a copy of the owner's Vandh.spo (QA), the MSI joins with its own creature (Duckulon 7C0B35F6).
+
+* ✔ `cGameNounManager::CreateHerd(pos, species, herdSize, isOwnedByAvatar, personality, createNest)` with createNest 1
+  makes a real nest herd of any species at any point (game::create_nest_herd: size 4, not the avatar's, then
+  cHerd::SetEnabled). The game spawns its members over time (1 at once, the rest within ~2 minutes) and keeps it in
+  the save (a herd with a nest is not one of savestrip's own-kind herds). Given the host nest's brain range
+  (+0x120 / +0x124), cHerd_SetBestFriends and relation 6 in the species table (social::set_party_ally).
+* ✘ `CreatureGame_JoinNestHerd` on a nest herd with no members faults in Creature_GetHerd (data 0x1674): an empty
+  nest herd made on the MSI (CreateHerd size 0, owned by the avatar) crashed its game (crash-20261112-012300). A
+  partner's game never makes the nest itself now; nest.cpp follow_home waits until its copy of the nest herd has
+  members (the host's family, mirrored into the herd) before it joins.
+* ✔ The partner's world must contain the nest: the world sent at the join is saved before the nest exists, so a nest
+  made for an online player sends that player the world again (world::share_with, save first; 4.9 MB, ~27 s over the
+  relayed link). The MSI then found the nest at (265 -423 -92), waited ~90 s for members, and joined its herd.
+* ✔ Respawn: with the co-op rescue off (`coop.team off`), a lethal hit (`coop.giveup down`) and the death screen, the
+  MSI hatched as a baby (age 0) at (262 -425 -89), 4 m from its own nest and ~60 m from the host's.
+* ✔ Hunting: a partner's hit reaches the host's NPC through npc.cpp MSG_DAMAGE_REQ -> game::apply_damage (not through
+  the TakeDamage hook's damage_filter); the party-species rule sits in both. MSI hit on its own family: dropped
+  (party_hits_kept=1); on an outside species: applied; with the switch off: applied (hp 15 -> 12).
+* ✔ Migration together: the host's home moved 243 m (`coop.nest home x y z`): the partner's nest, now ~195 m from it
+  (> 160 m), was made again 60 m from the new home and the world sent again.
+* ✔ Offline: the MSI left, its nest died out (`coop.homes extinct 1`, cHerd_SetExtinct): no new nest while it was
+  away; on its return a new one at (438 -239 -99) and the world sent again.
+* Open: the species key of a partner's custom creature contains its network id (creations shared_instance): after a
+  rejoin under another id the seat's species is a new key and gets a new nest (the old one stays as an AI nest).
+  Stable keys per identity are a separate roadmap step. Three or more players: the code loops over the seats; tested
+  with two.

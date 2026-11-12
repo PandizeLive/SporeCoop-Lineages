@@ -71,17 +71,18 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 
 | Phase | Work | Status |
 |---|---|---|
-| 0a | Build tracks header dependencies (-MMD depfiles): no more stale objects. | decided |
-| 0b | One ownership layer (`party`): identity -> seat -> owned things (species, nest, pack, village, city) for every stage; the 4-player work goes through it instead of patching the `guest()` spots in place. | decided |
+| 0a | Build tracks header dependencies (-MMD depfiles): no more stale objects. | done 2026-11-12 |
+| 0b | One ownership layer (`party`): identity -> seat -> owned things (species, nest, pack, village, city) for every stage; the 4-player work goes through it instead of patching the `guest()` spots in place. | done 2026-11-12 (party.cpp, .duoparty) |
 | 0c | Split tribe.cpp and civ.cpp along the seams that work touches (founding, ownership and orders, campaign rules); no big-bang rewrite. | decided |
-| 0d | The two-PC test harness (MSI tunnel, launch, checks) into tools/ as repeatable tests. | decided |
+| 0d | The two-PC test harness (MSI tunnel, launch, checks) into tools/ as repeatable tests. | done 2026-11-12 (tools/qa_win) |
 | 0e | Switch retirement: a fix stable for 3+ releases loses its switch and old path, in small tested batches. | decided |
 | 1 | Player identity and the 8-seat founder save formats (DUO2 / CIV2 / OFT2). | done 2026-11-11 (BUG-9135) |
-| 2 | Creature: own nest per player (decisions 2, 3, 6, 7, 8), via the game's herd-and-nest creation; respawn and hatch at the own nest; migration together. | planned |
+| 2 | Creature: own nest per player (decisions 2, 3, 6, 7, 8), via the game's herd-and-nest creation; respawn and hatch at the own nest; migration together. | done 2026-11-12, two-PC tested (docs/re/creature.md#creature-own-nests) |
 | 3 | Tribe: each player's village from their own nest through the game's Tribe-start logic; 3-4 founders in every rule that counts founders (objectives, rivals, alliances, hut upgrades); orders, food, rescue and outfits per seat. | planned |
 | 4 | Joining late (decisions 4, 5): detect a species, else the create-a-creature prompt; catch up to the host's home. | planned |
 | 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | planned |
 | 6 | Space: the personal launch per seat. | planned |
+| 1b | Stable species keys per identity (a partner's creature keeps its key across rejoins under another network id). | planned |
 | 7 | Adventure creatures simulated by the host (BUG-9114). | waiting (needs clicks on the owner's PC or the MSI) |
 
 The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-no-own-villages-three-players.md.
