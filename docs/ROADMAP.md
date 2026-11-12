@@ -171,8 +171,9 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save |
 | 2N | Space: the home of a player or party that leaves a planet others still share | owner's idea: the planet stays protected with one home city that every player's own game shows as their own (their personal empire's home); checked first, fallback a free first colony as the home |
 | 2O | Parties: several parties in one session now, or the session stays one party for now | A, later: the session stays one party; no friend list yet |
+| 2P | Tribe: a share of the food each player collects for the partners | open |
 
-Next free ID: 2P.
+Next free ID: 2Q.
 
 Answers of 2026-11-12 (1X-2M), notes:
 * 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species
@@ -188,6 +189,14 @@ Answers of 2026-11-12 (1X-2M), notes:
   home city for every player". Fits 2A (each player's game keeps its own Space save: it can own the home planet
   locally). To check before phase 6: what a partner's empire uses as its home on your game (the same planet, which your
   game calls yours), and that one city works as an empire's homeworld. Fallback: a free first colony as the home.
+* 2P (owner 2026-11-12: "should we split food collected by each player in the party? Like a minority split / tax
+  minimum of 1 to all the players and the one who collected gets majority?"): asked with A 10% of each delivery split
+  among the partners in the game (fractions, no minimum), plus gifts; B the owner's minimum 1 food to each partner per
+  delivery (with 4 players, 3 food off every trip however small); C no automatic share, gifts only. Seen 2026-11-12: an
+  idle host's village starved to 0 food while the partner's held 370. Gifts of food to a party member's village
+  (owner: "I'm excited to gift food to my party members") are refused today: the host's gift check allows computer
+  tribes only (g_order_roster.contains_faction); to build: the game's own gift on a partner's hut moves the food from
+  the giver's store to theirs.
 * 2K: the galaxy has about 42,000 stars (a community count, TheOnlyZac/starmap); planets are made when a star is first
   visited and almost every system can be colonised (terraforming). A Space empire holds tens of colonies, so about 1000
   players could fill one galaxy. For the MMO: several galaxies (one per server) is the known-safe answer; adding stars or
