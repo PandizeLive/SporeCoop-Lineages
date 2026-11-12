@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -84,6 +85,12 @@ static LookAtFn g_lookat_orig;
 static CamUpdateFn g_camupd_orig;
 static std::atomic<unsigned> g_cam_skipped{0};
 
+// BUG-9153: the last set-up's camera, target and orientation (4 floats at `a`), for tribe_camera_to
+static void* g_cam_obj;
+static float g_cam_target[3], g_cam_orient[4];
+static bool g_cam_seen;
+static uint32_t g_cam_moves;
+
 static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int instant)
 {
     if (!obj) {
@@ -91,7 +98,53 @@ static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int i
             H->log(M, SK_WARN, "game fixes: skipped the tribe camera set-up without a simulator camera");
         return;
     }
+    if (target && a && !IsBadReadPtr(target, 12) && !IsBadReadPtr((void*)(uintptr_t)a, 16)) {
+        g_cam_obj = obj;
+        memcpy(g_cam_target, target, 12);
+        memcpy(g_cam_orient, (void*)(uintptr_t)a, 16);
+        g_cam_seen = true;
+    }
     g_lookat_orig(obj, target, a, instant);
+}
+
+// the Tribe camera looks at `pos` as the stage set-up looks at the player tribe: its orientation turned by the
+// rotation that takes the set-up target's up (from the planet's centre) to pos's up (quaternion x, y, z, w)
+bool tribe_camera_to(const float pos[3])
+{
+    if (!g_cam_seen || !g_cam_obj || !g_lookat_orig || !g_camupd_orig || IsBadReadPtr(g_cam_obj, 0x300)) return false;
+    auto unit = [](const float* v, float* o) {
+        const float n = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (!(n > 1)) return false;
+        o[0] = v[0] / n; o[1] = v[1] / n; o[2] = v[2] / n;
+        return true;
+    };
+    float a[3], b[3];
+    if (!unit(g_cam_target, a) || !unit(pos, b)) return false;
+    // r = rotation from a to b: (a x b, 1 + a.b), normalised
+    float r[4] = {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0],
+                  1 + a[0] * b[0] + a[1] * b[1] + a[2] * b[2]};
+    const float rn = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + r[3] * r[3]);
+    if (!(rn > 1e-4f)) return false;
+    for (float& c : r) c /= rn;
+    const float* q = g_cam_orient; // out = r * q
+    float out[4] = {r[3] * q[0] + r[0] * q[3] + r[1] * q[2] - r[2] * q[1],
+                    r[3] * q[1] - r[0] * q[2] + r[1] * q[3] + r[2] * q[0],
+                    r[3] * q[2] + r[0] * q[1] - r[1] * q[0] + r[2] * q[3],
+                    r[3] * q[3] - r[0] * q[0] - r[1] * q[1] - r[2] * q[2]};
+    float target[3] = {pos[0], pos[1], pos[2]};
+    g_lookat_orig(g_cam_obj, target, (int)(uintptr_t)out, 1);
+    g_camupd_orig(g_cam_obj);
+    ++g_cam_moves;
+    return true;
+}
+
+std::string camera_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "tribe camera: seen=%d obj=%p target=(%.1f %.1f %.1f) orient=(%.3f %.3f %.3f %.3f) moves=%u",
+             (int)g_cam_seen, g_cam_obj, g_cam_target[0], g_cam_target[1], g_cam_target[2], g_cam_orient[0],
+             g_cam_orient[1], g_cam_orient[2], g_cam_orient[3], g_cam_moves);
+    return b;
 }
 
 static void __fastcall camupd_guard(void* obj, void*)

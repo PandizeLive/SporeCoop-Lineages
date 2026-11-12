@@ -3705,3 +3705,26 @@ BUG-9154, owner decision 2P, switch `tribe.food_share`.
   (action 9 on a founder village) without running the game's gift; not seen live (clicks on the owner's PC).
 * Seen on the way: C.notice on the host goes to every player (the host relays it); a host-only line is notify::show.
   A villager card press on the guest did not select its villager this time (it did on 2026-11-12 earlier, BUG-9152).
+
+## The party wipe: undoing the newest win (2026-11-12, feat/lineages-47)
+<a id="tribe-party-wipe"></a>
+
+BUG-9155, switch `tribe.party_wipe`.
+* ✔ (live) The goal history is a vector of 16-byte records {vt 0x1477434, kind, cTribe*, 0} at TribeUI +0x40 / +0x44
+  (TribeStage_AddGoalProgress appends them). Popping the last one and lowering cPlayer +0x10F0 by one, then a save
+  and reload (world::checkpoint_reload), gives a game with one win less: 1 -> 0 wins, progress 1.0 -> 0.0, 0 faults.
+* ✔ (live) An alliance undone: ApplyRelationship(manager, npc, founder, 0x0530CF07, -5 - current) per founder village
+  read back -5.0 for both.
+* ~ The totem's top piece: the kind and colour vectors (+0x11C / +0x120, +0x130 / +0x134) are shortened by one before
+  the save; the reload rebuilds the totem from them. Not looked at closely on screen (800x600 test window).
+* ? A conquest as the newest win: the record and the progress go; the village stays conquered (+0x556 is not undone:
+  Tribe_SetDefeated(false) is untried and a conquered village may have no hut, see the null-hut guard, BUG-9153).
+
+## A guest's camera starts at its own village (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-camera-start"></a>
+
+BUG-9153. The Tribe set-up's SimCamera_LookAt (B12D10) call is recorded by the camera guard (gamefixes.cpp): the
+camera, the target (the host's village on a guest's game) and the orientation (4 floats, a quaternion x, y, z, w).
+After the first swap of a world, the guest's camera looks at its own village with that orientation turned by the
+rotation from the old target's up to the new one's (LookAt + SimCamera_Update, instant). ✔ (live, MSI) after a join
+the camera stood over the guest's own village, level with the ground. `coop.tribe camera [own]` shows / repeats it.

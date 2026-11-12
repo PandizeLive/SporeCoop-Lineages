@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Tribe: when one player's whole village is wiped out and nobody revives
+  their last villager in time, the whole party pays: the newest ally becomes a
+  rival again (or the newest conquest stops counting), a totem piece and a step
+  of progress are lost; with no win yet, every village loses 10% of its food.
+  The village is no longer captured, so it never needs rebuilding (BUG-9155).
+- Tribe: a connected player's camera now starts at their own village
+  (BUG-9153).
 - Tribe: the party shares its food. A quarter of every delivery into a
   player's village goes to the other players' villages, split evenly, each at
   least 1 food; the gatherer keeps three quarters. Food can be given to a party
@@ -11,9 +18,7 @@
   their own village with the game's own controls. Their game now treats their
   village as theirs: the food counter, the villager cards, the hut's Add Baby and
   the Tribal Planner's tool racks are their village's (the host checks and
-  carries out each purchase, and tells them why when it can't). Not yet:
-  rebuilding a partner's village, and their camera starts at the host's village
-  (BUG-9153).
+  carries out each purchase, and tells them why when it can't) (BUG-9153).
 - Creature: every player who plays their own creature gets their own nest,
   about 60 m from the host's. They hatch and respawn there, it moves with the
   host's nest when the species migrates, and if it died out while they were

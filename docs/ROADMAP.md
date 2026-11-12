@@ -150,7 +150,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1R | The Tribe -> Civ graduation test by scripted native raids | A (done, phase 5 live) |
 | 1S | A save loaded with fewer slots than players connected gets more slots | A (built, BUG-9143) |
 | 1T | The "Give To" button | B, removed (BUG-9148) |
-| 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A |
+| 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A; changed by the owner 2026-11-12: it applies when any one player's whole village is wiped out (not rescued in time), and the loss hits the whole party ("a players whole tribe causes the loss of progression for both players, encouraging rescues"); built in Tribe 2026-11-12 (BUG-9155, live by test command); Civ and the red marker in Tribe not yet |
 | 1V | Downed: the creature plays its native dying pose while downed | A |
 | 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows |
 | 1X | Space: what a player owns | A (owner: "A party will always progress together and share.") |
@@ -167,7 +167,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2I | Space: a party's cities when it leaves the planet | B (owner asked whether a leaving party needs its cities at all, see 2N) |
 | 2J | Space: who launches | A |
 | 2K | Space: what Space players may do to a planet where others still play Civ | A (owner asked what happens when 100-1000 players fill the galaxy: MMO research, in the Space notes) |
-| 2L | Tribe: when the Village page goes | B, now, prioritised (owner: "prioritize this"); page removed 2026-11-12 (BUG-9153); the guest's own village is its player village: Add Baby and the Tribal Planner work natively (live, two PCs); left: the camera's start, Rebuild with the party wipe |
+| 2L | Tribe: when the Village page goes | B, now, prioritised (owner: "prioritize this"); page removed 2026-11-12 (BUG-9153); the guest's own village is its player village: Add Baby and the Tribal Planner work natively (live, two PCs); the camera starts at the own village; no Rebuild needed with the party wipe (BUG-9155) |
 | 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save |
 | 2N | Space: the home of a player or party that leaves a planet others still share | owner's idea: the planet stays protected with one home city that every player's own game shows as their own (their personal empire's home); checked first, fallback a free first colony as the home |
 | 2O | Parties: several parties in one session now, or the session stays one party for now | A, later: the session stays one party; no friend list yet |

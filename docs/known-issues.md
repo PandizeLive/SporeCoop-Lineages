@@ -2172,8 +2172,9 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Reopened after the Lineages 50 fix (no autohatch effect on the partner's puppet): the owner's screen still acts as if
   they respawn when a partner respawns (3-player session). Not reproduced on Windows QA yet. Ticket: BUG-9122.
 
-## Tribe: a connected player cannot rebuild a partner's village; their camera starts at the host's village (2026-11-12, BUG-9153)
+## Tribe: a captured partner village cannot be rebuilt by hand any more (2026-11-12, BUG-9153)
 
-* The Co-op window's Village page was removed (owner decision 2L). Add Baby and tool racks work with the game's own hut
-  menu and planner now; Rebuild comes with the party wipe (decision 1U). A connected player's camera starts at the
-  host's village: pan with W/A/S/D. For tests the page comes back with `coop.fix ui.village_page on`. Ticket: BUG-9153.
+* The Co-op window's Village page (with Rebuild) was removed (owner decision 2L). With the party wipe (BUG-9155) a
+  wiped-out village is no longer captured, so this only matters with `coop.fix tribe.party_wipe off` or an older save
+  whose partner village was captured before. For tests the page comes back with `coop.fix ui.village_page on`.
+  Ticket: BUG-9153.
