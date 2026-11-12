@@ -20,6 +20,16 @@ Design rules that follow from it, for the co-op work now:
 * No fixed player counts in code paths; data structures hold more than the menus allow.
 * Sync what is near (interest management); per-planet sessions later.
 
+## MMO questions to discuss (owner, 2026-11-12: "soon", not blocking the co-op work)
+
+* Players outside your party: their species is another species from your game's point of view, so you can impress
+  it or hunt its nest family to extinction by the game's own rules (each player's game keeps its own species
+  relationship table, which fits per-player relations). To decide: what happens to a player whose species goes
+  extinct (respawn, the repopulation timer); whether players can attack each other's creatures directly (PvP); how
+  DNA farming of other players is prevented.
+* Co-op code keeps this open: the protection of decision 7 is "same party", never "every seat"; the game's own
+  impress / hunt logic stays for every species outside the party.
+
 ## Confirmed decisions: 3-4 player co-op with own nests (owner, 2026-11-12)
 
 | # | Decision |
