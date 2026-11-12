@@ -131,6 +131,8 @@ endif
 	$(B)/host/civ_seats_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_seats_tests tests/tribe_seats_tests.cpp
 	$(B)/host/tribe_seats_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_late_tests tests/tribe_late_tests.cpp
+	$(B)/host/tribe_late_tests
 	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
 	$(B)/host/jpeg_tests $(B)/host/jpeg
