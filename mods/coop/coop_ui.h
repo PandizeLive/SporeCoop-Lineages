@@ -34,6 +34,7 @@ struct Api {
     std::function<void(const std::string&)> set_name;
     std::function<bool(const std::string& address, std::string& err, const std::string& password)> join;
     std::function<bool(uint16_t port, unsigned seats, unsigned scaling, std::string& err, const std::string& password)> host;
+    // the Set Seats button: world::set_seats (more seats now, fewer from the next stage; Space: from the next load)
     std::function<bool(unsigned seats, std::string& message)> queue_seats;
     std::function<void()> leave;
     std::function<int()> role;        // 0 offline, 1 host, 2 guest

@@ -261,8 +261,11 @@ development requirements; the qualified checkpoints below retain duo rules.
 
 Campaign setup reserves one to four founders before play. The host may start
 alone. Difficulty uses the active stage's reserved count, including empty seats.
-In the F9 lobby, enter a number from 1 to 4 and select Next stage seats.
-The console equivalent is coop.seats N. Use the current count to cancel.
+In the F9 lobby, enter a number from 1 to 4 and select Set Seats. More seats
+apply at once in Cell, Creature, Tribal and Civilization (difficulty rises at
+once, a late joiner past the old count fits); fewer seats apply from the next
+stage. The console equivalents are coop.seats N now (more seats at once) and
+coop.seats N (from the next stage). Use the current count to cancel.
 Space uses Next load seats. Leave and rehost in the same running Space world
 to keep the change pending. Loading the named Space save activates it.
 The host protects seats already occupied in that campaign, including after

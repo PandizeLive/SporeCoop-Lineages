@@ -3596,3 +3596,7 @@ already in overrides_dc04aee5.sym.
   that campaign's memory to test a joiner without a creature.
 * ? The MSI's late village went from 7 adults to 5 within about 10 minutes with nobody ordering it (an epic creature
   visited the area at that time); not looked into.
+  ~ explained (2026-11-12, feat/lineages-47): the co-op epic (spawn_epic, "an epic creature comes!") comes every 10
+  minutes (host log 06:18, 06:28, 06:38 ...); left alone for 4 hours at 5 FPS the host, MSI and old partner villages
+  were down to their chief (1 member each), the newest village to 7. Undefended villages lose members to it: normal
+  play, not a bug (BUG-9135 ticket, "Seats added mid-stage").

@@ -45,6 +45,8 @@ Design rules that follow from it, for the co-op work now:
 | 9 | Saves that already have a partner village (founded before this work) keep it as it is; only new stage starts use the nest-based creation. |
 | 10 | The player cap stays at 4 in the menus; difficulty stays per seat for now (it must become per party for the MMO goal: per-seat scaling does not work at 10-20 players). Data structures hold 8 seats (founders::kMaxSeats). |
 | 11 | Tests: up to 3 test games on the owner's PC (5 FPS, small windows unless a test needs a size, e.g. Adventures; console only, never the owner's mouse) plus the MSI over Tailscale; real clicks only on the MSI. |
+| 12 | The live Civ test may click in the test host's game window on the owner's PC, once, while the owner is away (owner, 2026-11-12: "1A"). |
+| 13 | The host can raise the reserved seats in the middle of a stage (the Co-op window's Set Seats, `coop.seats N now`); the difficulty of the extra seats applies at once. Fewer seats still apply from the next stage; Space keeps "from the next Space load" (owner, 2026-11-12: "2A"). |
 
 ## Health check (2026-11-12)
 
@@ -95,8 +97,9 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
 
 ## Open decisions
 
-* The live Civilization test (phase 5) needs the host to click through the Tribe -> Civ change (advance button,
-  History check, two captions, City Hall and vehicle editors, about 15 clicks). Decision 11 allows clicks only on the
-  MSI; the test host runs on the owner's PC. Asked 2026-11-12: clicks on the owner's PC's QA window once, or another
-  way.
-* A late joiner fits only within the campaign's reserved founders (the host's "new-game seats 1-4", saved per planet in .duo-seats; `coop.seats` changes it from the next stage only): on the Jiff test save (3 reserved) a fourth player was refused with "session is full". Asked 2026-11-12: let the host raise the reserved seats mid-stage (difficulty scales up at once), or keep "next stage only".
+* (2026-11-12, both answered: decisions 12 and 13.) Seats added mid-stage: built and live-tested 2026-11-12 on the
+  Jiff test copy: 3 reserved, a fourth player refused ("session is full"); `coop.seats 4 now` on the host; the host,
+  both guests and then the fourth player read seats=4 (enemy health 130% -> 145%) at once; the fourth player joined
+  (4/4) and commanded their old village again (seat 1, by identity).
+* The late joiner's creature (owner's question, 2026-11-12): "Why are we having them pick a village and creature on
+  late join? Shouldn't they be creating a creature while the village is setup?" Answer and choices sent; waiting.

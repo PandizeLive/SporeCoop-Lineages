@@ -131,6 +131,23 @@ RulesFile read_rules(const std::string& planet, CampaignRules& value, SeatPlan* 
 bool queue_seats(const std::string& planet, uint8_t seats, uint8_t stage, std::string& error);
 bool update_seats(const std::string& planet, uint8_t occupied, uint8_t stage, bool space_reloaded,
                   CampaignRules& rules, SeatPlan& plan, std::string& error);
+// Owner decision 2026-11-12 (docs/ROADMAP.md, joining late): the host raises the reserved seats of the running stage at
+// once, so a late joiner past the reserved founders fits without waiting for the next stage; the difficulty of the
+// extra seats applies at once too. Only up (a shrink stays queued for the next stage: a founder's village or nation of
+// this stage may own the seat). A queued change to this many seats or fewer is dropped; one to more seats stays.
+// Space keeps its own rule (from the next Space load). False: not a raise, or not a regular stage.
+inline bool raise_now(CampaignRules& rules, SeatPlan& plan, uint8_t stage, uint8_t seats)
+{
+    if (!stage || stage > plan.previous_stage_seats.size() || seats > 4 || seats <= plan.seats_in(stage, rules.seats))
+        return false;
+    // a stage the game returned to after its next one began (a crash before the next stage's first save): that
+    // stage's own entry is the count it uses
+    if (plan.previous_stage_seats[stage - 1]) plan.previous_stage_seats[stage - 1] = seats;
+    else rules.seats = seats;
+    if (plan.next_seats && plan.next_seats <= seats) plan.next_seats = plan.queued_stage = 0;
+    return true;
+}
+bool raise_seats(const std::string& planet, uint8_t seats, uint8_t stage, std::string& error);
 bool reserve(const std::string& planet, const CampaignRules& requested, std::string& err);
 
 // BUG-9135: founder seats a campaign can persist: the host (seat 0) and up to seven partners. The gameplay of the

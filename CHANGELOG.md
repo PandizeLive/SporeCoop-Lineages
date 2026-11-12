@@ -23,6 +23,10 @@
   live game).
 - Tribe: a partner on the host's species no longer stops the village founding
   of the partners who joined after them (BUG-9138).
+- Co-op window: the host's seat button is now "Set Seats". More seats apply at
+  once in the middle of a stage, so a friend who joins late fits right away;
+  the difficulty of the extra seats applies at once too. Fewer seats still
+  apply from the next stage (BUG-9135).
 
 ## [0.7.8-lineages54-dev] - 2026-11-12
 

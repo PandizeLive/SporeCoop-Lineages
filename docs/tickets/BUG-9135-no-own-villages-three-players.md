@@ -11,7 +11,7 @@ versions: 0.7.8-lineages46-dev to 0.7.8-lineages53-dev (by design since the foun
 fixed_in:
 branch: feat/lineages-47
 commits:
-tests: tests/civ_seats_tests.cpp (unit, Civ seat rules), tests/tribe_seats_tests.cpp, tests/tribe_late_tests.cpp (unit, Tribe seats and late joiners)
+tests: tests/civ_seats_tests.cpp (unit, Civ seat rules), tests/tribe_seats_tests.cpp, tests/tribe_late_tests.cpp (unit, Tribe seats and late joiners), tests/win_tests.cpp (founders::raise_now / raise_seats, seats added mid-stage)
 signature: host log has no "tribe automatic founders" line at all; session has 3 players (host + 2 partners)
 docs: docs/re/civ.md#civ-multi-founders
 related: BUG-9040 BUG-9134 BUG-9054 BUG-9056 BUG-9073
@@ -289,3 +289,23 @@ got the Co-op window prompt; its pick founded seat 3 with the catch-up (hut leve
 MSI's late village (seat 2) the same; all games agree on four founder villages; the old seat 1 kept its shape. Not
 live yet: BUG-9138's case (a waiting partner before a ready one), the editor button, the Civ late capital. Found: a
 fourth player is refused "session is full" when the campaign reserved 3 founders (owner decision asked, docs/ROADMAP.md).
+
+## Seats added mid-stage (2026-11-12, feat/lineages-47; owner decision 13, "2A")
+The reserved founders (.duo-seats) could change from the next stage only, so a fourth player was refused on a
+campaign that reserved 3. Now `founders::raise_now` / `raise_seats` raise the running stage's count at once (Cell to
+Civ; a stage reopened after its next one began raises its own `previous_stage_seats` entry; a queued change to as many
+seats or fewer is dropped, one to more stays). `world::raise_seats_now` re-applies the rules (session seat limit, the
+rules sent to the guests, the cached rules dropped), so every difficulty extra reads the new count at once.
+`world::set_seats` is the Co-op window's button, renamed "Set Seats": more seats now, fewer from the next stage (Space:
+from the next load, as before). Console: `coop.seats N now`; `coop.seats N` queues as before. Lost on a raise: only the
+saved fractions of conversion and Cell credit (both keyed by the old percentages; under one point each).
+
+Live (Jiff test copy, TITAN host + Late + the MSI, then a fourth TITAN game): at 3 seats the fourth join was
+"rejected: session is full"; `coop.seats 4 now` answered "Reserved founders: 4, ... (added now)"; `coop.rules` on the
+host and both guests read seats=4, enemy_hp 145%, takeover 115% at once (130% / 110% before); the fourth player joined
+(4/4), read the same rules, and was seat 1's commander again (its identity). Not tested: the button itself (same
+call path: set_seats -> raise_seats_now), Cell, Creature and Civ.
+
+Seen on the way: the three villages left alone for 4 hours (5 FPS) were down to their chief (7 -> 1); the co-op epic
+(tribe.cpp, "an epic creature comes!") visits the host's village every 10 minutes and nobody defended. This explains
+the MSI village's loss of 7 -> 5 noted in docs/re/tribe.md#tribe-late-joiners; normal play, not a bug.

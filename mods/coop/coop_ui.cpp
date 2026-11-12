@@ -1162,7 +1162,7 @@ static void build_dialog()
     if (Win panel = sui::image_window(root, sui::fnv("lineages_lobby_panels"), sui::fnv("sporecoop"), 34, 156))
         L.push_back(panel);
     D.next_seats_edit = add_edit(L,"nextseats",{40,496,82,528},"",1);
-    D.queue_seats = add_button(L,"queueseats",{88,493,274,531},T("Next Seats","Места на этап"),[] {
+    D.queue_seats = add_button(L,"queueseats",{88,493,274,531},T("Set Seats","Места"),[] {
         auto value = sui::edit_text(D.next_seats_edit);
         if (value.size() != 1 || value[0] < '1' || value[0] > '4') {
             set_status(T("Enter 1 to 4 seats.","Укажите от 1 до 4 мест."),kRed,8);
@@ -1796,7 +1796,8 @@ static void refresh()
          A.mode() == modes::kTribe || A.mode() == modes::kCiv);
     show(D.next_seats_edit,seat_controls);
     show(D.queue_seats,seat_controls);
-    text(D.queue_seats,space ? T("Reload Seats","Места на загрузку") : T("Next Seats","Места на этап"));
+    // more seats apply at once, fewer from the next stage (world::set_seats, owner decision 2026-11-12); Space: next load
+    text(D.queue_seats,space ? T("Reload Seats","Места на загрузку") : T("Set Seats","Места"));
     show(D.space_btn, (space || villages || nations) && !g_space_page);
     text(D.space_btn, nations ? "Nations >" : villages ? "Village >" : T("Space >", "Космос >"));
     if (!lobby || g_space_page) {

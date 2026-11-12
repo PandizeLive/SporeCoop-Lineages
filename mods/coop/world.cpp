@@ -1675,6 +1675,31 @@ bool change_seats(net::Session& session, unsigned seats, std::string& message)
     return true;
 }
 
+// Owner decision 2026-11-12 (founders::raise_now): more seats in this stage at once. apply_saved_rules then raises the
+// session's seat limit (a late joiner past the old count is admitted), sends the rules to the guests and drops the
+// cached rules, so every difficulty extra reads the new count from the next call of rules_for_current().
+bool raise_seats_now(net::Session& session, unsigned seats, std::string& message)
+{
+    const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
+    if (session.role() != net::Role::Host || !in_stage(game::mode_id()) || stage > 4) {
+        message = "Only the host of an open campaign in Cell, Creature, Tribal or Civilization can add seats now.";
+        return false;
+    }
+    if (seats < 1 || seats > 4 || !founders::raise_seats(current_game_key(),uint8_t(seats),stage,message)) return false;
+    if (!apply_saved_rules(session,current_game_key(),message)) return false;
+    message = g_campaign_setup.status + " (added now)";
+    return true;
+}
+
+bool set_seats(net::Session& session, unsigned seats, std::string& message)
+{
+    const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
+    if (session.role() == net::Role::Host && in_stage(game::mode_id()) && stage <= 4 && seats <= 4 &&
+        seats > rules_for_current().seats)
+        return raise_seats_now(session,seats,message);
+    return change_seats(session,seats,message);
+}
+
 bool checkpoint_reload(std::string& err)
 {
     if (g_checkpoint_reload.requested || game::mode_id() != modes::kTribe || load_queued() || save_busy()) {

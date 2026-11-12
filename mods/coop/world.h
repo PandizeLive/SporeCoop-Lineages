@@ -28,7 +28,11 @@ founders::CampaignRules rules_for_current();
 void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& packet);
 void native_campaign_loaded(const std::string& key);
 void campaign_guest_joined(net::Session& session);
-bool change_seats(net::Session& session, unsigned seats, std::string& message);
+bool change_seats(net::Session& session, unsigned seats, std::string& message); // from the next stage (Space: load)
+// more seats in the running stage at once (Cell to Civ; owner decision 2026-11-12, founders::raise_now)
+bool raise_seats_now(net::Session& session, unsigned seats, std::string& message);
+// the Co-op window's Set Seats: more seats now (Cell to Civ), fewer (or any in Space) from the next stage
+bool set_seats(net::Session& session, unsigned seats, std::string& message);
 void invalidate_campaign_rules(); // native load, including reloading the same slot
 bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
 // the game's own save (pause menu "Save"); also works on planets in space

@@ -4823,12 +4823,14 @@ int share_all()
 // ---------------- commands ----------------
 int c_seats(void*, int argc, const char* const* argv, SkOut* out)
 {
-    if (argc != 2 || !argv[1][0] || argv[1][1] || argv[1][0] < '1' || argv[1][0] > '4') {
-        SAY("Usage: coop.seats <1-4>. Use the current size to cancel a queued change.");
+    const bool now = argc == 3 && !strcmp(argv[2], "now");
+    if ((argc != 2 && !now) || !argv[1][0] || argv[1][1] || argv[1][0] < '1' || argv[1][0] > '4') {
+        SAY("Usage: coop.seats <1-4> [now]. Without now: from the next stage (the current size cancels a queued change); "
+            "now: more seats in this stage at once.");
         return 1;
     }
     std::string result;
-    const bool ok = world::change_seats(g_sess,argv[1][0] - '0',result);
+    const bool ok = now ? world::raise_seats_now(g_sess,argv[1][0] - '0',result) : world::change_seats(g_sess,argv[1][0] - '0',result);
     SAY("%s",result.c_str());
     return ok ? 0 : 1;
 }
@@ -5820,7 +5822,7 @@ void init_ui()
     a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
     a.join = do_join;
     a.host = do_host;
-    a.queue_seats = [](unsigned seats, std::string& result) { return world::change_seats(g_sess,seats,result); };
+    a.queue_seats = [](unsigned seats, std::string& result) { return world::set_seats(g_sess,seats,result); };
     a.leave = do_leave;
     a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
     a.connected = [] { return g_sess.connected(); };
@@ -6499,7 +6501,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     keepalive_start();
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
     const int MT = SK_CMD_MAIN_THREAD;
-    H->command_add(M, "coop.seats", "coop.seats <1-4> - reserve seats for the next stage or next Space load", c_seats, nullptr, MT);
+    H->command_add(M, "coop.seats", "coop.seats <1-4> [now] - reserve seats for the next stage or next Space load; now: more seats in this stage at once", c_seats, nullptr, MT);
     H->command_add(M, "coop.host", "coop.host [port] [name] [new-game seats 1-4] [scaling percent] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);

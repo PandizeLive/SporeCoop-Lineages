@@ -318,6 +318,26 @@ bool queue_seats(const std::string& key, uint8_t seats, uint8_t stage, std::stri
     return false;
 }
 
+bool raise_seats(const std::string& key, uint8_t seats, uint8_t stage, std::string& error)
+{
+    RuleWriteLock lock;
+    if (!lock.held) { error = "Campaign seat settings are busy. Try again."; return false; }
+    CampaignRules rules;
+    SeatPlan plan;
+    if (!stage || stage > 4 || read_rules(key,rules,&plan) != RulesFile::Saved) {
+        error = "Open a saved, reserved campaign in Cell, Creature, Tribal or Civilization.";
+        return false;
+    }
+    if (!raise_now(rules,plan,stage,seats)) {
+        error = "This campaign already reserves " + std::to_string(plan.seats_in(stage,rules.seats)) +
+                " seat(s). Seats are added at once; fewer seats apply from the next stage.";
+        return false;
+    }
+    if (write_rules(path_for(key,L".duo-seats"),rules,plan,true)) return true;
+    error = "Could not save the seat change.";
+    return false;
+}
+
 bool update_seats(const std::string& key, uint8_t occupied, uint8_t stage, bool space_reloaded,
                   CampaignRules& rules, SeatPlan& plan, std::string& error)
 {

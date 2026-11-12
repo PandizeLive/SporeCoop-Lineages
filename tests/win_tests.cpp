@@ -208,6 +208,33 @@ static void test_founders()
     CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == quartet);
     CHECK(founders::queue_seats(key,2,5,err));
     CHECK(founders::update_seats(key,3,5,true,settings,plan,err) && settings == quartet && !plan.next_seats);
+    // Owner decision 2026-11-12: more seats in the running stage at once (founders::raise_now / raise_seats)
+    {
+        founders::CampaignRules r{3,100};
+        founders::SeatPlan p{1};
+        CHECK(!founders::raise_now(r,p,3,3) && !founders::raise_now(r,p,3,2) && !founders::raise_now(r,p,3,5));
+        CHECK(!founders::raise_now(r,p,0,4) && !founders::raise_now(r,p,6,4));
+        CHECK(founders::raise_now(r,p,3,4) && r.seats == 4 && p.seats_in(3,r.seats) == 4);
+        CHECK(r.enemy_health_percent() == quartet.enemy_health_percent());
+        founders::SeatPlan q{1, 2, 3}; // a shrink queued for the next stage is dropped by the raise
+        r = {2,100};
+        CHECK(founders::raise_now(r,q,3,3) && r.seats == 3 && !q.next_seats && !q.queued_stage);
+        founders::SeatPlan g{1, 4, 3}; // a queued raise past the new count stays
+        r = {2,100};
+        CHECK(founders::raise_now(r,g,3,3) && r.seats == 3 && g.next_seats == 4 && g.queued_stage == 3);
+        founders::SeatPlan back{1}; // Civ reopened after Space began: Civ's own entry is raised, Space's count kept
+        back.previous_stage_seats = {2,2,2,2,0};
+        r = {4,100};
+        CHECK(founders::raise_now(r,back,4,3) && back.seats_in(4,r.seats) == 3 && r.seats == 4);
+        // the file: the Jiff case, 3 reserved in Tribal, a fourth player arrives
+        CHECK(founders::queue_seats(key,3,3,err)); // a count to start from (4 now: queue 3 for the next stage...)
+        CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings.seats == 3);
+        CHECK(!founders::raise_seats(key,3,4,err) && !founders::raise_seats(key,2,4,err));
+        CHECK(!founders::raise_seats(key,4,5,err)); // Space keeps its next-load rule
+        CHECK(founders::raise_seats(key,4,4,err));
+        CHECK(founders::read_rules(key,settings,&plan) == founders::RulesFile::Saved && plan.seats_in(4,settings.seats) == 4);
+        CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings.seats == 4);
+    }
     founders::CellCredit carry, recovered;
     CHECK(carry.award(3,true,quartet) == 0 && carry.award(1,false,quartet) == 0);
     CHECK(carry.award(-4,true,quartet) == -4 && carry.remainder[1] == 300);
