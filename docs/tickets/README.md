@@ -764,5 +764,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9147](BUG-9147-tribe-the-host-s-last-villager-killed-by-the-co.md) | open | bug | Tribe | 2026-11-12 |  | tribe: the host's last villager killed by the co-op epic without the knockout, native game over |
 | [BUG-9148](BUG-9148-co-op-window-no-give-to-button.md) | fixed | feature | all | 2026-11-12 | unreleased | co-op window: no Give To button |
 | [BUG-9149](BUG-9149-downed-players-wait-a-minute-for-a-revive-on-eve.md) | fixed | feature | all | 2026-11-12 | unreleased | downed players wait a minute for a revive on every stage |
-| [BUG-9150](BUG-9150-tribe-a-late-joiner-s-village-starts-with-a-stan.md) | open | feature | Tribe | 2026-11-12 |  | tribe: a late joiner's village starts with a stand-in of the host's creature and takes theirs in place |
+| [BUG-9150](BUG-9150-tribe-a-late-joiner-s-village-starts-with-a-stan.md) | fixed | feature | Tribe | 2026-11-12 | unreleased | tribe: a late joiner's village starts with a stand-in of the host's creature and takes theirs in place |
 | [BUG-9151](BUG-9151-creature-after-a-partner-s-editor-their-own-nest.md) | open | bug | Creature | 2026-11-12 |  | creature: after a partner's editor their own nest is rebuilt for the new species and the old one stays |
