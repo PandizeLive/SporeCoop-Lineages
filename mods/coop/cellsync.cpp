@@ -32,6 +32,7 @@
 #include "give_up.h"
 #include "fixes.h"
 #include "trace.h"
+#include "ring_timer.h"
 
 void coop_module_of(uintptr_t a, char* out, size_t cap); // debug.cpp (RE, BUG-0355)
 
@@ -4163,6 +4164,12 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
     snprintf(t, sizeof t, "KO %d", (int)std::ceil(std::max(0.f, left)));
     uint32_t red = blink ? 0xFFFF4040 : 0xFFB02020;
     bool on = H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh;
+    if (on && ring_timer::enabled()) { // BUG-9141: the draining ring above the cell, the revive as its green fill
+        const float r = ring_timer::radius_for(sh);
+        ring_timer::draw(H, sc[0], std::max(r + 4.f, sc[1] - 30.f - r * 0.5f), r, ring_timer::fraction(left, down_time()),
+                         hold, now);
+        return;
+    }
     if (on) {
         H->overlay_text((int)sc[0] - text_w(t) / 2, (int)sc[1] - 34, red, t);
         if (hold > 0.01f) {
@@ -4187,8 +4194,13 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
         return;
     int x = (int)fx, y = (int)fy;
     const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
-    std::string s = std::string(arrow) + " " + name + " " + t;
+    std::string s = std::string(arrow) + " " + name + (ring_timer::enabled() ? std::string() : " " + std::string(t));
     H->overlay_text(x - text_w(s) / 2, y - 10, red, s.c_str());
+    if (ring_timer::enabled()) { // BUG-9141: a small ring over the edge arrow
+        const float r = ring_timer::radius_for(sh) * 0.7f;
+        ring_timer::draw(H, std::clamp((float)x, r + 4.f, sw - r - 4.f), std::clamp((float)y - 18.f - r, r + 4.f, sh - r - 4.f),
+                         r, ring_timer::fraction(left, down_time()), hold, now);
+    }
 }
 
 bool partner_down(int id)

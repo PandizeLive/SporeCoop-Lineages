@@ -34,7 +34,7 @@ def main():
         return command(peer, 'coop.status')
     expected = 4 if args.verify else 2
     wait_until(lambda: f'players=1/{expected}' in status() and
-               f'Reserved founders: {expected},' in status(), 'Unexpected active capacity', 20)
+               f'Player slots: {expected},' in status(), 'Unexpected active capacity', 20)
     if args.graduate:
         from duo_civ_launch_editor import acknowledge, create_first_ship
         from duo_civ_species import native

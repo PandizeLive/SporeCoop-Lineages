@@ -5443,6 +5443,19 @@ float revive_seconds(void* c)
     return 0;
 }
 
+float revive_total() { return (float)down_time(); }
+
+float revive_progress(void* c)
+{
+    const uint16_t id = id_of(c);
+    if (!id || !is_host()) return 0.f; // the host decides (near_since); the guests see the time only
+    const double now = H->time_seconds();
+    for (const auto& rescue : g_founder_rescues)
+        if (rescue.member == id && rescue.until > 0 && rescue.near_since >= 0)
+            return (float)std::clamp((now - rescue.near_since) / 1.5, 0.0, 1.0);
+    return 0.f;
+}
+
 bool rescue_pending()
 {
     if (!active()) return false;

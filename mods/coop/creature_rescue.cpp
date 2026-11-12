@@ -9,6 +9,7 @@
 #include "give_up.h"
 #include "modes.h"
 #include "progress_debt.h"
+#include "ring_timer.h"
 #include "net/interp.h"
 
 namespace creature_rescue {
@@ -33,8 +34,21 @@ uint32_t planet, serial, local_id;
 void* body;
 net::Vec3 anchor;
 double local_start, last_request, protection_until;
-net::PlayerState peer;
-bool has_peer;
+// BUG-9146: every partner here (their last state in this world), not only the one partner of a duo
+std::vector<net::PlayerState> peers;
+bool standing(const net::PlayerState& p) { return p.health > 0 && !(p.flags & (net::PF_DEAD | net::PF_DOWNED)); }
+const net::PlayerState* peer_of(uint8_t id)
+{
+    for (const auto& p : peers) if (p.id == id) return &p;
+    return nullptr;
+}
+// a standing partner (not `except`) within reach of `at`, or null
+const net::PlayerState* helper_near(const net::Vec3& at, uint8_t except = 0xFF)
+{
+    for (const auto& p : peers)
+        if (p.id != except && standing(p) && net::dist(at, p.pos) <= 6.f) return &p;
+    return nullptr;
+}
 bool g_leave_fix = true;
 // BUG-9089 (44): a captain in an adventure is revived like a Creature-stage avatar (a partner has 10 s);
 // if nobody comes, it gets back up beside a partner who is still standing, and only a captain whose
@@ -55,6 +69,7 @@ struct Rescue {
     bool gave_up = false; // BUG-9118: the downed player gave up (as if the timer ran out)
 };
 bool local_give_up; // this game's downed player asked to give up (sent / applied by the next tick)
+double own_near_since = -1; // BUG-9141: this downed player: a standing partner within reach since then (seen here)
 Rescue watches[net::kMaxPlayers];
 // A departed seat may be reused before its timer expires. Keep only the old
 // episode's deadline and name, never an avatar pointer or the reusable seat.
@@ -109,8 +124,10 @@ void resolve(Event result)
     local_id = 0;
     if (!body || !here(game::mode_id()) || game::avatar() != body)
         return;
-    if (result == Expired && game::mode_id() == modes::kScenario && has_peer && peer.health > 0 &&
-        !(peer.flags & (net::PF_DEAD | net::PF_DOWNED))) {
+    const net::PlayerState* up = nullptr; // a partner who is still standing (BUG-9146: any of them)
+    for (const auto& p : peers) if (standing(p)) { up = &p; break; }
+    if (result == Expired && game::mode_id() == modes::kScenario && up) {
+        const net::PlayerState& peer = *up;
         // the adventure goes on: back up beside the partner who is still standing
         net::Vec3 at = peer.pos;
         at.x += 2.f;
@@ -138,7 +155,7 @@ void reset()
 {
     planet = local_id = 0;
     body = nullptr;
-    has_peer = false;
+    peers.clear();
     protection_until = 0;
     for (auto& w : watches) w = {};
     departed.clear();
@@ -161,7 +178,7 @@ void on_player_leave(uint8_t player)
     auto& w = watches[player];
     if (S->role() == net::Role::Host && w.active) departed.push_back(w);
     w = {};
-    if (has_peer && peer.id == player) has_peer = false;
+    std::erase_if(peers, [player](const net::PlayerState& p) { return p.id == player; });
 }
 
 bool protect(void* avatar, float& damage)
@@ -170,11 +187,12 @@ bool protect(void* avatar, float& damage)
         avatar != body || !avatar || damage <= 0) return false;
     double now = H->time_seconds();
     if (down() || now < protection_until) { damage = 0; return true; }
-    if (!has_peer || damage < game::health(avatar) || game::health(avatar) <= 0) return false;
+    if (peers.empty() || damage < game::health(avatar) || game::health(avatar) <= 0) return false;
     if (++serial == 0) ++serial;
     local_id = serial;
     anchor = game::position(body);
     local_start = now;
+    own_near_since = -1;
     last_request = now;
     game::set_health(body, 1);
     game::stop(body);
@@ -191,8 +209,8 @@ void message(uint8_t from, net::Reader& r)
     if (!r.ok() || r.left() || !id || !planet || world != planet || !S->connected() ||
         !here(game::mode_id()) || !body || game::avatar() != body) return;
     if (S->role() == net::Role::Host) {
-        if (event == Begin && from < net::kMaxPlayers && from && has_peer && peer.id == from &&
-            (peer.flags & net::PF_DOWNED))
+        const net::PlayerState* victim = from && from < net::kMaxPlayers ? peer_of(from) : nullptr;
+        if (event == Begin && victim && (victim->flags & net::PF_DOWNED))
             begin(from, id, H->time_seconds());
         else if (event == GiveUp && from && from < net::kMaxPlayers && watches[from].active && watches[from].id == id)
             watches[from].gave_up = true; // BUG-9118: settled by the next tick
@@ -201,15 +219,17 @@ void message(uint8_t from, net::Reader& r)
     }
 }
 
-void tick(uint32_t world, void* avatar, const net::PlayerState* partner, double now)
+void tick(uint32_t world, void* avatar, const std::vector<net::PlayerState>& partners, double now)
 {
     if (world != planet || avatar != body) reset();
     planet = world;
     body = avatar;
-    has_peer = partner != nullptr;
-    if (has_peer) peer = *partner;
+    peers = partners;
     if (!planet || !body) return;
     if (down()) {
+        const bool helper = helper_near(anchor) != nullptr;
+        if (!helper) own_near_since = -1;
+        else if (own_near_since < 0) own_near_since = now;
         game::set_health(body, 1); // BUG-9005: the game's nest also heals a downed avatar
         game::stop(body);
         if (net::dist(anchor, game::position(body)) > 0.4f)
@@ -218,7 +238,7 @@ void tick(uint32_t world, void* avatar, const net::PlayerState* partner, double 
             send(0, Begin, local_id); // the first request may predate the host's first usable peer state
             last_request = now;
         }
-        if (S->role() == net::Role::Client && !has_peer && now - local_start >= window_s() + 5) {
+        if (S->role() == net::Role::Client && peers.empty() && now - local_start >= window_s() + 5) {
             resolve(Expired); // a host in another stage cannot resolve this body's knockout
             return;
         }
@@ -239,10 +259,19 @@ void tick(uint32_t world, void* avatar, const net::PlayerState* partner, double 
     for (uint8_t victim = 0; victim < net::kMaxPlayers; ++victim) {
         auto& w = watches[victim];
         if (!w.active) continue;
-        bool near = has_peer && (!victim || victim == peer.id) &&
-                    (victim ? !down() && game::health(body) > 0 :
-                              !watches[peer.id].active && peer.health > 0 && !(peer.flags & (net::PF_DEAD | net::PF_DOWNED))) &&
-                    net::dist(game::position(body), peer.pos) <= reach;
+        // BUG-9146: any standing player within reach revives: the host (a guest victim), or any partner who is not
+        // down themselves (before: the one partner of a duo, and only the host could revive a guest)
+        bool near = false;
+        if (!victim) {
+            for (const auto& p : peers)
+                if (!(p.id < net::kMaxPlayers && watches[p.id].active) && standing(p) &&
+                    net::dist(game::position(body), p.pos) <= reach) near = true;
+        } else if (const net::PlayerState* v = peer_of(victim)) {
+            near = !down() && game::health(body) > 0 && net::dist(game::position(body), v->pos) <= reach;
+            for (const auto& p : peers)
+                if (!near && p.id != victim && !(p.id < net::kMaxPlayers && watches[p.id].active) && standing(p) &&
+                    net::dist(v->pos, p.pos) <= reach) near = true;
+        }
         if (!near) w.near_since = -1;
         else if (w.near_since < 0) w.near_since = now;
         bool saved = !w.gave_up && near && w.near_since + hold <= std::min(now, w.begin + window_s());
@@ -258,14 +287,32 @@ void tick(uint32_t world, void* avatar, const net::PlayerState* partner, double 
 
 void give_up_now() { if (down()) local_give_up = true; } // tests and the console: coop.giveup
 
+double window_seconds() { return window_s(); }
+float reach_m() { return reach; }
+double hold_seconds() { return hold; }
+float own_left()
+{
+    return down() ? ring_timer::fraction(window_s() - (H->time_seconds() - local_start), window_s()) : 0.f;
+}
+float own_revive()
+{
+    if (!down() || own_near_since < 0) return 0.f;
+    return (float)std::clamp((H->time_seconds() - own_near_since) / hold, 0.0, 1.0);
+}
+std::string ui_line()
+{
+    if (!ring_timer::enabled()) return status();
+    return down() ? "Hold G to give up" : std::string();
+}
+
 std::string status()
 {
     if (down()) {
         int sec = std::max(0, (int)std::ceil(window_s() - (H->time_seconds() - local_start)));
         return "Downed: " + std::to_string(sec) + " s for your partner to revive you (hold G to give up)";
     }
-    if (has_peer && (peer.flags & net::PF_DOWNED))
-        return "Revive " + S->name_of(peer.id) + ": stay close for 1.5 s";
+    for (const auto& p : peers)
+        if (p.flags & net::PF_DOWNED) return "Revive " + S->name_of(p.id) + ": stay close for 1.5 s";
     return {};
 }
 }

@@ -46,6 +46,12 @@ Bar g_bar;
 double g_bar_asked = -1e9;
 bool g_bar_busy = false;
 uint32_t g_draws = 0;
+// 2026-11-12 (owner: "A connected player doesn't see the Debt in the progress bar"; not reproduced on two PCs): why a
+// debt was not drawn, logged once per debt (the first 5 s without a stretch), so a player's log names the cause
+const char* g_skip = "";
+double g_owing_since = -1;
+uint32_t g_draws_at_owing = 0;
+bool g_skip_logged = false;
 
 bool here(uint32_t mode) { return mode == modes::kCreature || mode == modes::kCell; }
 bool is_host() { return S && S->connected() && S->role() == net::Role::Host; }
@@ -164,6 +170,22 @@ void tick(uint32_t mode, uint32_t world, double now)
                 g_notice("Progress debt refilled: progress counts again.", -1);
         }
     }
+    if (current().owed > 0 && here(g_mode)) {
+        if (g_owing_since < 0) {
+            g_owing_since = now;
+            g_draws_at_owing = g_draws;
+            g_skip_logged = false;
+        } else if (!g_skip_logged && now - g_owing_since > 5 && g_draws == g_draws_at_owing) {
+            g_skip_logged = true;
+            float done = 0, total = 0;
+            const bool p = progress(g_mode, done, total);
+            H->log(nullptr, SK_WARN, "coop: progress debt %.0f (%s) not drawn for 5 s: %s (bar found %d [%.0f %.0f %.0f %.0f] "
+                   "edge %.0f, progress %s%.1f/%.1f, stage %08X)", current().owed, is_host() ? "host" : "guest",
+                   *g_skip ? g_skip : "no draw call", (int)g_bar.shown, g_bar.x1, g_bar.y1, g_bar.x2, g_bar.y2, g_bar.edge,
+                   p ? "" : "(none) ", done, total, g_mode);
+        }
+    } else
+        g_owing_since = -1;
     if (g_fix && here(g_mode) && current().owed > 0 && !g_bar_busy && now - g_bar_asked > 0.25) {
         g_bar_busy = true;
         g_bar_asked = now;
@@ -284,19 +306,31 @@ IDirect3DPixelShader9* tint_shader(IDirect3DDevice9* device)
 
 void draw()
 {
-    if (!g_fix || !g_bar.shown || !here(g_mode))
+    if (!g_fix || !here(g_mode))
         return;
+    if (!g_bar.shown) {
+        g_skip = "the progress bar is not on screen (not found or hidden)";
+        return;
+    }
     const float debt = owed();
     float done = 0, total = 0;
-    if (debt <= 0 || !progress(g_mode, done, total))
+    if (debt <= 0)
         return;
+    if (!progress(g_mode, done, total)) {
+        g_skip = "no progress value for this stage";
+        return;
+    }
     auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
-    if (!device)
+    if (!device) {
+        g_skip = "no device";
         return;
+    }
     const float w = g_bar.x2 - g_bar.x1;
     const float end = g_bar.edge >= 0 ? g_bar.edge : g_bar.x1 + w * std::clamp(done / total, 0.f, 1.f);
-    if (end - g_bar.x1 < 2.f || done <= 0)
+    if (end - g_bar.x1 < 2.f || done <= 0) {
+        g_skip = "the bar's fill is empty here";
         return;
+    }
     const float rate = (end - g_bar.x1) / done; // pixels per point, the bar's average up to here
     // never thinner than 4 px (a few DNA on a 1000-point bar), never past the bar's start
     const float start = std::max(g_bar.x1, end - std::max(4.f, debt * rate));

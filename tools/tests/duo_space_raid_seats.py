@@ -27,7 +27,7 @@ def main():
     command(peer,'coop.load Game0 Vantiegan')
     wait_until(lambda:'Space' in command(peer,'game.mode'),'Space load failed',90)
     command(peer,'coop.host 47811 RaidHost')
-    wait_until(lambda:f'Reserved founders: {args.seats},' in command(peer,'coop.status'),'Wrong rules',20)
+    wait_until(lambda:f'Player slots: {args.seats},' in command(peer,'coop.status'),'Wrong rules',20)
     dismiss_registration(peer)
     dismiss_service_error(peer)
     for wid in ('0445C99D','062EF353','FFFFFFF1'):
@@ -43,7 +43,7 @@ def main():
         assert 'GalaxyGameEntry' in command(guest,'game.mode')
         command(guest,'coop.join 127.0.0.1:47811 ReturningPilot')
         wait_until(lambda:'Space' in command(guest,'game.mode') and
-                   f'Host campaign rules: {args.seats} reserved founders' in command(guest,'coop.status'),
+                   f'Host campaign rules: {args.seats} player slots' in command(guest,'coop.status'),
                    'Returning guest did not enter the active Space session',90)
         wait_until(lambda:f'active {home:08X}' in command(guest,'coop.space star'),'Wrong guest system',35)
         if context(guest)==1: print('Guest',command(guest,'coop.space land'),flush=True)

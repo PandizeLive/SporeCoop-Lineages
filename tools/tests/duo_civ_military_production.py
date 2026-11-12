@@ -77,7 +77,7 @@ def main():
     base = {pol:limits(pol) for pol in nations}
     assert 0 < base[rival][0] < 30 and u32(c,nations[rival]+0x540) == 0
     command(c,'coop.host 47812 ProductionHost')
-    assert f'Reserved founders: {args.seats}, difficulty scaling {args.scaling}%' in command(c,'coop.status')
+    assert f'Player slots: {args.seats}, difficulty scaling {args.scaling}%' in command(c,'coop.status')
     scaling = (args.seats-1)*args.scaling
     maximum = min(47,base[rival][0] + (base[rival][0]*scaling+999)//1000)
     threshold = max(1,40000 - 40*scaling)
@@ -90,7 +90,7 @@ def main():
         assert 'duoqalineagescivprod' in command(guest,'coop.savedb').lower()
         command(guest,'coop.join 127.0.0.1:47812 ProductionGuest')
         wait_until(lambda:'Civ' in command(guest,'game.mode') and
-                   f'Host campaign rules: {args.seats} reserved founders' in command(guest,'coop.status'),
+                   f'Host campaign rules: {args.seats} player slots' in command(guest,'coop.status'),
                    'Guest did not join the reserved campaign',100)
 
     def vehicle_ids(peer):

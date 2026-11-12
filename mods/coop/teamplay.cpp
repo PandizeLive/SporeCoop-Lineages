@@ -164,7 +164,7 @@ std::string status()
 {
     if (!g_on)
         return "";
-    auto rescue = creature_rescue::status();
+    auto rescue = creature_rescue::ui_line(); // BUG-9141: the ring shows the time
     if (!rescue.empty()) return rescue;
     void* av = game::avatar();
     float d = 0;

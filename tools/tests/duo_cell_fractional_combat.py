@@ -27,7 +27,7 @@ def main():
     command(h,'coop.host 47810 RoundHost 2 100')
     command(h,'coop.load Game0 QuartetSolo')
     seats = args.groups or 2
-    wait_until(lambda:f'Reserved founders: {seats},' in command(h,'coop.status') and
+    wait_until(lambda:f'Player slots: {seats},' in command(h,'coop.status') and
                'Cell:' in h.call('coop.avatar')['out'],'Wrong Cell fixture',90)
     location = re.search(r'location=(.+?)\s+access=',command(h,'coop.savedb'))[1]
     save = Path(location)/'quartetsolo.spo.duo-food'

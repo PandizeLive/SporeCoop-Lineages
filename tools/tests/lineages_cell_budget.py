@@ -23,7 +23,7 @@ def main():
         assert 'duoqabudgetfour' in command(c,'coop.savedb').lower()
         wait_until(lambda:'Cell:' in c.call('coop.avatar')['out'],40)
         command(c,'coop.pool invulnfor 600')
-    wait_until(lambda:'Reserved founders: 4,' in command(h,'coop.status'),10)
+    wait_until(lambda:'Player slots: 4,' in command(h,'coop.status'),10)
     wait_until(lambda:values(g,'coop.pool').get('mirrors',0)>5,20)
     food=values(h,'coop.pool dna')['food']
     if food != 50:

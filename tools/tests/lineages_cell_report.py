@@ -40,7 +40,7 @@ def main():
         assert 'total faults: 0' in command(c, 'exc')
     command(h, 'coop.pool invulnfor 120')
     status = command(h, 'coop.status')
-    seats, scaling = map(int, re.search(r'Reserved founders: (\d+), difficulty scaling (\d+)%', status).groups())
+    seats, scaling = map(int, re.search(r'Player slots: (\d+), difficulty scaling (\d+)%', status).groups())
     work = 100+(seats-1)*scaling
     food = lambda c: values(c, 'coop.pool dna')['food']
     wait_until(lambda: food(h) == food(g))

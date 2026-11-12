@@ -67,7 +67,7 @@ def main():
         print('PASS cold offline native vehicle max and wounded HP',saved,now_hp,flush=True)
         if args.battle:
             command(h,'coop.host 47812 BattleHost')
-            assert 'Reserved founders: 4,' in command(h,'coop.status')
+            assert 'Player slots: 4,' in command(h,'coop.status')
             dismiss_registration(h)
             dismiss_service_error(h)
             for wid in ('0445C99D','062EF353'): button(h,wid)
@@ -92,7 +92,7 @@ def main():
         assert 'total faults: 0' in command(h,'exc')
         return
     command(h,'coop.host 47812 BalanceHost')
-    assert 'Reserved founders: 4,' in command(h,'coop.status')
+    assert 'Player slots: 4,' in command(h,'coop.status')
     dismiss_registration(h)
     dismiss_service_error(h)
     location = re.search(r'location=(.+?)\s+access=',command(h,'coop.savedb'))[1]
@@ -142,7 +142,7 @@ def main():
         assert 'GalaxyGameEntry' in command(peer,'game.mode')
         command(peer,'coop.join 127.0.0.1:47812 BalanceGuest')
         wait_until(lambda: 'Civ' in command(peer,'game.mode') and
-                   'Host campaign rules: 4 reserved founders' in command(peer,'coop.status'),
+                   'Host campaign rules: 4 player slots' in command(peer,'coop.status'),
                    'Guest did not enter the host campaign',100)
         wait_until(settled,'Join cinematic unfinished',45)
     serial = u32(h,enemy+0x24)

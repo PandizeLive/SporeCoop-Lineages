@@ -4,6 +4,7 @@
 // weapon or other surface part in the creature editors and moves the part in or out with it:
 // docs/re/creations.md#creations-editor-depth-handle
 #include "editor_depth.h"
+#include "editor_depth_axis.h"
 
 #include <d3d9.h>
 
@@ -199,6 +200,11 @@ constexpr float kMinHalfPx = 5.f;
 static bool g_size = true;
 COOP_FIX("editor.depth_size", "BUG-9116", g_size, "editor: the depth cube has a size in the scene and zooms with Spore's handles (off: 9 pixels)");
 static float g_half_px = kHalf; // the cube's half size on screen last drawn (the click area)
+static float g_cube_ppu = 0;    // BUG-9145: the cube's pixels per world unit last drawn (a head-on drag's scale)
+static bool g_axis_fix = true;
+COOP_FIX("editor.depth_axis", "BUG-9145", g_axis_fix,
+         "editor: the depth cube can be dragged in every view (off: a part facing the camera or the screen edge ignores the press)");
+static unsigned g_axis_fallbacks, g_presses_refused;
 struct Drag {
     void* rb = nullptr;
     void* twin = nullptr;
@@ -267,6 +273,7 @@ static bool draw_cube(IDirect3DDevice9* device, const Vec3& at, const Vec3& dir,
     if (!(ppu > 1.f) || !std::isfinite(ppu)) return false;
     const float h = g_size ? std::max(kHalfWorld, kMinHalfPx / ppu) : kHalf / ppu;
     g_half_px = h * ppu;
+    g_cube_ppu = ppu;
     // corners: bit 0 = +u, bit 1 = +v, bit 2 = +w
     float sc[8][2];
     for (int i = 0; i < 8; ++i) {
@@ -387,14 +394,27 @@ static bool input(unsigned message, uintptr_t, int x, int y)
     if (!square_for(em, d.rb, sq, &d.dir)) return false;
     d.start = position(d.rb);
     // screen direction and pixels per world unit along the part's outward line
-    const Vec3 a = d.start, b = d.start + d.dir;
-    float pa[2], pb[2];
-    if (!H->world_to_screen(&a.x, pa) || !H->world_to_screen(&b.x, pb)) return false;
-    const float dx = pb[0] - pa[0], dy = pb[1] - pa[1], l = std::hypot(dx, dy);
-    if (!(l > 1.f)) return false; // the line points at the camera: rotate the view
-    d.px_per_unit = l;
-    d.sx = dx / l;
-    d.sy = dy / l;
+    if (g_axis_fix) { // BUG-9145: a short step (on screen when the cube is), up / down when it looks at the camera
+        const Vec3 a = d.start, b = d.start + d.dir * editor_depth_axis::kStep;
+        float pa[2] = {NAN, NAN}, pb[2] = {NAN, NAN};
+        H->world_to_screen(&a.x, pa); // off the screen the point is still written (BUG-9121); behind it is not
+        H->world_to_screen(&b.x, pb);
+        if (!std::isfinite(pa[0]) || !std::isfinite(pa[1])) { pa[0] = sq[0]; pa[1] = sq[1]; } // the cube is on screen
+        const auto axis = editor_depth_axis::drag_axis(pa[0], pa[1], pb[0], pb[1], true, g_cube_ppu);
+        if (axis.fallback) ++g_axis_fallbacks;
+        d.px_per_unit = axis.px_per_unit;
+        d.sx = axis.sx;
+        d.sy = axis.sy;
+    } else {
+        const Vec3 a = d.start, b = d.start + d.dir;
+        float pa[2], pb[2];
+        if (!H->world_to_screen(&a.x, pa) || !H->world_to_screen(&b.x, pb)) { ++g_presses_refused; return false; }
+        const float dx = pb[0] - pa[0], dy = pb[1] - pa[1], l = std::hypot(dx, dy);
+        if (!(l > 1.f)) { ++g_presses_refused; return false; } // the line points at the camera: rotate the view
+        d.px_per_unit = l;
+        d.sx = dx / l;
+        d.sy = dy / l;
+    }
     d.x0 = x;
     d.y0 = y;
     float cur = 0;
@@ -508,8 +528,10 @@ static int command(void*, int argc, const char* const* argv, SkOut* out)
         say("at %.0f %.0f ppu %.1f\n", s[0], s[1], ppu);
         return 0;
     }
-    say("fix=%d editor=%p dragging=%d moves=%u commits=%u square=%.0f %.0f last range %.3f..%.3f\n", g_fix, em ? ed : nullptr,
-        g_dragging, g_moves, g_commits, g_square_rb ? g_square[0] : -1.f, g_square_rb ? g_square[1] : -1.f, g_drag.lo, g_drag.hi);
+    say("fix=%d editor=%p dragging=%d moves=%u commits=%u square=%.0f %.0f last range %.3f..%.3f axis_fix=%d "
+        "head_on_drags=%u presses_refused=%u\n", g_fix, em ? ed : nullptr,
+        g_dragging, g_moves, g_commits, g_square_rb ? g_square[0] : -1.f, g_square_rb ? g_square[1] : -1.f, g_drag.lo, g_drag.hi,
+        (int)g_axis_fix, g_axis_fallbacks, g_presses_refused);
     if (!em) return 0;
     void* sel = field<void*>(ed, 0xD4);
     if (argc >= 2 && !strcmp(argv[1], "parts")) {

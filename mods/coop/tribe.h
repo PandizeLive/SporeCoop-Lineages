@@ -57,6 +57,8 @@ void finish_own_outfit(bool saved); // guest: called after own editor adoption/c
 bool outfits_pending(); // defer campaign saves until a voted guest result is applied
 bool rescue_pending();
 float revive_seconds(void* citizen); // zero unless this last villager is waiting for its partner
+float revive_total();                 // BUG-9141: a downed last villager's whole wait (30 s; 10 with tribe.down_30 off)
+float revive_progress(void* citizen); // BUG-9141: host: a partner villager's revive so far (0..1); guests: 0
 std::string village_food_line(); // cached for the HUD, no game pointers needed
 std::string village_birth_line(); // native configured food cost
 std::string village_tool_line(int kind); // native price and host campaign unlocks

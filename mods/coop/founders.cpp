@@ -299,7 +299,7 @@ static bool write_rules(const std::wstring& path, const CampaignRules& rules, co
 bool queue_seats(const std::string& key, uint8_t seats, uint8_t stage, std::string& error)
 {
     RuleWriteLock lock;
-    if (!lock.held) { error = "Campaign seat settings are busy. Try again."; return false; }
+    if (!lock.held) { error = "Player slot settings are busy. Try again."; return false; }
     CampaignRules rules;
     SeatPlan plan;
     if (!stage || stage > 5 || read_rules(key,rules,&plan) != RulesFile::Saved) {
@@ -307,21 +307,21 @@ bool queue_seats(const std::string& key, uint8_t seats, uint8_t stage, std::stri
         return false;
     }
     if (seats < plan.protected_seats || seats > 4) {
-        error = "This campaign protects " + std::to_string(plan.protected_seats) + " seat(s). Choose up to four.";
+        error = "This campaign keeps " + std::to_string(plan.protected_seats) + " player slot(s) for players who joined. Choose up to four.";
         return false;
     }
     const auto previous = plan;
     plan.next_seats = seats == plan.seats_in(stage,rules.seats) ? 0 : seats;
     plan.queued_stage = plan.next_seats ? stage : 0;
     if (plan == previous || write_rules(path_for(key,L".duo-seats"),rules,plan,true)) return true;
-    error = "Could not save the queued seat change.";
+    error = "Could not save the player slot change.";
     return false;
 }
 
 bool raise_seats(const std::string& key, uint8_t seats, uint8_t stage, std::string& error)
 {
     RuleWriteLock lock;
-    if (!lock.held) { error = "Campaign seat settings are busy. Try again."; return false; }
+    if (!lock.held) { error = "Player slot settings are busy. Try again."; return false; }
     CampaignRules rules;
     SeatPlan plan;
     if (!stage || stage > 4 || read_rules(key,rules,&plan) != RulesFile::Saved) {
@@ -329,12 +329,12 @@ bool raise_seats(const std::string& key, uint8_t seats, uint8_t stage, std::stri
         return false;
     }
     if (!raise_now(rules,plan,stage,seats)) {
-        error = "This campaign already reserves " + std::to_string(plan.seats_in(stage,rules.seats)) +
-                " seat(s). Seats are added at once; fewer seats apply from the next stage.";
+        error = "This campaign already has " + std::to_string(plan.seats_in(stage,rules.seats)) +
+                " player slot(s). More slots apply at once; fewer apply from the next stage.";
         return false;
     }
     if (write_rules(path_for(key,L".duo-seats"),rules,plan,true)) return true;
-    error = "Could not save the seat change.";
+    error = "Could not save the player slot change.";
     return false;
 }
 
@@ -342,7 +342,7 @@ bool update_seats(const std::string& key, uint8_t occupied, uint8_t stage, bool 
                   CampaignRules& rules, SeatPlan& plan, std::string& error)
 {
     RuleWriteLock lock;
-    if (!lock.held) { error = "Campaign seat settings are busy. Try again."; return false; }
+    if (!lock.held) { error = "Player slot settings are busy. Try again."; return false; }
     if (read_rules(key,rules,&plan) != RulesFile::Saved || !occupied || occupied > plan.seats_in(stage,rules.seats) ||
         !stage || stage > 5) {
         error = "Cannot match the current lobby to this saved campaign.";
@@ -362,7 +362,7 @@ bool update_seats(const std::string& key, uint8_t occupied, uint8_t stage, bool 
         }
     }
     if (plan != previous && !write_rules(path_for(key,L".duo-seats"),rules,plan,true)) {
-        error = "Could not persist campaign seat settings.";
+        error = "Could not save the player slots.";
         return false;
     }
     rules.seats = plan.seats_in(stage,rules.seats);
@@ -372,10 +372,10 @@ bool update_seats(const std::string& key, uint8_t occupied, uint8_t stage, bool 
 bool reserve(const std::string& key, const CampaignRules& requested, std::string& err)
 {
     RuleWriteLock lock;
-    if (!lock.held) { err = "Campaign seat settings are busy. Try again."; return false; }
+    if (!lock.held) { err = "Player slot settings are busy. Try again."; return false; }
     auto path = path_for(key,L".duo-seats");
     if (path.empty() || !requested.seats || requested.seats > 4) {
-        err = "A saved planet and one to four reserved founders are required.";
+        err = "A saved planet and one to four player slots are required.";
         return false;
     }
     CampaignRules saved;

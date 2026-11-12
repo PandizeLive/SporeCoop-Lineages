@@ -81,6 +81,7 @@
 #include "lineage_cells.h"
 #include "library.h"
 #include "partner_marker.h"
+#include "ring_timer.h"
 #include "progress_debt.h"
 #include "guest_pack.h"
 #include "notify.h"
@@ -121,6 +122,9 @@ struct Remote {
     uint32_t puppet_world = 0; // the place `puppet` was made in
     bool echo = false; // local loopback test remote
     bool silent_said = false; // BUG-0513: "is not responding" was told (core.partner_silent)
+    // BUG-9141: this partner's knockout as seen here (Creature / Adventure revive ring): since when its state says
+    // downed, and since when this player stands within reach of it (-1: not)
+    double down_since = -1, near_since = -1;
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
@@ -1517,6 +1521,12 @@ bool open_own_editor(uint32_t editor_id)
     if (!r && tribal) tribe::finish_own_outfit(false);
     return r;
 }
+
+// BUG-9146: the Creature / Adventure knockout and revive with three or four players (any standing player revives);
+// off: a duo only, as before (with more players a lethal hit was a native death)
+static bool g_rescue_party_fix = true;
+COOP_FIX("creature.rescue_party", "BUG-9146", g_rescue_party_fix,
+         "creature / adventure: a downed player can be revived by any partner with three or four players (off: a duo only)");
 
 // BUG-9135 roadmap phase 4 (decision 4): a late joiner in Tribe without a creature of their own makes a new one in the
 // creature editor (CreatureEditorExtraLarge 0x465C50BA, no creation key), opened from the Co-op window. Back in this
@@ -3350,14 +3360,18 @@ void on_frame(void*, int, void*)
     if (g_sess.role() == net::Role::Host)
         g_sess.world = host_world::welcome_world(g_mode, g_world);
     g_sess.update();
-    const net::PlayerState* peer = nullptr;
-    bool duo = g_local && g_sess.connected() && g_sess.players().size() == 2;
+    // BUG-9146: the knockout and revive with every partner here (before: only a duo had them; with three or four
+    // players a lethal hit was a native death). Off (`coop.fix creature.rescue_party off`): a duo only.
+    static std::vector<net::PlayerState> rescue_peers;
+    rescue_peers.clear();
+    const size_t players = g_sess.players().size();
+    bool duo = g_local && g_sess.connected() && (g_rescue_party_fix ? players >= 2 : players == 2);
     if (duo && (g_mode == modes::kScenario || g_mode == modes::kCreature)) {
         for (const auto& [id, r] : g_remotes) {
             if (r.echo || id >= net::kMaxPlayers || r.buf.empty() || r.buf.age(now) > 2) continue;
             const auto& s = r.buf.latest();
             if (same_place(s) && (s.flags & net::PF_IN_WORLD))
-                peer = &s;
+                rescue_peers.push_back(s);
         }
     }
     if (g_local && g_sess.connected() && g_mode == modes::kScenario)
@@ -3366,7 +3380,7 @@ void on_frame(void*, int, void*)
         adventure::reset();
     if (g_local && g_sess.connected() && (g_mode == modes::kCreature || g_mode == modes::kScenario) &&
         (duo || creature_rescue::continuing()))
-        creature_rescue::tick(g_world ? g_world : 0xADE47u, g_local, peer, now); // BUG-9089: the captain too
+        creature_rescue::tick(g_world ? g_world : 0xADE47u, g_local, rescue_peers, now); // BUG-9089: the captain too
     else
         creature_rescue::reset();
     lobby_tick(now);
@@ -3624,7 +3638,15 @@ void draw_owner_tags()
             std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
             if (tribe::is_chief(c))
                 n = "\u2605 " + n + "'s chief";
-            if (float seconds = tribe::revive_seconds(c); seconds > 0)
+            const float seconds = tribe::revive_seconds(c);
+            if (seconds > 0 && ring_timer::enabled()) { // BUG-9141: the draining ring above the downed villager's tag
+                int sw = 0, sh = 0;
+                H->screen_size(&sw, &sh);
+                const float r = ring_timer::radius_for(sh);
+                ring_timer::draw(H, sc[0], std::max(r + 4.f, sc[1] - 16.f - r), r,
+                                 ring_timer::fraction(seconds, tribe::revive_total()), tribe::revive_progress(c),
+                                 H->time_seconds());
+            } else if (seconds > 0)
                 n += " [REVIVE " + std::to_string((int)std::ceil(seconds)) + "s]";
             H->overlay_text((int)sc[0] - text_width(n) / 2, (int)sc[1] - 10,
                             owner == g_sess.my_id() ? 0xFFFFD040 : 0xFF80C8FF, n.c_str());
@@ -3876,10 +3898,18 @@ void on_overlay(void*, int, void*)
     // BUG-9127: the Creature / Adventure knockout was invisible (its text only in a console report):
     // the downed player's countdown and the partner's "revive" line, centred under the top bar
     if (creature_rescue::ui_shown() && labels && (g_mode == modes::kCreature || g_mode == modes::kScenario) && sw > 0) {
-        const std::string line = creature_rescue::status();
+        const std::string line = creature_rescue::ui_line(); // BUG-9141: with the ring only "Hold G to give up"
+        // BUG-9141: this downed player's own ring, large in the middle under the top bar, its hint under it
+        int line_y = (int)(sh * 0.16f);
+        if (ring_timer::enabled() && creature_rescue::down()) {
+            const float r = ring_timer::radius_for(sh) * 1.4f;
+            ring_timer::draw(H, sw / 2.f, sh * 0.16f + r, r, creature_rescue::own_left(), creature_rescue::own_revive(),
+                             H->time_seconds());
+            line_y = (int)(sh * 0.16f + 2.f * r + 10.f);
+        }
         if (!line.empty()) {
             const bool own = creature_rescue::down();
-            const int x = sw / 2 - text_width(line) / 2, y = (int)(sh * 0.16f);
+            const int x = sw / 2 - text_width(line) / 2, y = line_y;
             H->overlay_text(x + 1, y + 1, 0xFF000000, line.c_str());
             H->overlay_text(x, y, own ? 0xFFFF6060 : 0xFFFFD040, line.c_str());
         }
@@ -3957,6 +3987,24 @@ void on_overlay(void*, int, void*)
             std::string tag = r.name.substr(0,utf8::cut_bytes(r.name,32)) + "  " + std::to_string(int(std::min(distance,999999.f))) + " m";
             int tx = std::clamp(int(x)-text_width(tag)/2,8,std::max(8,sw-text_width(tag)-8));
             int ty = std::clamp(visible ? int(y-size*.7f)-18 : int(y+size*.7f),8,sh-26);
+            // BUG-9141: a downed partner's ring (Creature / Adventure): its time from when this game first saw it down,
+            // a revive from when this player stood within reach (the host decides; this is what it looks like here)
+            if (!partner_down) r.down_since = r.near_since = -1;
+            else if (ring_timer::enabled() && (g_mode == modes::kCreature || g_mode == modes::kScenario)) {
+                if (r.down_since < 0) r.down_since = label_now;
+                if (distance <= creature_rescue::reach_m() && !creature_rescue::down()) {
+                    if (r.near_since < 0) r.near_since = label_now;
+                } else
+                    r.near_since = -1;
+                const double win = creature_rescue::window_seconds();
+                const float rr = ring_timer::radius_for(sh) * (visible ? 1.f : 0.7f);
+                const float ry = visible ? std::max(rr + 4.f, (float)ty - rr - 6.f)
+                                         : std::clamp((float)ty + 26.f + rr, rr + 4.f, sh - rr - 4.f);
+                const float revive = r.near_since < 0 ? 0.f
+                    : (float)std::clamp((label_now - r.near_since) / creature_rescue::hold_seconds(), 0.0, 1.0);
+                ring_timer::draw(H, std::clamp(x, rr + 4.f, sw - rr - 4.f), ry, rr,
+                                 ring_timer::fraction(win - (label_now - r.down_since), win), revive, label_now);
+            }
             H->overlay_text(tx+1,ty+1,0xFF000000,tag.c_str());
             H->overlay_text(tx,ty,0xFFB0FFD0,tag.c_str());
             ++g_partner_indicators;

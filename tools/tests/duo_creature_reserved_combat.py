@@ -27,12 +27,12 @@ def main():
     command(h,'coop.load Game0 QuartetHunt')
     wait_until(lambda:'Creature' in command(h,'game.mode'),'No Creature stage',75)
     command(h,f'coop.host {args.port} PackHost')
-    assert 'Reserved founders: 4' in command(h,'coop.status')
+    assert 'Player slots: 4' in command(h,'coop.status')
     command(g,f'coop.join 127.0.0.1:{args.port} PackGuest')
     wait_until(lambda:'Creature' in command(g,'game.mode') and 'QuartetHunt' in command(g,'coop.avatar'),
                'Guest did not join the Creature campaign',90)
     if args.current_defaults:
-        wait_until(lambda: 'Host campaign rules: 4 reserved founders' in command(g,'coop.status'),
+        wait_until(lambda: 'Host campaign rules: 4 player slots' in command(g,'coop.status'),
                    'Guest did not receive the active campaign rules',20)
         def sample(peer):
             raw = command(peer,'coop.hp hunger')

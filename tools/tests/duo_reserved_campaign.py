@@ -30,7 +30,7 @@ def main():
         subprocess.run([sys.executable,str(wizard),'cell','-i',str(args.host),'--name','QuartetSolo','--no-settle'],check=True)
     wait_until(lambda:'Cell' in command(h,'game.mode') and 'QuartetSolo.spo' in command(h,'coop.avatar'),
                'Wrong test planet',90)
-    status = 'Reserved founders: 4, difficulty scaling 100%'
+    status = 'Player slots: 4, difficulty scaling 100%'
     if not args.reload_slot:
         for _ in range(18):
             if status in command(h,'coop.status'): break

@@ -19,7 +19,7 @@ def main():
     h,g = Console(args.host),Console(args.guest)
     for c in (h,g):
         assert 'duoqa' in command(c,'coop.savedb').lower() and 'Tribe' in command(c,'game.mode')
-    assert 'Reserved founders: 4' in command(h,'coop.status')
+    assert 'Player slots: 4' in command(h,'coop.status')
     health_factor=1+3*args.health_per_founder/100
     expected_damage=4*(1+3*args.damage_per_founder/100)
     def stats(peer,idx):

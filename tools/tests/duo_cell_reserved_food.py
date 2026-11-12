@@ -23,7 +23,7 @@ def main():
     command(peer,'coop.load Game0 QuartetSolo')
     wait_until(lambda:'Cell' in command(peer,'game.mode'),'No Cell stage',75)
     command(peer,f'coop.host {args.port} SoloChallenge')
-    assert 'Reserved founders: 4, difficulty scaling 100%' in command(peer,'coop.status')
+    assert 'Player slots: 4, difficulty scaling 100%' in command(peer,'coop.status')
     def food():
         result = re.search(r'^cell\(host\): food=(-?\d+)',command(peer,'coop.pool'),re.M)
         return int(result[1]) if result else None

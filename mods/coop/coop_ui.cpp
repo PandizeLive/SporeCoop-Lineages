@@ -73,6 +73,7 @@ constexpr float kW = 760, kH = 600;
 constexpr uint32_t kDangerButtonShade = 0xFFAD535D;
 constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
+static unsigned g_slots_shown; // the player slot count last written into the lobby's box (0: none)
 static int g_lan_first, g_lan_max, g_lan_wheel_delta;
 static bool g_lan_dragging;
 constexpr int kLanRows = 6;
@@ -323,7 +324,7 @@ struct Dialog {
     struct Privacy { Win button, eye, crossed; };
     std::map<std::string, Privacy> privacy;
     bool show_host_addresses = false;
-    Win next_seats_edit = nullptr, queue_seats = nullptr;
+    Win next_seats_edit = nullptr, queue_seats = nullptr, slots_label = nullptr;
     Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr, update_btn = nullptr;
     Win lan_rows[kLanRows] = {};
     std::string lan_addr[kLanRows];
@@ -845,7 +846,7 @@ static void do_host()
     if (seats.size() != 1 || seats[0] < '1' || seats[0] > '4' ||
         scaling.empty() || scaling.find_first_not_of("0123456789") != std::string::npos ||
         scaling.size() > 3 || strtoul(scaling.c_str(),nullptr,10) > founders::kMaxDifficultyPercent) {
-        set_status(T("Use 1-4 founders and a difficulty from 0 to 400%.", "Укажите 1–4 основателей и сложность от 0 до 400%."),kRed);
+        set_status(T("Use 1-4 player slots and a difficulty from 0 to 400%.", "Укажите 1–4 места для игроков и сложность от 0 до 400%."),kRed);
         return;
     }
     if (!A.host((uint16_t)port,D.seats,unsigned(strtoul(scaling.c_str(),nullptr,10)),err,
@@ -1102,7 +1103,7 @@ static void build_dialog()
     // buttons have the fields' height and span the field and its eye button (140 to 351)
     add_label(P, {30, 373, 135, 399}, "Port (UDP)", kWhite, sui::kAlignRight);
     add_label(P, {30, 402, 135, 428}, "Password", kWhite, sui::kAlignRight);
-    add_label(P, {30, 431, 135, 457}, "Seats", kWhite, sui::kAlignRight);
+    add_label(P, {24, 431, 135, 457}, "Player Slots", kWhite, sui::kAlignRight); // owner 2026-11-12: "Slots", not "seats"
     add_label(P, {30, 460, 135, 486}, "Transfer", kWhite, sui::kAlignRight);
     D.port_edit = add_edit(P, "port", {140, 373, 310, 399}, load_str("ui", "host_port", std::to_string(A.default_port).c_str()), 5, !panel);
     D.host_password = add_edit(P, "hostpassword", {140, 402, 310, 428}, "", 48, !panel);
@@ -1132,7 +1133,7 @@ static void build_dialog()
     // lineages_connect_panels.png at 536..601 x 372..398) like Port and Password
     add_label(P, {393, 372, 531, 398}, "Difficulty", kGold, sui::kAlignRight);
     D.scaling_edit = add_edit(P, "founderscaling", {537, 373, 600, 397}, load_str("ui", "new_scaling", "100"), 3, !panel);
-    if (Win unit = add_label(P, {606, 372, 718, 398}, "% per extra seat", kDim)) {
+    if (Win unit = add_label(P, {606, 372, 718, 398}, "% per extra slot", kDim)) {
         use_small_font(unit);
         fit(unit, g_cache[unit]);
     }
@@ -1161,11 +1162,13 @@ static void build_dialog()
     auto& L = D.page_lobby;
     if (Win panel = sui::image_window(root, sui::fnv("lineages_lobby_panels"), sui::fnv("sporecoop"), 34, 156))
         L.push_back(panel);
-    D.next_seats_edit = add_edit(L,"nextseats",{40,496,82,528},"",1);
-    D.queue_seats = add_button(L,"queueseats",{88,493,274,531},T("Set Seats","Места"),[] {
+    // owner 2026-11-12: "Player Slots" with the count and an Apply button (more slots now, fewer from the next stage)
+    D.slots_label = add_label(L, {40, 496, 150, 528}, T("Player Slots", "Места"), kWhite);
+    D.next_seats_edit = add_edit(L,"nextseats",{152,496,194,528},"",1);
+    D.queue_seats = add_button(L,"queueseats",{198,493,302,531},T("Apply","Применить"),[] {
         auto value = sui::edit_text(D.next_seats_edit);
         if (value.size() != 1 || value[0] < '1' || value[0] > '4') {
-            set_status(T("Enter 1 to 4 seats.","Укажите от 1 до 4 мест."),kRed,8);
+            set_status(T("Enter 1 to 4 player slots.","Укажите от 1 до 4 мест."),kRed,8);
             return;
         }
         std::string message;
@@ -1254,7 +1257,7 @@ static void build_dialog()
             A.creation_cycle(1);
         g_dirty = true;
     });
-    D.space_btn = add_button(L, "space", {280, 493, 480, 531}, T("Space >", "Космос >"), [] {
+    D.space_btn = add_button(L, "space", {308, 493, 494, 531}, T("Space >", "Космос >"), [] {
         g_space_page = true;
         g_dirty = true;
     });
@@ -1264,7 +1267,13 @@ static void build_dialog()
         A.set_ready(!A.ready());
         g_dirty = true;
     });
-    D.share_btn = add_button(L, "share", {445, 212, 706, 248}, T("Send World", "Отправить мир"), [] {
+    // owner 2026-11-12: no "Send World" button any more (the world goes to every player by itself: on a join, a load and
+    // a stage change; `coop.share` stays for support). The button is the host's "Start Now" while a ready vote runs.
+    D.share_btn = add_button(L, "share", {445, 190, 706, 222}, T("Start Now", "Начать сейчас"), [] {
+        if (A.vote_active && A.vote_active()) {
+            A.share_world(); // during a vote: finish it now
+            return;
+        }
         int why = share_blocked();
         if (why) { // BUG-0597: say why nothing is sent (the button is greyed out, a locked click still comes here)
             set_status(why == 1 ? T("Start or load a game first: friends who join get it by themselves",
@@ -1522,7 +1531,7 @@ static void refresh_lobby()
         show(D.row_ready[i], have && vote);
         if (!have) {
             if (reserved) {
-                text(D.row_name[i], T("Reserved Seat", "Место в резерве"));
+                text(D.row_name[i], T("Open Slot", "Свободное место"));
                 color(D.row_name[i], kDim);
                 text(D.row_stage[i], T("Open", "Свободно"));
             }
@@ -1648,25 +1657,32 @@ static void refresh_lobby()
     show(D.ready_btn, vote);
     text(D.ready_btn, A.ready() ? T("Not Ready", "Не готов") : T("I'm Ready", "Я готов"));
     show(D.create_btn, late && !vote && !host && A.create_creature_offered && A.create_creature_offered());
-    show(D.share_btn, host);
-    // BUG-9111: the host's rows: Send World, Player Cells, Foreign Creations (or the vote's Ready)
+    // BUG-9111, owner 2026-11-12: the host's rows from the top: the vote's Start Now (only while a vote runs), Player
+    // Cells, Foreign Creations (hidden during a vote), the vote's Ready
+    const bool start_now = host && vote;
     const bool cells = host && A.lineage_cells;
-    sui::set_area(D.share_btn, host ? Rect{445, 190, 706, 222} : Rect{445, 212, 706, 248});
-    sui::set_area(D.ready_btn, host ? Rect{445, 258, 706, 290} : Rect{445, 249, 706, 285});
+    show(D.share_btn, start_now);
+    sui::set_area(D.share_btn, Rect{445, 190, 706, 222});
+    float row = 190;
+    auto next_row = [&row] { Rect r{445, row, 706, row + 32}; row += 34; return r; };
+    if (start_now) next_row();
     if (D.cells_btn) {
         show(D.cells_btn, cells);
+        if (cells) sui::set_area(D.cells_btn, next_row());
         text(D.cells_btn, A.lineage_cells && A.lineage_cells() ? T("Player Cells: On", "Клетки игроков: Вкл")
                                                                : T("Player Cells: Off", "Клетки игроков: Выкл"));
     }
-    // BUG-9105: hosts under Send World, guests in its place; the vote's Ready button takes the row
+    // BUG-9105: hosts in the next row, guests at the top of theirs; the vote's Ready button takes the row
     if (D.onward_btn) {
-        sui::set_area(D.onward_btn, host ? Rect{445, 258, 706, 290} : Rect{445, 212, 706, 248});
-        show(D.onward_btn, A.foreign_creations && !(host && vote));
+        const bool onward = A.foreign_creations && !(host && vote);
+        if (host && onward) sui::set_area(D.onward_btn, next_row());
+        else if (!host) sui::set_area(D.onward_btn, Rect{445, 212, 706, 248});
+        show(D.onward_btn, onward);
         text(D.onward_btn, A.foreign_creations && A.foreign_creations() ? T("Foreign Creations: On", "Чужие создания: Вкл")
                                                                         : T("Foreign Creations: Off", "Чужие создания: Выкл"));
     }
-    enable(D.share_btn, !share_why || !g_share_explain_fix);
-    text(D.share_btn, A.vote_active && A.vote_active() ? T("Start Now", "Начать сейчас") : T("Send World", "Отправить мир"));
+    sui::set_area(D.ready_btn, host ? next_row() : Rect{445, 249, 706, 285});
+    enable(D.share_btn, true);
     const auto leave_title = host ? T("Stop Hosting", "Закрыть игру") : T("Leave", "Выйти");
     text(D.leave_btn, leave_title);
     text(D.leave_caption, leave_title);
@@ -1804,8 +1820,17 @@ static void refresh()
          A.mode() == modes::kTribe || A.mode() == modes::kCiv);
     show(D.next_seats_edit,seat_controls);
     show(D.queue_seats,seat_controls);
-    // more seats apply at once, fewer from the next stage (world::set_seats, owner decision 2026-11-12); Space: next load
-    text(D.queue_seats,space ? T("Reload Seats","Места на загрузку") : T("Set Seats","Места"));
+    // more slots apply at once, fewer from the next stage (world::set_seats, owner decisions 2026-11-12); Space: next load
+    show(D.slots_label,seat_controls);
+    // the box shows the slots in use; a number typed in stays until Apply changes the count
+    if (seat_controls) {
+        const unsigned now_slots = A.seat_limit ? A.seat_limit() : 0;
+        if (now_slots >= 1 && now_slots <= 4 && now_slots != g_slots_shown) {
+            g_slots_shown = now_slots;
+            sui::set_edit_text(D.next_seats_edit, std::to_string(now_slots));
+        }
+    } else
+        g_slots_shown = 0;
     show(D.space_btn, (space || villages || nations) && !g_space_page);
     text(D.space_btn, nations ? "Nations >" : villages ? "Village >" : T("Space >", "Космос >"));
     if (!lobby || g_space_page) {
@@ -2052,10 +2077,10 @@ static const char* tip_for(const std::string& name)
         {"update", "Check or install updates", "Обновления"},
         {"optimal", "Steady world transfer", "Плавная передача"},
         {"fast", "Fastest world transfer", "Быстрая передача"},
-        {"seat1", "Seats for a new campaign", "Места в кампании"},
-        {"seat2", "Seats for a new campaign", "Места в кампании"},
-        {"seat3", "Seats for a new campaign", "Места в кампании"},
-        {"seat4", "Seats for a new campaign", "Места в кампании"},
+        {"seat1", "Player slots for a new campaign", "Места в кампании"},
+        {"seat2", "Player slots for a new campaign", "Места в кампании"},
+        {"seat3", "Player slots for a new campaign", "Места в кампании"},
+        {"seat4", "Player slots for a new campaign", "Места в кампании"},
         {"hideaddress", "Show or hide", "Показать / скрыть"},
         {"hidejoinport", "Show or hide", "Показать / скрыть"},
         {"hidejoinpassword", "Show or hide", "Показать / скрыть"},
@@ -2063,7 +2088,7 @@ static const char* tip_for(const std::string& name)
         {"hidehostpassword", "Show or hide", "Показать / скрыть"},
         {"hidehostaddresses", "Show or hide addresses", "Показать / скрыть адреса"},
         {"copyinvite", "Copy your address for friends", "Копировать адрес"},
-        {"queueseats", "Seats for the next stage", "Места на этап"},
+        {"queueseats", "Apply: more slots now, fewer from the next stage", "Применить: больше мест сразу, меньше со следующего этапа"},
         {"chatup", "Older messages", "Ранние сообщения"},
         {"chatdown", "Newer messages", "Новые сообщения"},
         {"cprev", "Previous creation", "Предыдущее создание"},

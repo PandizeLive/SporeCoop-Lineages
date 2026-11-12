@@ -69,7 +69,7 @@ def main():
         print('PASS cold offline turret, wall slot, base max and wounded HP',saved,native_hp,flush=True)
         if args.battle:
             command(peer,'coop.host 47812 WallBattleHost')
-            assert 'Reserved founders: 4,' in command(peer,'coop.status')
+            assert 'Player slots: 4,' in command(peer,'coop.status')
             dismiss_registration(peer)
             dismiss_service_error(peer)
             for wid in ('0445C99D','062EF353'): button(peer,wid)
@@ -114,7 +114,7 @@ def main():
     rival_vehicle = int(re.search(rf'veh #\d+ ([0-9A-F]+) pol={faction:08X} ',rows,re.I)[1],16)
     vehicle_vanilla = hit(peer,rival_vehicle,target)
     command(peer,'coop.host 47812 TurretHost')
-    assert 'Reserved founders: 4,' in command(peer,'coop.status')
+    assert 'Player slots: 4,' in command(peer,'coop.status')
     command(peer,'wait.frames 100 20000')
     guest = Console(args.guest) if args.guest else None
     mirror = None
@@ -122,7 +122,7 @@ def main():
         assert 'duoqa' in command(guest,'coop.savedb').lower()
         command(guest,'coop.join 127.0.0.1:47812 TurretGuest')
         wait_until(lambda: 'Civ' in command(guest,'game.mode') and
-                   'Host campaign rules: 4 reserved founders' in command(guest,'coop.status'),
+                   'Host campaign rules: 4 player slots' in command(guest,'coop.status'),
                    'Guest did not enter four-seat campaign',100)
         vehicle_id = re.search(rf'veh #(\d+) 0*{target:X} ',command(peer,'coop.civ'),re.I)[1]
         def target_mirror():

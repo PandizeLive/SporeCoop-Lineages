@@ -1548,12 +1548,12 @@ static bool apply_saved_rules(net::Session& session, const std::string& key, std
         g_campaign_setup.status.clear();
         return true;
     case founders::RulesFile::Unreadable:
-        error = "Cannot read this planet's reserved founders. Restore its campaign settings before hosting it.";
+        error = "Cannot read this planet's player slots. Restore its campaign settings before hosting it.";
         return false;
     case founders::RulesFile::Saved:
         for (const auto& p : session.players()) {
             if (p.id >= plan.seats_in(stage,rules.seats)) {
-                error = "This saved campaign has fewer reserved founders than the current lobby. Rehost from this planet.";
+                error = "This save has fewer player slots than players connected. Rehost from this planet.";
                 return false;
             }
         }
@@ -1571,7 +1571,7 @@ static bool apply_saved_rules(net::Session& session, const std::string& key, std
             invalidate_campaign_rules();
         }
         session.seat_limit = rules.seats;
-        g_campaign_setup.status = "Reserved founders: " + std::to_string(rules.seats) +
+        g_campaign_setup.status = "Player slots: " + std::to_string(rules.seats) +
             ", difficulty scaling " + std::to_string(rules.difficulty_percent) + "%" +
             ", city takeover effort " + std::to_string(rules.takeover_percent()) + "%";
         if (plan.next_seats)
@@ -1610,7 +1610,7 @@ bool setup_campaign(net::Session& session, const founders::CampaignRules& reques
     }
     g_campaign_setup.menu_slot = lowercase(slot);
     session.seat_limit = requested.seats;
-    g_campaign_setup.status = "New campaign reserves " + std::to_string(requested.seats) + " founder(s).";
+    g_campaign_setup.status = "New campaign: " + std::to_string(requested.seats) + " player slot(s).";
     return true;
 }
 
@@ -1665,13 +1665,13 @@ void campaign_guest_joined(net::Session& session)
 bool change_seats(net::Session& session, unsigned seats, std::string& message)
 {
     if (session.role() != net::Role::Host || !in_stage(game::mode_id())) {
-        message = "Only the host of an open campaign can queue its reserved seats.";
+        message = "Only the host of an open campaign can change its player slots.";
         return false;
     }
     const auto key = current_game_key();
     const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
     for (const auto& p : session.players()) {
-        if (p.id >= seats) { message = "A connected founder needs one of those seats."; return false; }
+        if (p.id >= seats) { message = "A connected player needs one of those slots."; return false; }
     }
     if (seats < 1 || seats > 4 || !founders::queue_seats(key,uint8_t(seats),stage,message)) return false;
     g_loaded_campaign.clear(); // a load before the host's request cannot activate it
@@ -1687,12 +1687,12 @@ bool raise_seats_now(net::Session& session, unsigned seats, std::string& message
 {
     const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
     if (session.role() != net::Role::Host || !in_stage(game::mode_id()) || stage > 4) {
-        message = "Only the host of an open campaign in Cell, Creature, Tribal or Civilization can add seats now.";
+        message = "Only the host of an open campaign in Cell, Creature, Tribal or Civilization can add slots now.";
         return false;
     }
     if (seats < 1 || seats > 4 || !founders::raise_seats(current_game_key(),uint8_t(seats),stage,message)) return false;
     if (!apply_saved_rules(session,current_game_key(),message)) return false;
-    message = g_campaign_setup.status + " (added now)";
+    message = g_campaign_setup.status + " (applied now)";
     return true;
 }
 
@@ -2415,7 +2415,7 @@ std::string status()
 {
     std::string s = g_campaign_setup.status.empty() ? "" : g_campaign_setup.status + "\n";
     if (g_remote_rules.world && g_remote_rules.world == modes::current_world() && g_remote_rules.mode == game::mode_id())
-        s += "Host campaign rules: " + std::to_string(g_remote_rules.rules.seats) + " reserved founders.\n" +
+        s += "Host campaign rules: " + std::to_string(g_remote_rules.rules.seats) + " player slots.\n" +
              "Host city takeover effort: " + std::to_string(g_remote_rules.rules.takeover_percent()) + "%\n";
     if (!g_intro_planet.empty() && g_via_menu.on && g_via_menu.share && g_via_menu.planet == g_intro_planet)
         s += "shared orbital save waiting for your first flight\n";

@@ -58,7 +58,7 @@ def main():
     for peer in (host,guest):
         assert 'duoqa' in command(peer,'coop.savedb').lower()
         assert "world 'Clyth.spo'" in command(peer,'coop.avatar')
-    assert 'Reserved founders: 4,' in command(host,'coop.status')
+    assert 'Player slots: 4,' in command(host,'coop.status')
     rows = cities(host)
     home = next(row for row in rows if row[3] == 0)
     rival = next(row for row in rows if row[3] == -1)
