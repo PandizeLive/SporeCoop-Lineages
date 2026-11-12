@@ -3208,7 +3208,8 @@ static void bind_founder_identities(const std::string& planet)
 // asynchronous) the only new blank nation is bound to the seat. One seat at a time, in seat order.
 enum class FoundStep { Idle, Busy, Bound };
 static FoundStep found_next_capital(const std::string& planet, void* home, const founders::Roster& tribal,
-                                    const founders::Roster& current, const founders::Outfits* outfits, const std::string& outfit_error)
+                                    const founders::Roster current, // a copy: g_founder_nations changes below
+                                    const founders::Outfits* outfits, const std::string& outfit_error)
 {
     const int seat = civ_seats::next_capital_seat(current.seats(), tribal.seats());
     if (seat < 0) return FoundStep::Idle;
