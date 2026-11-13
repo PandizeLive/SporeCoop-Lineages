@@ -3,9 +3,10 @@
 #   tools/qa_win/msi.ps1 start      start Spore there in the logged-on desktop (scheduled task, profile MSIGuest)
 #   tools/qa_win/msi.ps1 stop       close our test games there (profile MSIGuest only, never a Spore the owner started)
 #   tools/qa_win/msi.ps1 tunnel     keep local TCP 47850 -> the MSI's console (127.0.0.1:47800); runs until closed
+#   -Instance 2 (start, stop, tunnel): a second test game on the MSI (its own profile, console 47801, tunnel 47851)
 # The first deploy of a day backs up the MSI's files to C:\temp\sporecoop-msi-backup-<date>.
 param([Parameter(Mandatory)][ValidateSet('deploy', 'start', 'stop', 'tunnel')][string]$Action,
-      [string]$Resolution = '1280x960', [string]$Profile = 'MSIGuest')
+      [string]$Resolution = '1280x960', [string]$Profile = 'MSIGuest', [int]$Instance = 1)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $game = 'C:\Program Files (x86)\Steam\steamapps\common\spore 24720\SporebinEP1'
@@ -41,16 +42,16 @@ Copy-Item C:\temp\sporecoop-msi-in\overrides_dc04aee5.sym "`$d\mods\sporekit\sym
     'start' {
         # a game started from the SSH shell has no desktop: a scheduled task runs it in the logged-on session. Its own
         # trigger lies in the past, so it never starts Spore by itself (a 23:59 trigger once did); /run starts it.
-        $cmd = "@echo off`r`nset SteamAppId=24720`r`nset SteamGameId=24720`r`ncd /d `"$game`"`r`nstart `"`" SporeApp.exe -w -r:$Resolution -sporekit-profile:$Profile -sporekit-instance:1`r`n"
-        $tmp = Join-Path $env:TEMP 'spore-msi-test.cmd'; [IO.File]::WriteAllText($tmp, $cmd)
-        scp -o BatchMode=yes $tmp msi:C:/temp/spore-msi-test.cmd | Out-Null
-        Invoke-Msi 'start' @'
-schtasks /create /tn SporeCoopMSITest /tr C:\temp\spore-msi-test.cmd /sc once /sd 01/01/2020 /st 00:00 /it /f 2>$null | Out-Null
-schtasks /run /tn SporeCoopMSITest | Out-Null
+        $cmd = "@echo off`r`nset SteamAppId=24720`r`nset SteamGameId=24720`r`ncd /d `"$game`"`r`nstart `"`" SporeApp.exe -w -r:$Resolution -sporekit-profile:$Profile -sporekit-instance:$Instance`r`n"
+        $tmp = Join-Path $env:TEMP "spore-msi-test$Instance.cmd"; [IO.File]::WriteAllText($tmp, $cmd)
+        scp -o BatchMode=yes $tmp "msi:C:/temp/spore-msi-test$Instance.cmd" | Out-Null
+        Invoke-Msi 'start' @"
+schtasks /create /tn SporeCoopMSITest$Instance /tr C:\temp\spore-msi-test$Instance.cmd /sc once /sd 01/01/2020 /st 00:00 /it /f 2>`$null | Out-Null
+schtasks /run /tn SporeCoopMSITest$Instance | Out-Null
 Start-Sleep 15
-$c = Get-NetTCPConnection -State Listen -LocalPort 47800 -ErrorAction SilentlyContinue
-if ($c) { 'console up, pid ' + $c[0].OwningProcess } else { 'console not up yet' }
-'@
+`$c = Get-NetTCPConnection -State Listen -LocalPort $(47799 + $Instance) -ErrorAction SilentlyContinue
+if (`$c) { 'console up, pid ' + `$c[0].OwningProcess } else { 'console not up yet' }
+"@
     }
     'stop' {
         Invoke-Msi 'stop' @"
@@ -58,5 +59,5 @@ Get-CimInstance Win32_Process | Where-Object { `$_.Name -eq 'SporeApp.exe' -and 
     ForEach-Object { Stop-Process -Id `$_.ProcessId -Force; 'stopped ' + `$_.ProcessId }
 "@
     }
-    'tunnel' { ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -N -L 47850:127.0.0.1:47800 msi }
+    'tunnel' { ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -N -L "$(47849 + $Instance):127.0.0.1:$(47799 + $Instance)" msi }
 }

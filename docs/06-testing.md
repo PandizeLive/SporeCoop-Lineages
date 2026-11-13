@@ -5277,3 +5277,15 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   known symbol (often far away: "Tribe_SetChieftain+0x861" was C90741). `dis.py <game> calls <crash base> <addr>...`
   keeps the entries with a call right before them and prints the call targets: crash-20261112-140751 became
   TribalGame_HandleMessage -> CD5190 -> CCC580 -> CC95E0 -> C90730 -> 8E8230 (docs/re/tribe.md#tribe-guest-own-player-village).
+
+## Two test games on the MSI; TITAN games that will not start (2026-11-12, feat/lineages-47)
+<a id="testing-msi-two-games"></a>
+
+* `tools/qa_win/msi.ps1 start -Instance 2 -Profile MSIHost -Resolution 800x600` starts a second game on the MSI (its
+  scheduled task and command file carry the instance number); `msi.ps1 tunnel -Instance 2` forwards local 47851 to its
+  console 47801; `qa.py msi2 <command>` talks to it. The MSI host and guest join on 127.0.0.1. Used for BUG-9156
+  (spectating) with a copy of the DuoQACreatureHost test profile on the MSI as SporeKit-MSIHost.
+* Seen 2026-11-12 19:12-19:23 on TITAN: every QA game ended at once with "App::cSporeApp::Init returned 0" (every
+  profile), after the PC woke from sleep (Kernel-Power 17:55), a Windows Update install (18:11), a Steam restart (19:08,
+  logged on) and a network change to a phone hotspot; the Intel UHD adapter showed Error in Device Manager. Not a mod
+  problem (the mod's start is complete before it); a restart of the PC is the likely fix (not done: the owner's PC).

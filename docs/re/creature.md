@@ -3232,6 +3232,11 @@ BUG-9156, switches `creature.downed_pose`, `creature.spectate`.
 * ✔ (live) Turning the viewer's rows (right, forward, up) by the planet rotation split the picture: objects drew at the
   new angle, the planet's surface and sky at the old one. Sliding the position row of the viewer (+0x30) and of the
   render camera's frame (viewer +0x170, +0x30) keeps it whole; the partner stood at the screen centre 99 m away.
-* ~ Far from the own creature the ground under the partner draws faintly (pink sky colour where the terrain is): the
-  terrain's detail follows the real camera. Plants, creatures and objects draw.
+* ~ superseded (2026-11-12): see the CORRECTION below. Far from the own creature the ground under the partner drew
+  faintly (pink sky colour where the terrain is): the terrain's detail follows the real camera.
+* CORRECTION (2026-11-12, feat/lineages-47): the camera is no longer moved after its update. The follow camera's update
+  (cCameraManager::Update) runs with the partner's puppet as mpAvatar (noun manager +0x54, game::run_as_avatar, the NPC
+  tick's swap with its guard and the tuning loan), so the camera, the terrain's detail and the sky come from one pose.
+  ✔ (live, two games on the MSI) the host's creature 95 m away at the screen centre on solid ground; when the window
+  ended the camera was back on the own creature (the death caption); 0 faults on both games.
 * ? No native red / low-health vignette is known; a red screen edge is drawn by the mod (ring_timer::vignette).

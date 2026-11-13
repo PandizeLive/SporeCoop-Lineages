@@ -8,6 +8,7 @@ Background and pitfalls: docs/06-testing.md#testing-two-pc-msi.
 |---|---|
 | `qa.py <instance or msi> <command>` | One console command to a QA game on this PC, or to the MSI through the tunnel. Refuses a port that is not a QA game / the tunnel. |
 | `launch.ps1 -Instance N -Profile P [-Resolution WxH]` | Starts a QA game (800x600 by default; 5 FPS from the QA copy's sporekit.ini). |
+| `msi.ps1 ... -Instance 2` / `qa.py msi2 <command>` | A second test game on the MSI (its own profile, console 47801, tunnel 47851): a host and a guest on one PC. |
 | `msi.ps1 deploy / start / stop / tunnel` | Copies the build to the MSI, starts or stops Spore there, opens the console tunnel. |
 | `respawn_fade.py <dier> <watcher>...` | Cell: a respawn must not darken the other screens (BUG-9122). |
 | `dis.py <instance or msi> dis <address> [bytes]` / `calls <crash base> <addr>...` | Game code read from a running game and disassembled (no Ghidra here); a crash's stack scan reduced to real call sites. |

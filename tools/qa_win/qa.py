@@ -42,11 +42,12 @@ def owner_path(port):
 
 def console(target):
     """a Console for instance number `target` (int / digit string) or 'msi'; raises SystemExit when unsafe"""
-    if str(target).lower() == 'msi':
-        path = owner_path(MSI_PORT)
+    if str(target).lower() in ('msi', 'msi2'):  # msi2: the MSI's second test game (msi.ps1 -Instance 2)
+        port = MSI_PORT + (1 if str(target).lower() == 'msi2' else 0)
+        path = owner_path(port)
         if not path or not path.lower().endswith('ssh.exe'):
-            sys.exit('[refused] port %d is not the MSI tunnel (%s): start it with tools/qa_win/msi.ps1 tunnel' % (MSI_PORT, path))
-        return Console(MSI_PORT - 47800 + 1)
+            sys.exit('[refused] port %d is not the MSI tunnel (%s): start it with tools/qa_win/msi.ps1 tunnel' % (port, path))
+        return Console(port - 47800 + 1)
     inst = int(target)
     path = owner_path(47800 + inst - 1)
     exe = os.path.normcase(os.path.join(QA_COPY, 'SporebinEP1', 'SporeApp.exe'))

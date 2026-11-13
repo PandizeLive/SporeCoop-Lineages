@@ -3953,18 +3953,14 @@ static void spectate_tick()
     }
 }
 
-// fov's camera move: from the own creature to the followed partner
-static bool spectate_offset(float from[3], float to[3])
+// fov's camera target: the followed partner's puppet (null: the own creature)
+static void* spectate_target()
 {
-    if (!spectating() || g_spec_id == 0xFF) return false;
+    if (!spectating() || g_spec_id == 0xFF) return nullptr;
     auto it = g_remotes.find(g_spec_id);
-    if (it == g_remotes.end() || !it->second.puppet || !it->second.puppet_adapter) return false;
-    const net::Vec3 p = modes::entity_pos(it->second.puppet_adapter, it->second.puppet);
-    const net::Vec3 me = modes::entity_pos(g_adapter, g_local);
-    if (!std::isfinite(p.x) || !std::isfinite(me.x) || net::dist(p, me) > 2000) return false;
-    from[0] = me.x; from[1] = me.y; from[2] = me.z;
-    to[0] = p.x; to[1] = p.y; to[2] = p.z;
-    return true;
+    if (it == g_remotes.end() || !it->second.puppet || !it->second.puppet_adapter ||
+        !creature_puppet(it->second.puppet_adapter) || !game::creature_listed(it->second.puppet)) return nullptr;
+    return it->second.puppet;
 }
 
 static void draw_spectate(int sw, int sh, int y)
@@ -6389,7 +6385,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         if (!editor_depth::init(H, M)) LOG("editor depth handle: symbols missing, off");
     }
     if (build_id() == 0xDC04AEE5u)
-        fov::set_camera_offset(spectate_offset); // BUG-9156
+        fov::set_camera_target(spectate_target); // BUG-9156
         fov::init(H, M, [] {
             // Creature can pause its simulation without taking away the follow camera.
             return (game_busy() & ~busy::kPaused) == 0 && !coop_ui::is_open();

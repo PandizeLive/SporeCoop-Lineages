@@ -996,6 +996,29 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
     g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
 }
 
+void run_as_avatar(void* t, void (*fn)(void*), void* ctx)
+{
+    void* nm = t && !g_swap_real ? cdecl_call<void*>(a_NounGet) : nullptr;
+    void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
+    if (!real || t == real || !creature_listed(t)) {
+        fn(ctx);
+        return;
+    }
+    g_swap_real = real;
+    g_swap_puppet = t;
+    field<void*>(nm, kNounAvatarOff) = t;
+    void*& tun = field<void*>(t, 0xE84);
+    void* lent = !tun ? field<void*>(real, 0xE84) : nullptr;
+    if (lent)
+        tun = lent;
+    g_swap_lent = lent;
+    fn(ctx);
+    if (lent && tun == lent)
+        tun = nullptr;
+    field<void*>(nm, kNounAvatarOff) = real;
+    g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
+}
+
 // A fault inside o_NPCTickAI that the game's own handler catches unwinds past h_NPCTickAI: the
 // restore above never runs, the puppet stays the game's avatar (mpAvatar), game::avatar() returns
 // the stale real avatar for good and no NPC targets a partner again (BUG-0110). Called once per

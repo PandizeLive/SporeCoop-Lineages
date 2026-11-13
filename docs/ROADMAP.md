@@ -116,6 +116,21 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 
 The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-no-own-villages-three-players.md.
 
+## Playthrough status, 2-4 players (2026-11-12, asked by the owner)
+
+| Stage | Playable now | Needed for a full playthrough |
+|---|---|---|
+| Cell | together, revive ring, respawns | spectating while downed (not built there) |
+| Creature | own nest and pack per player, best-friend partners, nests migrate together, revive ring (60 s), debt bar, downed pose and spectating (BUG-9156) | personal evolving (the native cocoon, own editor through the mating call, personal DNA, migration together after a 10 s warning: 2D-2G), BUG-9151 |
+| Tribe | own village per player played with the game's own controls, hut menu and planner (BUG-9152, BUG-9153), camera starts at home, food share and gifts (BUG-9154), party wipe (BUG-9155), late join with a stand-in village (BUG-9150), revive ring | guest villager cards select reliably, each right-click action confirmed live, BUG-9147 (the host's last villager not knocked out: game over), the red debt marker in Tribe, the editor first for a joiner without a creature (2M) |
+| Tribe -> Civ | four founders graduate, one capital each (phase 5) | - |
+| Civ | own capital and nation per player, late capitals caught up | the party wipe in Civ (the newest captured city goes back), the late joiner's loading screen (1P), the editor first for a joiner without a creature |
+| Space | the party shares one empire (today's co-op) | phase 6: own empires (1X), the shared protected homeworld (2N, checked first), launching together (2J), progress per player (2A), enemies run by whoever is there (1Z), difficulty per party (2B), the Galactic Core per party (2C) |
+| Adventures | playable | adventure creatures run by the host (BUG-9114, phase 7) |
+| Everywhere | 4 player slots, identities, rejoin keeps the seat | publish Lineages 54 (1A; nothing pushed yet), a rejoin loads the world twice |
+
+Order proposed: finish Tribe, Creature evolving, the Civ wipe and loading screen, Space (phase 6), release.
+
 ## Decided (2026-11-12)
 
 * Phases 2-5 are built on the phase 0 foundation, not by patching the two-player code in place (owner: "1A").
@@ -152,7 +167,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1T | The "Give To" button | B, removed (BUG-9148) |
 | 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A; changed by the owner 2026-11-12: it applies when any one player's whole village is wiped out (not rescued in time), and the loss hits the whole party ("a players whole tribe causes the loss of progression for both players, encouraging rescues"); built in Tribe 2026-11-12 (BUG-9155, live by test command); Civ and the red marker in Tribe not yet |
 | 1V | Downed: the creature plays its native dying pose while downed | A; built in Creature / Adventure 2026-11-12 (BUG-9156, live) |
-| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows; built in Creature / Adventure 2026-11-12 (BUG-9156, live; far ground draws faintly); Cell, Tribe, Space not yet |
+| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows; built in Creature / Adventure 2026-11-12 (BUG-9156, live); Cell, Tribe, Space not yet |
 | 1X | Space: what a player owns | A (owner: "A party will always progress together and share.") |
 | 1Y | Space: what phase 6 builds now | A; owner asked how an empire works for a planet that solo players leave (see 2N) |
 | 1Z | Space: who runs the enemies in a star system | A |
