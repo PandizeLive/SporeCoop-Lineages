@@ -232,8 +232,9 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2Y | The ring of old player nests round the host's nest (left by the old keys: one more nest per rejoin): A the host removes, once per save, the nests the mod made for players that belong to no seat any more; B leave them | A (owner 2026-11-13: "2YA") |
 | 2Z | Next after the evolving fixes (2026-11-13): A a short check of Tribe and Civ with the new species keys (founder seats, stand-ins, the right-click orders), then the push (2R B), then Space (phase 6); B Space now; C the push now, then Space | A (owner 2026-11-13: "2ZA") |
 | 3A | The 2Z A check found a guest's native game over in Tribe (BUG-9183) and could not test the right-click orders (the test save worn out): A fix the guest's game over and test the orders on a fresh copy of the owner's Jiff save, then push, then Space; B push now, fix after; C Space now | A (owner 2026-11-13: "3AA"). Done 2026-11-13: the guest's game holds the event (BUG-9183, not reproducible on demand); the orders on a fresh copy: Party was refused by the host and is fixed with Hunt (BUG-9185); BUG-9184 found |
+| 3B | After the 3A A work (pushed 2026-11-13): A start Space (phase 6) with a Space-ready 3-4 founder save built first; B chase the host's own Tribe game over first (BUG-9184, waits for it to happen again with the new cinematic log); C the owner plays Tribe live first (hunt, gift, attack, raid by right-click from a guest) | open |
 
-Next free ID: 3B. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
+Next free ID: 3C. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
 
 Answers of 2026-11-12 (1X-2M), notes:
 * 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species
