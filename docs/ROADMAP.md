@@ -112,6 +112,19 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 | 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built and live-tested 2026-11-12: a native Tribe -> Civ graduation with four founder villages (TITAN host + 2 TITAN guests + the MSI) founded one capital per founder seat, each with its own species and commanded by its own player, on every game; 0 faults. (docs/re/civ.md#civ-four-founders-live) |
 | 6 | Space: the personal launch per seat. | planned; survey 2026-11-13 below |
 | 1b | Stable species keys per identity (a partner's creature keeps its key across rejoins under another network id). Review 2026-11-13 (decision 2S): widen to one key per player creature on every game (a guest's own key and the host's key of it are two species there: the cause of BUG-9169, BUG-9173, BUG-9175's herd, BUG-9176); recommended before more Creature features. | planned |
+
+1b design (2026-11-13, decision 2V A; the choice in 2X). Today a player's creation has two keys: its own My Creations
+key on its own game (2920408F) and 0x7C000000 | fnv(owner's network id, content hash) on every other game
+(creations.cpp shared_instance), so the key also changes with the network id. Two keys made: the host's copies of a
+guest's family another species on the guest (BUG-9169 converts them every second), a herd of the wrong species, "your
+species is extinct" (BUG-9176), a new nest each session (BUG-9173). Plan A: the owner computes its creation's shared key
+from its persistent identity (identity.h, not the network id) and the content hash, sends it in the bundle, and plays
+that key itself (its records registered under it, as every other game does); older partners keep today's key. Then
+removed: npc own_family_tick (BUG-9169), the nest note (BUG-9173, kept one release to migrate old saves), BUG-9176.
+Kept (not about keys): the player species (BUG-9177), the mate offer (BUG-9174: copies' AI never answers), the direct
+mating (BUG-9175). Tests: a guest rejoining under another network id keeps its key and nest; its family on its game is
+its species with no conversion; an old save's seat nest is taken over once; the host's save loads on a guest.
+
 | 7 | Adventure creatures simulated by the host (BUG-9114). | waiting (needs clicks on the owner's PC or the MSI) |
 
 The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-no-own-villages-three-players.md.
@@ -208,10 +221,11 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2S | The stalled guest mating (BUG-9175): A fix it before Space; B Space first | A (owner 2026-11-13: "This plus the stall needs to be fixed. Investigate if we're over engineering and if it'd be easier to redo anything with what you know now. Let's actively prevent spaghetti coding.") |
 | 2T | After the guest mating fix (2026-11-13): A one species key per player creature first (roadmap 1b widened: removes the two-key patches and BUG-9176), then Space; B Space now (2Q B), 1b later; C the owner's live check of the mating first | A (owner 2026-11-13; first the mate's hover card checked with the real mouse on TITAN: "We need this solved.") |
 | 2U | Copy the new SporeCoop.package into the owner's Steam Spore install (TITAN's QA games read it): A yes; B no | A (owner 2026-11-13: "Yes"; asked without its ID at the time; the old file in out/owner-install-backup/) |
-| 2V | After the downed-box check (2026-11-13): A the 1b cleanup (2T A: remove the patches the player-species fix made redundant); B the player list's name wrap and the downed box in Cell / Adventure first | asked 2026-11-13 (asked without its ID at the time) |
-| 2W | Copy the package with the brighter buttons (BUG-9179) into the owner's Steam Spore install too: A yes; B no (TITAN keeps the game's look until the next install) | asked 2026-11-13 |
+| 2V | After the downed-box check (2026-11-13): A the 1b cleanup (2T A: remove the patches the player-species fix made redundant); B the player list's name wrap and the downed box in Cell / Adventure first | A (owner 2026-11-13: "2VA"; asked without its ID at the time) |
+| 2W | Copy the package with the brighter buttons (BUG-9179) into the owner's Steam Spore install too: A yes; B no (TITAN keeps the game's look until the next install) | A (owner 2026-11-13: "2WA") |
+| 2X | 1b, how far (2026-11-13): A one key per player creation on every game, the owner's own game included, made from the owner's persistent identity (removes BUG-9169's copy conversion, BUG-9173's nest note after one migration, BUG-9176); B keys only stable across rejoins (the owner's own game keeps its own key: BUG-9169 and BUG-9176 stay); C Space first, 1b later | asked 2026-11-13 |
 
-Next free ID: 2Q.
+Next free ID: 2Y. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
 
 Answers of 2026-11-12 (1X-2M), notes:
 * 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species
