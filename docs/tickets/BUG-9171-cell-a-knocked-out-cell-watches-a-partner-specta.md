@@ -40,8 +40,9 @@ edge, "SPECTATING < name >", GIVE UP, the ring at the bottom; cellsync own_down 
 own_revive / set_box_shown; the cell's own ring and SPECTATING line are not drawn while the box is up). Live on TITAN
 with the MSI in the session: the box watching MSIGuest, then CellHost when the MSI's cell was knocked out too (only
 standing partners are watched). The red button's "GIVE UP" caption was hidden under the button in Cell; it is now put
-in front twice a second while the screen is up (coop_ui set_downed_hud): seen with its caption after that. Not seen:
-an arrow press switching partners (only one standing partner at the time).
+in front twice a second while the screen is up (coop_ui set_downed_hud): seen with its caption after that. Then with
+both partners standing: ">" (a click on the native button) "partner=2 'MSIGuest' ... switches=1", "<" back to "partner=0
+'CellHost' ... switches=2", the camera following each.
 
 ## History
 - 2026-11-13: opened.
