@@ -23,6 +23,8 @@
   editor first; what they save is their creature, with its own nest (BUG-9164).
 - Creature: a guest keeps their own DNA when the host's world is loaded again
   (BUG-9165).
+- Creature: a partner who evolves keeps their nest; its family takes the new
+  species (no second nest, no world reload) (BUG-9151).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

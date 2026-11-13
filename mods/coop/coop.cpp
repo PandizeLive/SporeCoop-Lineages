@@ -1178,8 +1178,8 @@ static double g_own_dna_written_at = -100;
 static float g_own_dna_written = -1;
 static void own_dna_tick(double now)
 {
-    if (!g_keep_own_dna || !personal_dna() || g_sess.role() != net::Role::Client || !g_world || !game::avatar() ||
-        game_busy() || mode_switch_pending())
+    // recorded while busy too (the cocoon, a cinematic after the own editor): only the put-back waits for a standing avatar
+    if (!g_keep_own_dna || !personal_dna() || g_sess.role() != net::Role::Client || !g_world || !game::avatar())
         return;
     const uint32_t epoch = game::stage_epoch(modes::kCreature);
     if (g_own_dna_world != g_world) { // first sight of this world: the note of an earlier session, if any
@@ -1192,6 +1192,8 @@ static void own_dna_tick(double now)
         g_own_dna_written = g_own_dna;
     }
     if (epoch != g_own_dna_epoch) {
+        if (game_busy() || mode_switch_pending())
+            return; // a new copy of the world: nothing recorded from it until the own DNA is back
         if (g_own_dna >= 0 && std::fabs(game::dna() - g_own_dna) > 0.5f) {
             LOG("dna: own DNA %.0f put back after a load of the world (the save had %.0f, BUG-9165)", g_own_dna, game::dna());
             game::dna_sync_raw(g_own_dna, game::evolution_bar());
@@ -6642,7 +6644,8 @@ void support_init()
     p.dna = [](float& v) {
         if (!game::avatar() || g_mode != modes::kCreature)
             return false;
-        v = game::dna();
+        // BUG-9162: with personal DNA each player's budget is their own; the party's progress bar is what must agree
+        v = personal_dna() ? game::evolution_bar() : game::dna();
         return true;
     };
     p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };

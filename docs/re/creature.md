@@ -3307,4 +3307,9 @@ own back (3 s later). The load also sets the guest's spendable DNA from the host
 game::stage_epoch(kCreature) changes with that load and not with an editor visit, which tells a reload from an own
 editor's spend. A fresh profile shows the game's online account box over the stage (Close, then OK; "Don't prompt me
 again" keeps it away).
+✔ (runtime, BUG-9151) A partner's nest on the host follows its evolution: the herd's +0xA4 profile pointer set to the new
+species and the members' SetSpecies(profile, age, true) kept the nest at its place; the next host_tick found it by the new
+species (no second nest). On the player's own game the same +0xA4 change stopped the mate offer (BUG-9161), so it is done
+for partners' nests on the host only. The editor's complexity meter (the dotted bar top right) full: a dragged part
+snaps back (no cost); remove or move a part instead (QA).
 

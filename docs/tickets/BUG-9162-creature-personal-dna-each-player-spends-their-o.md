@@ -32,3 +32,7 @@ no-fail-run: a feature. Live 2026-11-13, TITAN host + guest, `call Simulator::cC
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: the sync check compared the DNA budgets and reported "MISMATCH ... dna: host 398.0, guest 250.0" for a
+  guest that had spent its own; with personal DNA it compares the party's progress bar (coop.cpp p.dna). Live: OK with
+  both guests after that.
+

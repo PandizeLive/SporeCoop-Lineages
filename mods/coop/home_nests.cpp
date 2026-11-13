@@ -40,7 +40,14 @@ struct SeatNest {
 static std::array<SeatNest, founders::kMaxSeats> g_nests;
 static double g_next;
 static bool g_queued;
-static uint32_t g_made, g_failed, g_rebuilt, g_ally_set, g_shares;
+static uint32_t g_made, g_failed, g_rebuilt, g_ally_set, g_shares, g_followed, g_follow_members;
+// BUG-9151: a player who evolves (or picks another creature of their own) keeps their nest: the herd (+0xA4) and its
+// family take the new species in place, as the game's own evolution does with the player's family (the guest's game
+// mirrors these members). Before, the host found no nest of the new species, built a second one elsewhere, left the old
+// one standing as an AI nest of the old body and sent the whole world again. Off: a new nest (0.7.8).
+static bool g_follow = true;
+COOP_FIX("creature.nest_follows_evolution", "BUG-9151", g_follow,
+         "creature: a partner who evolves keeps their nest; its herd and family take the new species (no second nest, no world resend)");
 static std::string g_last;
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
@@ -210,6 +217,57 @@ static void make_nest(void* ctx)
     }
 }
 
+// seat `ctx`'s nest takes its player's new species (outside the frame: SetSpecies rebuilds models)
+static void follow_species(void* ctx)
+{
+    const int seat = (int)(intptr_t)ctx;
+    g_queued = false;
+    if (!g_fix || !g_follow || !is_host() || !game::in_creature_stage() || game::cinematic_playing() || world::load_queued())
+        return;
+    const auto& roster = party::roster();
+    if (seat <= 0 || seat >= (int)roster.seats.size() || seat >= (int)g_nests.size())
+        return;
+    SeatNest& n = g_nests[seat];
+    const uint32_t species = roster.seats[seat].species;
+    void* profile = species ? game::species_by_key({species, kCrtType, kCrtGroup}) : nullptr;
+    net::Vec3 at;
+    if (!profile || !n.species || n.species == species || !nest_pos_of(n.herd, at))
+        return;
+    void* old_profile = game::herd_species(n.herd);
+    skg::field<void*>(n.herd, 0xA4) = profile; // the herd's species (a cSpeciesProfile of the species manager)
+    static const uintptr_t set_species = H->sym("Simulator::cCreatureAnimal::SetSpecies");
+    struct X {
+        void *herd, *prof;
+        uintptr_t set;
+        uint32_t changed;
+    } x{n.herd, profile, set_species, 0};
+    if (set_species)
+        game::for_each_object([](void* creature, uint32_t noun, void* p) {
+            auto& x = *static_cast<X*>(p);
+            if (noun != 0x18EB45Eu || game::is_puppet(creature) || !game::object_alive(creature) || game::is_dead(creature) ||
+                game::herd_of(creature) != x.herd || game::species_profile(creature) == x.prof)
+                return true;
+            const int age = *(int*)((uint8_t*)creature + 0xB34);
+            skg::thiscall<bool>(x.set, creature, x.prof, age, true);
+            ++x.changed;
+            return true;
+        }, &x);
+    if (social::set_party_ally(species))
+        g_ally_set++;
+    std::string err;
+    const uint8_t player = party::player_of_seat(seat);
+    if (player != party::kNobody && !creations::archive_guest_model(player, world::current_game_key(), err))
+        H->log(M, SK_WARN, "home nests: seat %d's new creature not archived: %s", seat, err.c_str());
+    char b[220];
+    snprintf(b, sizeof b, "home nests: seat %d (%s)'s nest at (%.0f %.0f %.0f) follows its evolution %08X -> %08X (herd %p was %p, %u member(s), BUG-9151)",
+             seat, roster.seats[seat].name.c_str(), at.x, at.y, at.z, n.species, species, n.herd, old_profile, x.changed);
+    g_last = b;
+    H->log(M, SK_INFO, "%s", b);
+    n.species = species;
+    g_followed++;
+    g_follow_members += x.changed;
+}
+
 void host_tick(double now)
 {
     if (!g_fix || !is_host() || now < g_next || g_queued)
@@ -235,6 +293,13 @@ void host_tick(double now)
         if (void* herd = nest_herd_near(profile, home, kNear, &at)) {
             g_nests[seat] = {herd, at, species};
             continue;
+        }
+        // BUG-9151: its nest of the species it played before is still here: that nest follows (one a tick)
+        if (g_follow && g_nests[seat].species && g_nests[seat].species != species && nest_pos_of(g_nests[seat].herd, at) &&
+            net::dist(at, home) < kNear && party::player_of_seat((int)seat) != party::kNobody) {
+            g_queued = true;
+            H->run_outside_frame(follow_species, (void*)(intptr_t)seat);
+            return;
         }
         // none near the host's home: a new player, a migration (decision 3), an extinct nest (decision 8). Made only while
         // the seat's player is here: an offline player's nest is the AI's (it may die out) and is made again on return.
@@ -266,15 +331,26 @@ void on_world_change()
 std::string status()
 {
     char b[220];
-    snprintf(b, sizeof b, "home nests: fix=%d made=%u rebuilt=%u failed=%u ally_set=%u world_resent=%u last: %s\n", (int)g_fix,
-             g_made, g_rebuilt, g_failed, g_ally_set, g_shares, g_last.empty() ? "-" : g_last.c_str());
+    snprintf(b, sizeof b, "home nests: fix=%d made=%u rebuilt=%u followed=%u (%u members) failed=%u ally_set=%u world_resent=%u last: %s\n",
+             (int)g_fix, g_made, g_rebuilt, g_followed, g_follow_members, g_failed, g_ally_set, g_shares,
+             g_last.empty() ? "-" : g_last.c_str());
     std::string out = b;
     net::Vec3 home;
     const bool have_home = host_home(home);
+    const auto& roster = party::roster();
     for (size_t i = 1; i < g_nests.size(); ++i) {
         net::Vec3 p;
-        if (!nest_pos_of(g_nests[i].herd, p))
+        if (!nest_pos_of(g_nests[i].herd, p)) {
+            if (i < roster.seats.size() && roster.seats[i].species) {
+                const uint32_t sp = roster.seats[i].species;
+                void* prof = game::species_by_key({sp, kCrtType, kCrtGroup});
+                snprintf(b, sizeof b, "  seat %zu: species %08X (profile %p, player %d), no nest of its own (kept herd %p alive %d extinct %d)\n",
+                         i, sp, prof, (int)party::player_of_seat((int)i), g_nests[i].herd, (int)live_herd(g_nests[i].herd),
+                         live_herd(g_nests[i].herd) ? (int)skg::field<uint8_t>(g_nests[i].herd, 0x190) : -1);
+                out += b;
+            }
             continue;
+        }
         snprintf(b, sizeof b, "  seat %zu: species %08X nest (%.0f %.0f %.0f) %.0f m from the host's, members %d\n", i, g_nests[i].species,
                  p.x, p.y, p.z, have_home ? net::dist(p, home) : -1.f,
                  (int)((skg::field<uintptr_t>(g_nests[i].herd, 0x44) - skg::field<uintptr_t>(g_nests[i].herd, 0x40)) / 4));
