@@ -44,6 +44,9 @@ void set_death_fix(bool on);                  // tests: off = a killed proxy doe
 void set_stall_fix(bool on);                  // tests: off = no teleport of a proxy far off while the NPC reports a speed (BUG-0169)
 void set_known_fix(bool on);                  // tests: off = only host_tick forgets them (BUG-0125)
 bool is_proxy(void* creature);
+// guest (BUG-9181): proxy `creature` runs its own AI on this game for `seconds` more (the sync leaves it alone): the
+// game's mating needs the mate's own AI (its answer, the walk to the player, the dance). Again to extend, 0 to end.
+bool lend_local_ai(void* creature, double seconds);
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool debug_host_hit(uint16_t id, float damage, float push = 0); // host avatar hits host NPC #id (push: thrown, tests)
 bool debug_recruit(uint16_t id);

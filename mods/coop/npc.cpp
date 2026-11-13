@@ -199,6 +199,7 @@ struct Proxy {
     bool nospecies_said = false; // BUG-0300 diagnostics: logged once
     bool kinematic = false;      // BUG-0281: placed on the host's path this frame
     double manual_until = 0;     // tests (BUG-0281): `coop.npc pwalk` drives it, the sync does not
+    double local_until = 0;      // BUG-9181: its own AI runs here (a guest's mate), the sync does not drive it
     int manual_mode = 0;         // bits: 1 MoveTo again every 0.1 s, 2 set_position to itself, 4 set_orientation
     net::Vec3 manual_to{};
     float manual_speed = 0;
@@ -264,6 +265,25 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 
 bool is_proxy(void* c) { return g_proxy_of.count(c) != 0; }
+
+bool lend_local_ai(void* creature, double seconds)
+{
+    if (!creature)
+        return false;
+    for (auto& [id, px] : g_proxies)
+        if (px.c == creature) {
+            const double now = H->time_seconds();
+            if (seconds <= 0) {
+                if (px.local_until > 0) px.local_until = now; // given back on the next frame
+                return true;
+            }
+            if (px.local_until <= 0)
+                game::puppet_unregister(creature); // the game's own AI (NPCTickAI) for it again
+            px.local_until = now + seconds;
+            return true;
+        }
+    return false;
+}
 static bool g_strays_on = true; // tests: remove_saved_strays on/off
 COOP_FIX("npc.strays", "BUG-0008", g_strays_on, "creature: creatures without tuning in herds like ours (saved puppets) are removed");
 void set_strays(bool on) { g_strays_on = on; }
@@ -1587,6 +1607,13 @@ static void guest_tick(double now)
             game::teleport(px.c, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
         proxy_tuning(px);
+        if (px.local_until > 0) { // BUG-9181: lent to this game's AI; back to the sync when the time is up
+            if (now < px.local_until)
+                continue;
+            px.local_until = 0;
+            if (px.c && game::object_alive(px.c))
+                game::puppet_register(px.c);
+        }
         if (now < px.manual_until) {
             if (px.c && (px.manual_mode & 1) && now - px.manual_last > 0.1) {
                 game::set_speed(px.c, px.manual_speed);

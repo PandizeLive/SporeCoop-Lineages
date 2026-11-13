@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 #include "creations.h"
@@ -38,7 +39,6 @@ COOP_FIX("creature.egg_watch", "BUG-9161", g_egg_watch,
 constexpr uint32_t kLaidEgg = 0xB6A1DBE1u; // CRG_LaidEgg
 constexpr double kEggWatch = 12.0;
 double g_egg_since = -1;
-void* g_own_wrapped; // the own creature held in the cocoon pose until the editor opens
 bool g_egg_pressed;
 uint32_t g_egg_finished;
 bool g_family = true;
@@ -48,9 +48,8 @@ uint32_t g_family_herds, g_family_members;
 double g_family_at;
 bool g_direct = true;
 COOP_FIX("creature.mating_direct", "BUG-9175", g_direct,
-         "creature: a guest's click on its mate ends in the cocoon and its editor (the host: when the game's pairing stalls)");
-constexpr double kDirectAfter = 2.0;  // a guest: this long in the mating action (the hearts), then the cocoon
-constexpr double kStallAfter = 15.0;  // the host: the game's pairing has this long to reach its egg scene
+         "creature: a mating whose pairing has not reached the egg scene after 30 s ends in the editor directly");
+constexpr double kStallAfter = 30.0;  // the game's pairing has this long to reach its egg scene (12 s seen on the host)
 constexpr uint32_t kMating = 0x02D852F0u, kMatingAtNest = 0xD23FE7CAu; // the avatar's actions (coop.cpp mate_response)
 int g_mate_stage;      // 0 none, 1 in the mating action, 2 in the cocoon, 3 the request made (until the action ends)
 double g_mate_at;      // when the stage began
@@ -157,6 +156,11 @@ static void keep(void* puppet, Cocoon& c, double now)
     }
 }
 
+// BUG-9181: the family's cocoons (below)
+static void family_in(uint8_t who, void* body, double now);
+static void family_keep(uint8_t who, double now);
+static void family_out(uint8_t who);
+
 void puppet_editing(uint8_t player, void* puppet, Cocoon& c, double now)
 {
     if (!g_cocoon || !puppet) return;
@@ -168,8 +172,10 @@ void puppet_editing(uint8_t player, void* puppet, Cocoon& c, double now)
         c.at = now;
         c.key = key;
         if (fresh) ++g_wraps;
+        if (fresh) family_in(player, puppet, now); // BUG-9181: its family too
         return;
     }
+    family_keep(player, now);
     if (c.state == 1 && now - c.at >= kEnterSeconds) {
         c.puppet = nullptr; // the hold and its sac now
         keep(puppet, c, now);
@@ -191,6 +197,7 @@ void puppet_back(uint8_t player, void* puppet, Cocoon& c, double now)
     if (c.state != 3) { // back: still in the cocoon until the new body is there
         c.state = 3;
         c.at = now;
+        family_out(player); // BUG-9181: the family comes out first
     }
     const uint32_t key = creations::player_key(player, creations::kCreature).instance;
     const bool designed = key && key != c.key;
@@ -200,10 +207,87 @@ void puppet_back(uint8_t player, void* puppet, Cocoon& c, double now)
         return;
     }
     drop(c);
-    game::hold_pose(puppet, false);
-    game::play_animation(puppet, kEmerge, -1, true);
-    if (void* fx = effect_at(puppet, kFxHatch)) game::release_world_effect(fx);
+    game::hold_pose(puppet, false); // (BUG-9181: no emerge: the partner hatches from its egg on its own game)
     ++g_emerges;
+}
+
+// BUG-9181 (the owner's sequence, 2026-11-13): when a player goes into its editor after a mating, its living family
+// (its species, within kFamilyRange of it; never the egg) spins into the game's cocoon on every game; when it is back,
+// the family comes out first and the player hatches from its egg the game's own way (no cocoon of the player's own body
+// on its own game, no own emerge). Kept per player: kOwnFamily for this game's own player.
+constexpr uint8_t kOwnFamily = 0xFE;
+constexpr float kFamilyRange = 50.f;
+struct Wrapped {
+    void* c;
+    uint32_t serial;
+    Cocoon cc;
+};
+std::map<uint8_t, std::vector<Wrapped>> g_family_cocoons;
+uint32_t g_family_wrapped, g_family_out;
+
+static bool wrapped_alive(const Wrapped& w)
+{
+    return w.c && game::object_alive(w.c) && game::object_serial(w.c) == w.serial && !game::is_dead(w.c);
+}
+
+// the living family of `body` (its species near it) goes into the cocoon
+static void family_in(uint8_t who, void* body, double now)
+{
+    auto& list = g_family_cocoons[who];
+    if (!list.empty() || !body || !g_cocoon) return;
+    struct Find {
+        void *body, *avatar, *profile;
+        net::Vec3 at;
+        std::vector<Wrapped>* list;
+    } f{body, game::avatar(), game::species_profile(body), game::position(body), &list};
+    if (!f.profile) return;
+    game::for_each_object([](void* c, uint32_t noun, void* u) {
+        auto& f = *static_cast<Find*>(u);
+        if (noun != 0x18EB45Eu || c == f.body || c == f.avatar || !game::object_alive(c) || game::is_dead(c) ||
+            game::species_profile(c) != f.profile || net::dist(game::position(c), f.at) > kFamilyRange)
+            return true;
+        f.list->push_back({c, game::object_serial(c), {}});
+        return true;
+    }, &f);
+    for (auto& w : list) {
+        wrap(w.c, w.cc, now, true); // the spin into the cocoon (gen_evolve_cocoon), the woven shell
+        w.cc.state = 1;
+        w.cc.at = now;
+    }
+    g_family_wrapped += (uint32_t)list.size();
+    if (!list.empty())
+        H->log(M, SK_INFO, "evolve: %zu of %s family into the cocoon (BUG-9181)", list.size(),
+               who == kOwnFamily ? "our" : "a partner's");
+}
+
+static void family_keep(uint8_t who, double now)
+{
+    auto it = g_family_cocoons.find(who);
+    if (it == g_family_cocoons.end()) return;
+    for (auto& w : it->second) {
+        if (!wrapped_alive(w)) continue;
+        if (w.cc.state == 1 && now - w.cc.at >= kEnterSeconds) {
+            w.cc.puppet = nullptr; // the hold and its sac now
+            w.cc.state = 2;
+        }
+        if (w.cc.state == 2) keep(w.c, w.cc, now);
+    }
+}
+
+// the family comes out (the game's emerge and its burst), first, before the player hatches
+static void family_out(uint8_t who)
+{
+    auto it = g_family_cocoons.find(who);
+    if (it == g_family_cocoons.end()) return;
+    for (auto& w : it->second) {
+        drop(w.cc);
+        if (!wrapped_alive(w)) continue;
+        game::hold_pose(w.c, false);
+        game::play_animation(w.c, kEmerge, -1, true);
+        if (void* fx = effect_at(w.c, kFxHatch)) game::release_world_effect(fx);
+        ++g_family_out;
+    }
+    g_family_cocoons.erase(it);
 }
 
 void own_tick(uint32_t mode, void* avatar, bool busy, double now)
@@ -216,26 +300,13 @@ void own_tick(uint32_t mode, void* avatar, bool busy, double now)
     if (mode) g_prev_mode = mode;
     if (editor || mode != modes::kCreature) return;
     if (!g_own_due) return;
-    if (!g_cocoon || now - g_own_due_at > 60) { g_own_due = false; return; }
+    if (!g_cocoon || now - g_own_due_at > 60) { g_own_due = false; family_out(kOwnFamily); return; }
     if (busy || !avatar || now - g_own_due_at < 1.0) return; // after the game's own fade from the editor
     g_own_due = false;
-    game::play_animation(avatar, kEmerge, -1, true);
-    if (void* fx = effect_at(avatar, kFxHatch)) game::release_world_effect(fx);
+    // the family first; the own creature hatches from its egg the game's way (before: an own emerge, "started in
+    // their egg like normal, then turned into a cocoon", the owner 2026-11-13)
+    family_out(kOwnFamily);
     ++g_own_emerges;
-}
-
-// owner decision 2D: the own creature goes into the game's cocoon (held there until own_unwrap)
-static void own_wrap(void* av)
-{
-    game::hold_pose(av, true);
-    game::play_animation(av, kCocoonEnter, -1, true);
-    if (void* fx = effect_at(av, kFxCreate)) game::release_world_effect(fx);
-    g_own_wrapped = av;
-}
-static void own_unwrap()
-{
-    if (g_own_wrapped && game::object_alive(g_own_wrapped)) game::hold_pose(g_own_wrapped, false);
-    g_own_wrapped = nullptr;
 }
 
 void egg_tick(uint32_t mode, double now)
@@ -245,33 +316,31 @@ void egg_tick(uint32_t mode, double now)
         g_egg_pressed = false;
         return;
     }
-    if (g_egg_since < 0) {
-        g_egg_since = now;
-        if (g_egg_watch && g_cocoon && !g_own_wrapped) // instead of the egg, then the editor opens
-            if (void* av = game::avatar()) own_wrap(av);
-    }
-    if (!g_egg_watch || g_egg_pressed || now - g_egg_since < (g_cocoon ? kEnterSeconds : kEggWatch)) return;
+    if (g_egg_since < 0) g_egg_since = now; // the game's own egg scene (BUG-9181: no cocoon instead of it)
+    if (!g_egg_watch || g_egg_pressed || now - g_egg_since < kEggWatch) return;
     g_egg_pressed = true;
-    own_unwrap();
+    // the editor opens now: our family goes into the cocoon (seen when we are back)
+    if (void* av = game::avatar()) family_in(kOwnFamily, av, now);
     HWND w = (HWND)H->game_window();
     if (!w) return;
     const LPARAM lp = 1 | (MapVirtualKeyW(VK_ESCAPE, MAPVK_VK_TO_VSC) << 16);
     PostMessageW(w, WM_KEYDOWN, VK_ESCAPE, lp);
     PostMessageW(w, WM_KEYUP, VK_ESCAPE, lp | 0xC0000000);
     ++g_egg_finished;
-    H->log(M, SK_INFO, "evolve: the egg scene ends after %.1f s (the cocoon instead, BUG-9160 / BUG-9161): Escape for the player",
+    H->log(M, SK_INFO, "evolve: the egg scene ends after %.1f s (BUG-9161): Escape for the player, the editor opens",
            now - g_egg_since);
 }
 
+// BUG-9175 / BUG-9181: the game's pairing runs on every game now (a guest's mate is lent to its own AI, coop.cpp
+// mate_keeper); only a pairing that has not reached its egg scene after kStallAfter s ends in the editor directly
 void mating_tick(uint32_t mode, void* avatar, bool guest, bool busy, double now, Request request)
 {
+    (void)guest;
     void* ctl = mode == modes::kCreature && avatar ? skg::field<void*>(avatar, 0xB4C) : nullptr;
     const uint32_t action = ctl ? skg::field<uint32_t>(ctl, 0x1D8) : 0;
     const bool mating = action == kMating || action == kMatingAtNest;
     if (!ctl && g_mate_stage == 3) return; // in the editor it asked for: armed again only once the action is seen ended
-    // not ours: no mating, or the game's pairing reached its egg scene (egg_tick has the cocoon and the editor)
     if (!g_direct || !mating || world::cinematic_id() == kLaidEgg) {
-        if (g_mate_stage == 2 && world::cinematic_id() != kLaidEgg) own_unwrap();
         g_mate_stage = 0;
         return;
     }
@@ -279,22 +348,15 @@ void mating_tick(uint32_t mode, void* avatar, bool guest, bool busy, double now,
         g_mate_stage = 1;
         g_mate_at = now;
     }
-    if (busy || !request) return;
-    if (g_mate_stage == 1 && now - g_mate_at >= (guest ? kDirectAfter : kStallAfter)) {
-        if (g_cocoon) own_wrap(avatar);
-        g_mate_stage = 2;
-        g_mate_at = now;
-        H->log(M, SK_INFO, "evolve: the mating ends in the cocoon and the editor (%s, BUG-9175)",
-               guest ? "a guest: its mate is the host's copy" : "the game's pairing stalled");
-    } else if (g_mate_stage == 2 && now - g_mate_at >= (g_cocoon ? kEnterSeconds : 0.0)) {
-        g_mate_stage = 3; // once per mating action: armed again when the action ended
-        own_unwrap();
-        ++g_mate_direct;
-        H->run_outside_frame([](void* f) {
-            const int r = reinterpret_cast<Request>(f)();
-            H->log(M, r < 0 ? SK_WARN : SK_INFO, "evolve: own editor after the mating -> %d (BUG-9175)", r);
-        }, reinterpret_cast<void*>(request));
-    }
+    if (busy || !request || g_mate_stage != 1 || now - g_mate_at < kStallAfter) return;
+    g_mate_stage = 3; // once per mating action: armed again when the action ended
+    ++g_mate_direct;
+    family_in(kOwnFamily, avatar, now);
+    H->log(M, SK_WARN, "evolve: the game's pairing stalled %.0f s: the editor directly (BUG-9175)", now - g_mate_at);
+    H->run_outside_frame([](void* f) {
+        const int r = reinterpret_cast<Request>(f)();
+        H->log(M, r < 0 ? SK_WARN : SK_INFO, "evolve: own editor after the stalled mating -> %d (BUG-9175)", r);
+    }, reinterpret_cast<void*>(request));
 }
 
 void family_tick(uint32_t mode, void* avatar, bool busy, double now)

@@ -4201,10 +4201,11 @@ static void (SK_THISCALL* g_native_mate_keeper)(void*, uint32_t, uint32_t);
 static uintptr_t g_ptr_assign;   // SporeCoop::IntrusivePtr_Assign
 static void* g_mate_keeper;      // tests: the keeper (this) seen last
 static uint32_t g_mate_offers;   // tests: copies put in the slot
+static uint32_t g_keeper_calls, g_keeper_lends; // tests (BUG-9181): keeper runs on a guest, mates lent to the own AI
 
 static bool own_family_copy(void* c, void* herd, void* profile)
 {
-    return c && c != g_local && game::is_puppet(c) && game::object_alive(c) && !game::is_dead(c) &&
+    return c && c != g_local && npc::is_proxy(c) && game::object_alive(c) && !game::is_dead(c) &&
            game::herd_of(c) == herd && game::species_profile(c) == profile &&
            skg::field<int32_t>(c, 0xB34) == 1 && skg::field<void*>(c, 0xB4C); // grown (0xC0B8D0), a controller (0xD4B180)
 }
@@ -4213,10 +4214,23 @@ static void SK_THISCALL mate_keeper(void* self, uint32_t a, uint32_t b)
 {
     g_native_mate_keeper(self, a, b);
     g_mate_keeper = self;
+    ++g_keeper_calls;
     if (!g_guest_mate_fix || !g_ptr_assign || !self || !g_sess.connected() || g_sess.role() == net::Role::Host ||
         !game::in_creature_stage() || !g_local || g_local != game::avatar() || (game_busy() & (busy::kLoading | busy::kEditor)))
         return;
     void** slot = (void**)((uint8_t*)self + 0x38);
+    // BUG-9181: the mate offered (a copy of the host's member) and the one the player is mating with run their own AI
+    // here (the sync leaves them alone): the game's pairing needs the mate's answer, its walk and its dance. Before,
+    // the pairing stalled (BUG-9175) and the mod went to the cocoon at once ("rather than the normal mating", owner).
+    if (g_guest_mate_fix) {
+        if (*slot && npc::is_proxy(*slot) && npc::lend_local_ai(*slot, 2.0)) ++g_keeper_lends;
+        if (void* ctl = skg::field<void*>(g_local, 0xB4C)) {
+            const uint32_t a = skg::field<uint32_t>(ctl, 0x1D8);
+            if (a == 0x02D852F0u || a == 0xD23FE7CAu)
+                if (void* t = g_get_animal_target ? g_get_animal_target(g_local) : nullptr; t && npc::is_proxy(t))
+                    npc::lend_local_ai(t, 2.0);
+        }
+    }
     // the game offers one itself, or none now: its own gates (0xD52695..0xD526FE: the avatar grown, +0xB5E clear,
     // +0x1678 <= 0); an offer past them was cleared again every frame (a hatchling after its editor: 29 offers in 15 s)
     if (*slot || skg::field<int32_t>(g_local, 0xB34) != 1 || skg::field<uint8_t>(g_local, 0xB5E) ||
@@ -4356,8 +4370,9 @@ std::string mates_report()
     snprintf(line, sizeof line, "own species %p/%08X, herd species %p\n", game::species_profile(g_local),
              game::species_key(g_local).instance, c.herd ? game::herd_species(c.herd) : nullptr);
     c.out += line;
-    snprintf(line, sizeof line, "mate keeper %p slot %p wait %d, copies offered %u (BUG-9174)\n", g_mate_keeper,
-             g_mate_keeper ? skg::field<void*>(g_mate_keeper, 0x38) : nullptr, skg::field<int32_t>(g_local, 0x1678), g_mate_offers);
+    snprintf(line, sizeof line, "mate keeper %p slot %p wait %d, copies offered %u (BUG-9174), calls %u lends %u\n", g_mate_keeper,
+             g_mate_keeper ? skg::field<void*>(g_mate_keeper, 0x38) : nullptr, skg::field<int32_t>(g_local, 0x1678), g_mate_offers,
+             g_keeper_calls, g_keeper_lends);
     c.out += line;
     game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
         auto& c = *static_cast<Ctx*>(ctx);

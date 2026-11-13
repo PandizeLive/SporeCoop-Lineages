@@ -795,3 +795,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9178](BUG-9178-ui-the-downed-box-arrows-off-centre-a-long-name.md) | open | bug | creature | 2026-11-13 |  | UI: the downed box: arrows off-centre, a long name on two lines, square corners with an older package |
 | [BUG-9179](BUG-9179-ui-the-gold-and-red-buttons-look-dim-and-grimy.md) | open | bug | all | 2026-11-13 |  | UI: the gold and red buttons look dim and grimy |
 | [BUG-9180](BUG-9180-creature-a-player-s-creation-has-two-species-key.md) | open | bug | creature | 2026-11-13 |  | Creature: a player's creation has two species keys (its own and the shared one, which also changes with the network id) |
+| [BUG-9181](BUG-9181-creature-evolving-the-native-way-mating-egg-edit.md) | open | feature | creature | 2026-11-13 |  | Creature: evolving the native way (mating, egg, editor), the family in cocoons, the player hatching from the egg |
