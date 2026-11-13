@@ -2344,6 +2344,11 @@ void tick()
 static struct {
     Win box = nullptr, title = nullptr, name = nullptr, prev = nullptr, next = nullptr, give = nullptr;
     Win give_caption = nullptr, edge[4] = {};
+    // every part is a child of this one window, made back to front (the box, its edges, the texts, the buttons, the
+    // GIVE UP caption): as siblings in the game's main window their order came out by chance and the stage's own UI
+    // reordered them (the box over its title and buttons: dimmed, the owner 2026-11-13; the red button over its
+    // caption in Cell, BUG-9171). Only this window is kept in front of the game's.
+    Win root = nullptr;
     bool failed = false;
 } g_dh;
 // the Co-op window's panel colour (its frame's content window [4 43 750 581], a filled window without a drawable) and
@@ -2390,8 +2395,12 @@ static bool dh_build()
     }
     Win main = sui::main_window();
     if (!D.like_button || !main) { g_dh.failed = true; return false; }
+    g_dh.root = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (!g_dh.root) { g_dh.failed = true; return false; }
+    sui::set_flag(g_dh.root, sui::kFlagIgnoreMouse, false); // its buttons take the clicks
+    Win root = g_dh.root;
     auto button = [&](const std::string& caption, int code) {
-        Win w = sui::button_like(main, D.like_button, {0, 0, 10, 10}, caption);
+        Win w = sui::button_like(root, D.like_button, {0, 0, 10, 10}, caption);
         if (!w) return w;
         sui::set_font(w, D.font_body);
         sui::add_handler(w, [code](Win, const sui::Msg& m) {
@@ -2407,7 +2416,7 @@ static bool dh_build()
     void* img = sui::image(sui::fnv("lineages_downed_panel"), 0x2F7D0004, sui::fnv("sporecoop"));
     void* look = img ? sui::std_drawable_tooltip(img) : nullptr;
     if (img) sui::release(img); // the drawable holds its own reference
-    if (look && (g_dh.box = sui::button_like(main, D.like_button, {0, 0, 10, 10}, ""))) {
+    if (look && (g_dh.box = sui::button_like(root, D.like_button, {0, 0, 10, 10}, ""))) {
         sui::set_drawable(g_dh.box, look);
         sui::set_flag(g_dh.box, sui::kFlagIgnoreMouse, true);
     }
@@ -2420,15 +2429,15 @@ static bool dh_build()
                           : ": no SporeCoop.package images here: a square box");
     if (!g_dh.box) {
         const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | (kDownedBoxAlpha << 24);
-        g_dh.box = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        g_dh.box = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
         if (g_dh.box) sui::set_fill_color(g_dh.box, panel);
         for (Win& e : g_dh.edge) {
-            e = sui::label(main, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+            e = sui::label(root, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
             if (e) sui::set_fill_color(e, kMenuBoxEdge);
         }
     }
-    g_dh.title = sui::label(main, {0, 0, 10, 10}, "SPECTATING", D.font_body, kWhite, sui::kAlignCenter);
-    g_dh.name = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
+    g_dh.title = sui::label(root, {0, 0, 10, 10}, "SPECTATING", D.font_body, kWhite, sui::kAlignCenter);
+    g_dh.name = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
     g_dh.prev = button(kArrowLeft, -1);
     g_dh.next = button(kArrowRight, 1);
     for (Win a : {g_dh.prev, g_dh.next})
@@ -2437,15 +2446,22 @@ static bool dh_build()
     if (g_dh.give) { // the Co-op window's red button: its gold button shaded, the caption a white label on top (as Leave)
         sui::set_shade_color(g_dh.give, kDangerButtonShade);
         sui::set_label_color(g_dh.give, 0);
-        g_dh.give_caption = sui::label(main, {0, 0, 10, 10}, "GIVE UP", D.font_body, kWhite, sui::kAlignCenter);
+        g_dh.give_caption = sui::label(root, {0, 0, 10, 10}, "GIVE UP", D.font_body, kWhite, sui::kAlignCenter);
     }
     if (!g_dh.give || !g_dh.box || !g_dh.title || !g_dh.name || !g_dh.prev || !g_dh.next) {
         g_dh.failed = !g_dh.give;
         H->log(M, SK_WARN, "ui: downed screen parts missing (give %p box %p)", g_dh.give, g_dh.box);
     }
+    // back to front, once: the order inside the root is ours alone
     for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
                   g_dh.next, g_dh.give, g_dh.give_caption})
-        if (w) { sui::add_ref(w); sui::set_visible(w, false); }
+        if (w) {
+            sui::add_ref(w);
+            sui::bring_to_front(root, w);
+            sui::set_visible(w, false);
+        }
+    sui::add_ref(root);
+    sui::set_visible(root, false);
     return g_dh.give != nullptr;
 }
 
@@ -2456,37 +2472,38 @@ static void dh_apply(void*)
     if (!dh_build()) return;
     Win main = sui::main_window();
     const bool box = want.show && want.box;
+    const Rect& b = want.box_area;
+    const Rect& g = want.give;
+    // the root covers the box and the button under it; its children are placed inside it (their order is fixed)
+    const Rect all = box ? Rect{std::min(b.x1, g.x1), b.y1, std::max(b.x2, g.x2), g.y2} : g;
+    if (want.show && main) {
+        sui::set_area(g_dh.root, all);
+        if (sui::parent(g_dh.root) != main) sui::add_child(main, g_dh.root);
+        sui::bring_to_front(main, g_dh.root);
+        sui::set_flag(g_dh.root, sui::kFlagAlwaysInFront, true);
+    }
+    sui::set_visible(g_dh.root, want.show);
     auto place = [&](Win w, bool on, const Rect& r) {
         if (!w) return;
-        if (on) {
-            sui::set_area(w, r);
-            if (main) {
-                if (sui::parent(w) != main) sui::add_child(main, w);
-                sui::bring_to_front(main, w);
-                sui::set_flag(w, sui::kFlagAlwaysInFront, true);
-            }
-        }
+        if (on) sui::set_area(w, {r.x1 - all.x1, r.y1 - all.y1, r.x2 - all.x1, r.y2 - all.y1});
         sui::set_visible(w, on);
     };
-    const Rect& b = want.box_area;
     // one padding all round (10, the panel's corner radius): the arrow row on the bottom, the title over it
     const float arrow_w = 50.f, arrow_h = 30.f, pad = 10.f, e = 1.f;
     const float arrow_y = b.y2 - pad - arrow_h;
-    // front first: bring_to_front puts the window brought first on top (seen 2026-11-12: the box hid its own arrows
-    // and the red button its caption when they were brought forward in the other order)
     if (g_dh.give_caption) sui::set_flag(g_dh.give_caption, sui::kFlagIgnoreMouse, true);
-    place(g_dh.give_caption, want.show, want.give);
-    place(g_dh.give, want.show, want.give);
-    place(g_dh.next, box, {b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h});
-    place(g_dh.prev, box, {b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h});
-    place(g_dh.name, box, {b.x1 + arrow_w + pad, arrow_y, b.x2 - arrow_w - pad, arrow_y + arrow_h});
-    if (g_dh.name && box) sui::set_caption(g_dh.name, want.name);
-    place(g_dh.title, box, {b.x1, b.y1 + pad, b.x2, arrow_y});
+    place(g_dh.box, box, b);
     place(g_dh.edge[0], box, {b.x1, b.y1, b.x2, b.y1 + e});
     place(g_dh.edge[1], box, {b.x1, b.y2 - e, b.x2, b.y2});
     place(g_dh.edge[2], box, {b.x1, b.y1, b.x1 + e, b.y2});
     place(g_dh.edge[3], box, {b.x2 - e, b.y1, b.x2, b.y2});
-    place(g_dh.box, box, b);
+    place(g_dh.title, box, {b.x1, b.y1 + pad, b.x2, arrow_y});
+    place(g_dh.name, box, {b.x1 + arrow_w + pad, arrow_y, b.x2 - arrow_w - pad, arrow_y + arrow_h});
+    if (g_dh.name && box) sui::set_caption(g_dh.name, want.name);
+    place(g_dh.prev, box, {b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h});
+    place(g_dh.next, box, {b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h});
+    place(g_dh.give, want.show, g);
+    place(g_dh.give_caption, want.show, g);
     g_dh_shown = want;
 }
 
@@ -2509,16 +2526,16 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
     }
     // BUG-9171: in Cell the red button came over its "GIVE UP" caption after it was placed (the stage's own UI reorders
     // the main window's children): the caption is put in front again twice a second while the screen is up
-    static double s_front_at = 0;
-    if (show && want == g_dh_shown && g_dh.give_caption && !g_dh_queued && H->time_seconds() - s_front_at > 0.5) {
+    static double s_front_at = 0; // (now the root: its parts keep their own order inside it)
+    if (show && want == g_dh_shown && g_dh.root && !g_dh_queued && H->time_seconds() - s_front_at > 0.5) {
         s_front_at = H->time_seconds();
         g_dh_queued = true;
         H->run_outside_frame([](void*) {
             g_dh_queued = false;
             Win main = sui::main_window();
-            if (main && g_dh.give_caption && g_dh_shown.show) {
-                sui::bring_to_front(main, g_dh.give_caption);
-                sui::set_flag(g_dh.give_caption, sui::kFlagAlwaysInFront, true);
+            if (main && g_dh.root && g_dh_shown.show) {
+                sui::bring_to_front(main, g_dh.root);
+                sui::set_flag(g_dh.root, sui::kFlagAlwaysInFront, true);
             }
         }, nullptr);
     }
@@ -2527,12 +2544,10 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
 
 void shutdown()
 {
-    for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
-                  g_dh.next, g_dh.give, g_dh.give_caption}) // BUG-9156
-        if (w) {
-            sui::set_visible(w, false);
-            if (Win p = sui::parent(w)) sui::remove_child(p, w);
-        }
+    if (Win w = g_dh.root) { // BUG-9156: the root takes its parts with it
+        sui::set_visible(w, false);
+        if (Win p = sui::parent(w)) sui::remove_child(p, w);
+    }
     g_dh = {};
     mouse::set_graphics_input(nullptr);
     mouse::set_list_input(nullptr);
