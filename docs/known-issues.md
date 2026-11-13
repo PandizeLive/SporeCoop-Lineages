@@ -2178,3 +2178,13 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   wiped-out village is no longer captured, so this only matters with `coop.fix tribe.party_wipe off` or an older save
   whose partner village was captured before. For tests the page comes back with `coop.fix ui.village_page on`.
   Ticket: BUG-9153.
+
+## Tribe: the host's game can still show the population game over after repeated wipes (2026-11-13, BUG-9184)
+<a id="issue-tribe-host-gameover-other-route"></a>
+
+* What happens: on a worn 3-player Tribe save whose host village was wiped twice in two minutes, the host's game showed
+  the native "Alas! Your population has fallen below the minimum" caption with no population event through the mod's
+  hold before it. OK reloads the last save; play goes on.
+* Reproduce: not on demand (once in about an hour on the DuoQAJiffStand copy).
+* Known: the TRG_* cinematic support log (tribe.cpp) names the caller the next time.
+* Ticket: BUG-9184.

@@ -1660,6 +1660,9 @@ static void SK_THISCALL h_SpawnTribe(void* tribe, const skg::Vector3* pos, int c
 using TribeMessage_t = bool(SK_THISCALL*)(void*, uint32_t, void*);
 static TribeMessage_t o_TribeMessage;
 static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* data);
+using PlayCinematic_t = void*(SK_THISCALL*)(void*, const char*, int, int, int, int, int);
+static PlayCinematic_t o_PlayCinematic;
+static void* SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e);
 
 using ToolLayout_t = void(SK_THISCALL*)(void*, int);
 static ToolLayout_t o_ToolLayout;
@@ -2173,6 +2176,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)get, (void*)h_NounData, (void**)&o_NounData);
     if (uintptr_t handle = H->sym("SporeCoop::TribalGame_HandleMessage"))
         H->hook_create(M, (void*)handle, (void*)h_TribeMessage, (void**)&o_TribeMessage);
+    if (uintptr_t play = H->sym("Simulator::cCinematicManager::PlayCinematic")) // BUG-9183 support log
+        H->hook_create(M, (void*)play, (void*)h_PlayCinematic, (void**)&o_PlayCinematic);
     if (uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout"))
         H->hook_create(M, (void*)layout, (void*)h_ToolLayout, (void**)&o_ToolLayout);
     a_RingDraw = H->sym("SporeCoop::TribeTargetRing_Draw"); // BUG-0570 (optional)
@@ -2405,6 +2410,26 @@ static uint32_t g_home_respawns, g_wipes_all, g_wipes_all_held;
 // wipe per kWipeAllGap s, the later events are only held
 static double g_last_wipe_all_at = -1e9;
 constexpr double kWipeAllGap = 300;
+// BUG-9183: since a guest's game shows its own village as the player's (BUG-9153), its game posts the population event
+// when that village is wiped out and showed the native game over ("Alas! Your population has fallen below the minimum")
+// while the party played on (the MSI 2026-11-13, log: "population event ... host=0"). The host decides what a wiped
+// village costs (the rescue, the party wipe, a villager back: BUG-9147, BUG-9155), so a connected guest's game never
+// runs the event. Off: the guest's game runs it.
+static bool g_guest_pop_hold = true;
+COOP_FIX("tribe.guest_pop_hold", "BUG-9183", g_guest_pop_hold,
+         "tribe: a guest's game holds the population event (the host decides a wiped village's loss)");
+static uint32_t g_guest_pops_held;
+
+// BUG-9183 (support log): the host showed the population game over (FBCD6489) with no population event through
+// h_TribeMessage before it (TITAN 2026-11-13 14:18): which code starts a Tribe cinematic (TRG_*), and from where
+static void* SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e)
+{
+    static unsigned logs = 0;
+    if (name && !IsBadReadPtr(name, 4) && !strncmp(name, "TRG_", 4) && logs++ < 60)
+        H->log(M, SK_INFO, "tribe: cinematic %s started from %08X (host=%d)", name,
+               (unsigned)((uintptr_t)__builtin_return_address(0) - H->rebase(0)), (int)is_host());
+    return o_PlayCinematic(mgr, name, a, b, c, d, e);
+}
 
 static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* data)
 {
@@ -2430,6 +2455,10 @@ static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* d
                 H->log(M, SK_INFO, "tribe: the population event names village %08X (%p)%s", F<uint32_t>(t, 0x30), t,
                        t == home ? " (the host's)" : "");
         }
+    }
+    if (message == 0x05C80207 && g_guest_pop_hold && active() && is_guest()) {
+        if (g_guest_pops_held++ < 20) H->log(M, SK_INFO, "tribe: the population event on a guest: held, the host decides (BUG-9183)");
+        return false;
     }
     if (message == 0x05C80207 && g_founder_survival && active() && is_host() &&
         (g_multi_founders ? C.sess->players().size() >= (g_alone_survival ? 1u : 2u) : C.sess->players().size() == 2)) {
@@ -7915,7 +7944,8 @@ std::string status()
         }
     }
     out += "tribe building health applied=" + std::to_string(g_building_applied) + "\n";
-    out += "founder population rewinds held=" + std::to_string(g_founder_rewinds_held) + "\n";
+    out += "founder population rewinds held=" + std::to_string(g_founder_rewinds_held) + " guest population events held=" +
+           std::to_string(g_guest_pops_held) + "\n";
     out += "tribe cleared-species layouts deferred=" + std::to_string(g_layout_deferred) + "\n";
     if (village_orders()) out += "founder worlds: native village formation skipped=" + std::to_string(g_form_skipped) +
                                 " guest orders held=" + std::to_string(g_guest_orders_held) + "\n";

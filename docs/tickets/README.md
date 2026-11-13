@@ -797,4 +797,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9180](BUG-9180-creature-a-player-s-creation-has-two-species-key.md) | open | bug | creature | 2026-11-13 |  | Creature: a player's creation has two species keys (its own and the shared one, which also changes with the network id) |
 | [BUG-9181](BUG-9181-creature-evolving-the-native-way-mating-egg-edit.md) | open | feature | creature | 2026-11-13 |  | Creature: evolving the native way (mating, egg, editor), the family in cocoons, the player hatching from the egg |
 | [BUG-9182](BUG-9182-creature-a-ring-of-old-player-nests-round-the-ho.md) | open | bug | creature | 2026-11-13 |  | Creature: a ring of old player nests round the host's nest (one per rejoin under the old keys) |
-| [BUG-9183](BUG-9183-tribe-a-guest-whose-own-village-is-wiped-out-see.md) | open | bug | tribe | 2026-11-13 |  | Tribe: a guest whose own village is wiped out sees the game's own game-over screen |
+| [BUG-9183](BUG-9183-tribe-a-guest-whose-own-village-is-wiped-out-see.md) | fixed | bug | tribe | 2026-11-13 |  | Tribe: a guest whose own village is wiped out sees the game's own game-over screen |
+| [BUG-9184](BUG-9184-tribe-the-host-s-game-showed-the-population-game.md) | open | bug | tribe | 2026-11-13 |  | Tribe: the host's game showed the population game over with no population event through the hold |
