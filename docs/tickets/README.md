@@ -772,3 +772,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9155](BUG-9155-party-wipe-one-founder-village-wiped-out-costs-t.md) | open | feature | tribe | 2026-11-12 |  | Party wipe: one founder village wiped out costs the whole party its newest win |
 | [BUG-9156](BUG-9156-downed-the-death-pose-and-spectating-a-partner.md) | open | feature | creature | 2026-11-12 |  | Downed: the death pose and spectating a partner |
 | [BUG-9157](BUG-9157-crash-on-respawn-base-max-hit-points-read-a-null.md) | open | crash | creature | 2026-11-12 |  | Crash on respawn: base max hit points read a null species (C04252) |
+| [BUG-9158](BUG-9158-tribe-a-totem-piece-past-the-totem-s-five-model.md) | open | crash | tribe | 2026-11-12 |  | Tribe: a totem piece past the totem's five model slots crashes in Model::Release |
+| [BUG-9159](BUG-9159-tribe-a-joiner-without-a-creature-goes-into-the.md) | open | feature | tribe | 2026-11-12 |  | Tribe: a joiner without a creature goes into the creature editor first; the village follows their save (decision 2M) |
