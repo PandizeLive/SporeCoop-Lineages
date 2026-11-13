@@ -3775,3 +3775,14 @@ BUG-9159, owner decision 2M. ✔ (live, three games on the MSI) The host asks, t
   test profile shows Spore's account window first (close it: X, then OK on "Quit registration?").
 * Host `coop.tribe late`: each unseated partner's wait (0 Ready .. 6 StandIn, 7 Editing), creature, settle times,
   editing and when asked; `skipped=` why the last automatic founding did nothing.
+
+## The population event with the host alone or every founder village down (2026-11-13, feat/lineages-47)
+<a id="tribe-population-event-alone"></a>
+
+BUG-9147. ✔ (runtime, MSI) The native population event 05C80207 (Tribal listener CD81F0, TRG_PRE_PopDestroyed then
+FBCD6489) comes about 3 minutes after loading a save whose player village has no member, and again every 10-20 s while a
+rival's raiders kill the new villagers. Its data: [+0] 0147B844, [+4] 0, [+8] changes with each death (~ the citizen),
+[+0xC] data + 0x28. A lone host is `connected()` (Role::Host), so tribe::active() holds. A member made with SpawnMember
+(vt 0x98, age 1) for a non-player founder village did not count as living at the next event (health or +0xB5E), cause
+not found. After party_wipe the newest ally is a rival (relation -5) and raids at once.
+

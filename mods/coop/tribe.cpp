@@ -2390,20 +2390,62 @@ static bool g_founder_survival = true;
 COOP_FIX("tribe.founder_survival", "BUG-9007", g_founder_survival,
          "tribe: a surviving founding village prevents the host population rewind");
 static uint32_t g_founder_rewinds_held;
+// BUG-9147: the rewind was held only with a partner online; a host playing alone while the partners' villages live on
+// (an offline player's village is the AI's) got the native game over for everyone's world (the MSI 2026-11-12: a save
+// whose host village was already empty). Now it is held with nobody else online too, and a host village with no living
+// member (and no knockout under way) gets one villager back at its home 2 s later (the party goes on, as after a party
+// wipe, BUG-9155). Off: a partner must be online; an empty village stays empty.
+static bool g_alone_survival = true;
+COOP_FIX("tribe.founder_survival_alone", "BUG-9147", g_alone_survival,
+         "tribe: the population rewind is held while a partner founder village lives, also alone; an empty host village gets a villager back");
+static double g_home_respawn_at = -1;
+static bool g_wipe_all_due; // nobody's founder village had a living member: the party wipe (owner decision 1U) instead
+static uint32_t g_home_respawns, g_wipes_all, g_wipes_all_held;
+// the game posts the event again after the wipe's reload (seen on the MSI: every 20 s, a party wipe each time): one party
+// wipe per kWipeAllGap s, the later events are only held
+static double g_last_wipe_all_at = -1e9;
+constexpr double kWipeAllGap = 300;
 
 static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* data)
 {
     // The event's native body also changes the camera and loss state before it
     // starts TRG_PRE_PopDestroyed. Keep the whole event out of a surviving duo.
     // BUG-9135: any partner village that survives (seat 1 of exactly two players before)
+    static unsigned s_pop_logs = 0;
+    const bool pop_log = message == 0x05C80207 && s_pop_logs++ < 20;
+    if (pop_log) { // support log (BUG-9147): why a rewind was or was not held (data: [+8] the citizen that died, ~)
+        founders::Roster roster;
+        void* home = player_tribe();
+        const bool rr = founders::read(world::current_game_key(), roster);
+        uint32_t d[4] = {};
+        if (data && skg::readable(data, 16)) memcpy(d, data, 16);
+        H->log(M, SK_INFO, "tribe: the population event (05C80207): survival=%d active=%d host=%d players=%u home=%p "
+               "roster=%d (%zu seats) home faction %08X roster's %08X data %p [%08X %08X %08X %08X]", (int)g_founder_survival,
+               (int)active(), (int)is_host(), C.sess ? (unsigned)C.sess->players().size() : 0u, home, (int)rr,
+               rr ? roster.seats() : (size_t)0, home ? F<uint32_t>(home, 0x30) : 0u, rr ? roster.home().faction : 0u, data,
+               d[0], d[1], d[2], d[3]);
+        for (void* t : all_tribes()) { // which village the event names, if any
+            const uint32_t tp = (uint32_t)(uintptr_t)t;
+            if (tp == d[0] || tp == d[1] || tp == d[2] || tp == d[3] || t == data)
+                H->log(M, SK_INFO, "tribe: the population event names village %08X (%p)%s", F<uint32_t>(t, 0x30), t,
+                       t == home ? " (the host's)" : "");
+        }
+    }
     if (message == 0x05C80207 && g_founder_survival && active() && is_host() &&
-        (g_multi_founders ? C.sess->players().size() >= 2 : C.sess->players().size() == 2)) {
+        (g_multi_founders ? C.sess->players().size() >= (g_alone_survival ? 1u : 2u) : C.sess->players().size() == 2)) {
         founders::Roster roster;
         void* home = player_tribe();
         if (home && founders::read(world::current_game_key(), roster) && F<uint32_t>(home, 0x30) == roster.home().faction) {
             const size_t seats = g_multi_founders ? roster.seats() : 2;
             for (void* t : all_tribes()) {
                 const int seat = roster.seat_of_faction(F<uint32_t>(t, 0x30));
+                if (pop_log && t != home && seat >= 1 && seat < (int)seats) { // support log (BUG-9147)
+                    int alive = 0;
+                    for (void* c : members(t)) alive += game::health(c) > 0 && !F<uint8_t>(c, 0xB5E);
+                    H->log(M, SK_INFO, "tribe: population event: seat %d village %08X defeated=%d species %08X (roster %08X) "
+                           "living %d", seat, F<uint32_t>(t, 0x30), (int)F<uint8_t>(t, 0x556), tribe_info(t).key.instance,
+                           roster.entries[seat].species, alive);
+                }
                 if (t == home || seat < 1 || seat >= (int)seats || F<uint8_t>(t, 0x556) ||
                     (tribe_info(t).key.instance != roster.entries[seat].species &&
                      !g_outfits.contains((size_t)seat, tribe_info(t).key.instance))) continue;
@@ -2411,8 +2453,22 @@ static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* d
                     if (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E)) continue;
                     g_founder_rewinds_held++;
                     if (C.notice) C.notice("Your partner's village survives. The shared world continues.");
+                    if (g_alone_survival && !rescue_pending()) { // BUG-9147: nobody left at home: one comes back
+                        bool anyone = false;
+                        for (void* m : members(home)) anyone |= game::health(m) > 0;
+                        if (!anyone) g_home_respawn_at = H->time_seconds() + 2;
+                    }
                     return false;
                 }
+            }
+            // BUG-9147 (owner decision 1U: "a players whole tribe causes the loss of progression for both players"):
+            // no founder village has a living member either: the party wipe and a villager back at every empty founder
+            // village, not the native rewind (a reload of the last save for everyone)
+            if (g_alone_survival && g_multi_founders && roster.seats() >= 2 && !rescue_pending()) {
+                g_wipe_all_due = true;
+                g_home_respawn_at = H->time_seconds() + 2;
+                g_founder_rewinds_held++;
+                return false;
             }
         }
     }
@@ -7406,6 +7462,62 @@ static void outfit_tick(double now)
     }, new uint64_t(g_campaign_epoch));
 }
 
+// BUG-9147: the host's village with no living member (a partner founder village lives) gets one villager at its home
+// one villager back at the home of village t when it has no living member (not spawn_member: it refuses an empty player
+// tribe, BUG-0172, a member added under the game-over caption faulted; the caption is held here, h_TribeMessage)
+static bool villager_back(void* t)
+{
+    for (void* m : members(t))
+        if (game::health(m) > 0 && !F<uint8_t>(m, 0xB5E)) return false;
+    // once per village per kWipeAllGap s (a member made here that did not count as living came back every event: the MSI)
+    static std::map<uint32_t, double> last;
+    const double now = H->time_seconds();
+    auto it = last.find(F<uint32_t>(t, 0x30));
+    if (it != last.end() && now - it->second < kWipeAllGap) return false;
+    last[F<uint32_t>(t, 0x30)] = now;
+    void* c = vcall<void*>(t, 0x98 / 4, 1);
+    if (!c && a_CreateCitizen && a_AddMember) {
+        c = thiscall<void*>(a_CreateCitizen, t, 1);
+        if (c) thiscall<void>(a_AddMember, t, c, 1);
+    }
+    if (!c) {
+        H->log(M, SK_WARN, "tribe: village %08X got no villager back (BUG-9147)", F<uint32_t>(t, 0x30));
+        return false;
+    }
+    net::Vec3 at = tribe_pos(t);
+    if (void* mat = F<void*>(t, 0x260); mat && game::object_alive(mat)) game::object_position(mat, at);
+    game::teleport(c, at, game::orientation(c));
+    ++g_home_respawns;
+    H->log(M, SK_INFO, "tribe: village %08X had no living member: one villager is back at its home (BUG-9147)", F<uint32_t>(t, 0x30));
+    return true;
+}
+
+static void home_respawn_tick(double now)
+{
+    if (g_home_respawn_at < 0 || now < g_home_respawn_at) return;
+    g_home_respawn_at = -1;
+    void* home = player_tribe();
+    if (!home || rescue_pending()) return;
+    if (g_wipe_all_due) { // every founder village down: the party wipe, then a villager at each empty one
+        g_wipe_all_due = false;
+        for (size_t seat = 0; seat < founder_seats(); ++seat)
+            if (void* t = founder_village((int)seat)) villager_back(t);
+        if (now - g_last_wipe_all_at < kWipeAllGap) {
+            ++g_wipes_all_held;
+            H->log(M, SK_INFO, "tribe: the population event again %.0f s after the party wipe: held, no second wipe (BUG-9147)",
+                   now - g_last_wipe_all_at);
+            return;
+        }
+        g_last_wipe_all_at = now;
+        ++g_wipes_all;
+        if (C.notice) C.notice(party_wipe(0));
+        wipe_refresh(now);
+        return;
+    }
+    if (villager_back(home) && C.notice)
+        C.notice("A villager returned to your village. A partner's village kept the tribe going.");
+}
+
 void tick(double now)
 {
     persp_update(); // BUG-9153 (also puts the host's village back when the session or the stage ends)
@@ -7434,6 +7546,7 @@ void tick(double now)
             if (g_editor_asked_at[p] && !net::is_player(*C.sess, p)) g_editor_asked_at[p] = g_late_editing_until[p] = 0;
         founder_rescue_tick(now);
         g_give_up_now = false;
+        home_respawn_tick(now); // BUG-9147
         host_tick(now);
         food_share_tick(now); // BUG-9154
         combat_tick(now);

@@ -32,6 +32,10 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Tribe: no more native game over while the party plays on: a host alone keeps
+  playing while a partner's village lives; when every founder village is down
+  the party wipe applies and a villager returns to each empty village
+  (BUG-9147).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).
