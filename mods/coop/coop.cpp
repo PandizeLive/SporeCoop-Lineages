@@ -3814,6 +3814,8 @@ void on_frame(void*, int, void*)
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
     evolve::own_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9160: out of the own cocoon
     evolve::egg_tick(game::mode_id(), now);                             // BUG-9161: an egg scene that never ends
+    evolve::mating_tick(game::mode_id(), g_local == game::avatar() ? g_local : nullptr, // BUG-9175
+                        g_sess.connected() && g_sess.role() != net::Role::Host, game_busy() != 0, now, submit_evolution_request);
     evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
     migration_tick(now); // BUG-9163: the party migrates together
     join_editor_tick(now); // BUG-9164: a creature of one's own
@@ -4215,8 +4217,11 @@ static void SK_THISCALL mate_keeper(void* self, uint32_t a, uint32_t b)
         !game::in_creature_stage() || !g_local || g_local != game::avatar() || (game_busy() & (busy::kLoading | busy::kEditor)))
         return;
     void** slot = (void**)((uint8_t*)self + 0x38);
-    if (*slot || skg::field<int32_t>(g_local, 0x1678) > 0)
-        return; // the game offers one itself, or none now
+    // the game offers one itself, or none now: its own gates (0xD52695..0xD526FE: the avatar grown, +0xB5E clear,
+    // +0x1678 <= 0); an offer past them was cleared again every frame (a hatchling after its editor: 29 offers in 15 s)
+    if (*slot || skg::field<int32_t>(g_local, 0xB34) != 1 || skg::field<uint8_t>(g_local, 0xB5E) ||
+        skg::field<int32_t>(g_local, 0x1678) > 0)
+        return;
     static double next = 0;
     const double now = H->time_seconds();
     if (now < next)

@@ -1909,7 +1909,7 @@ static void away_locals(double now)
 // here (proxies) were of the host's key: another species profile than the own creature's, and the game offers a mate
 // only of the creature's own species (BUG-9161: class 9). The copies of this player's own family now wear the own
 // creature's species profile (SetSpecies, as evolve::family_tick does for the game's own members). Off: the host's key.
-static uint32_t g_own_family_set;
+static uint32_t g_own_family_set, g_own_family_homed;
 static void own_family_tick(double now)
 {
     static double next = 0;
@@ -1925,15 +1925,29 @@ static void own_family_tick(double now)
     static const uintptr_t set_species = H->sym("Simulator::cCreatureAnimal::SetSpecies");
     if (!set_species)
         return;
+    // BUG-9175: and they live in our own nest herd. A copy went into the nest herd of its key in this game's copy of the
+    // world; after the host gave our nest another key (an evolution, a nest taken back: BUG-9151, BUG-9173) no nest
+    // herd here has that key, the copy stood at our nest in a herd of its own and was never our mate (the MSI 2026-11-13).
+    static const uintptr_t set_herd = H->sym("SporeCoop::Creature_SetHerd");
+    void* home = game::avatar_herd();
+    if (home && !game::herd_nest(home))
+        home = nullptr;
     for (auto& [id, px] : g_proxies) {
         if (!px.c || (px.key.instance != hk.instance && px.key.instance != lk) || !game::object_alive(px.c) ||
-            game::is_dead(px.c) || game::destroy_pending(px.c) || game::species_profile(px.c) == prof)
+            game::is_dead(px.c) || game::destroy_pending(px.c))
             continue;
-        const int age = *(int*)((uint8_t*)px.c + 0xB34);
-        skg::thiscall<bool>(set_species, px.c, prof, age, true);
-        if (g_own_family_set++ < 20)
-            H->log(M, SK_INFO, "npc: our own family's member #%u wears our creature's species %08X (the host's key %08X, BUG-9169)",
-                   id, game::species_key(av).instance, hk.instance);
+        if (game::species_profile(px.c) != prof) {
+            const int age = *(int*)((uint8_t*)px.c + 0xB34);
+            skg::thiscall<bool>(set_species, px.c, prof, age, true);
+            if (g_own_family_set++ < 20)
+                H->log(M, SK_INFO, "npc: our own family's member #%u wears our creature's species %08X (the host's key %08X, BUG-9169)",
+                       id, game::species_key(av).instance, hk.instance);
+        }
+        if (set_herd && home && game::herd_of(px.c) != home) {
+            skg::thiscall<void>(set_herd, px.c, home);
+            if (g_own_family_homed++ < 20)
+                H->log(M, SK_INFO, "npc: our own family's member #%u joins our own nest herd %p (BUG-9175)", id, home);
+        }
     }
 }
 

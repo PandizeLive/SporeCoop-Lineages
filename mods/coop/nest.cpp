@@ -793,7 +793,10 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         std::vector<void*> v(b, e);
         for (void* c : v)
             if (c && !game::is_dead(c) && k < n) {
-                game::hit(c, 10000.f, 0, game::avatar());
+                if (argc > 4 && !strcmp(argv[4], "raw")) // past the damage filter (a party species' nest, BUG-9175)
+                    game::apply_damage(c, 1e6f, 0, nullptr);
+                else
+                    game::hit(c, 10000.f, 0, game::avatar());
                 k++;
             }
         H->out_printf(out, "killed %d\n", k);
@@ -862,7 +865,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_Surface = H->sym("SporeCoop::cPlanetModel_SurfacePoint");
     a_PlanetGet = H->sym("Simulator::cPlanetModel::Get");
     savestrip::add_filter(savestrip_filter); // BUG-0384: the guest's egg mirrors are not its world
-    H->command_add(M, "coop.nest", "coop.nest [objs [r]|herds|herd <h>|kill <h> <n>|respawn <h> <ms>|target <h> <n>|hatch <egg> <ms>|eat <egg>|look x y z [d]] - eggs at the nests (BUG-0384)", c_nest,
+    H->command_add(M, "coop.nest", "coop.nest [objs [r]|herds|herd <h>|kill <h> <n> [raw]|respawn <h> <ms>|target <h> <n>|hatch <egg> <ms>|eat <egg>|look x y z [d]] - eggs at the nests (BUG-0384)", c_nest,
                    nullptr, SK_CMD_MAIN_THREAD);
 }
 

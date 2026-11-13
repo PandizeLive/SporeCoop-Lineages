@@ -3356,4 +3356,15 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
 * ✔ (BUG-9173) Nest herds made by home_nests have target 4 and respawn 120000 ms (2000 right after they are made); a
   partner's species key changes with its network id (roadmap 1b), so a nest found only by species is lost between
   sessions: each seat's nest is noted per planet (worlds.ini nest<seat>).
+* ✔ (BUG-9175, runtime 2026-11-13) The mating action of the avatar: its controller (+0xB4C) +0x1D8 = 02D852F0 (D23FE7CA at
+  the nest) from the click on the mate until the egg scene; on the host the pairing took 12 s (the native step's state
+  2 1, then 2 2). A creature's +0x1678 is its eggs to lay (`coop.nest herd`: to_lay). A nest herd with bodies or eggs is
+  refilled with eggs (a new egg: 129 s to hatch, +0x1F0), a nest with nothing gets a grown member; an egg set to 2 s
+  hatches and its member lives 10 s after the family died. `game::hit` of a party species by the host's avatar is
+  dropped by the damage filter (decision 7): `coop.nest kill <h> <n> raw` for tests.
+* ✔ A guest's copy of the world keeps a nest herd's species as saved: after the host changed the herd's species at run
+  time (follow_species) the copies of its members find no nest herd of their key there (they got a herd of their own).
+* Design note (decision 2S): one creature has two species on a guest (its own key and the host's key of it). BUG-9169,
+  BUG-9173, BUG-9175's herd and BUG-9176 all come from that; roadmap 1b (one stable key per identity, the same on every
+  game) would remove these patches.
 

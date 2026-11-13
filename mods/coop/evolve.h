@@ -55,6 +55,16 @@ void own_tick(uint32_t mode, void* avatar, bool busy, double now);
 // kEggWatch seconds the mod presses Escape for the player, once per scene. `coop.fix creature.egg_watch`.
 void egg_tick(uint32_t mode, double now);
 
+// BUG-9175: the mating finished by the mod. The game's pairing needs the mate's own AI to answer and walk in (0xD6D360);
+// a guest's mate is a copy of the host's member, run by the host, so a guest's creature stood in the mating action for
+// ever (the MSI, 2026-11-13; it never worked: before decision 2E a guest evolved through the host's vote). The mating
+// action of the own creature (its controller +0x1D8: 02D852F0 / D23FE7CA, started by the game's own click on the mate)
+// now ends in what the pairing ends in: the cocoon, then `request` (coop.cpp submit_evolution_request, the one the join
+// editor and the migration use). On a guest after kDirectAfter s of hearts; on the host only when the game's pairing
+// has not reached its egg scene after kStallAfter s (a stalled pairing). `coop.fix creature.mating_direct`.
+using Request = int (*)();
+void mating_tick(uint32_t mode, void* avatar, bool guest, bool busy, double now, Request request);
+
 // BUG-9161 (cause): the own creature wears the player's own species (creations.cpp apply_own_avatar, BUG-0517's key
 // after an editor) while its nest family and the herd kept the world's older species (seen 2026-11-13: avatar
 // 2920607A, herd and family 2919A821, one nestmate 2920607A): the mate showed the ally face instead of the mate's, and

@@ -36,6 +36,7 @@ struct SeatNest {
     void* herd = nullptr;
     net::Vec3 pos{};
     uint32_t species = 0;
+    int32_t rate = 0; // the game's respawn time while family_back holds it short
 };
 static std::array<SeatNest, founders::kMaxSeats> g_nests;
 static double g_next;
@@ -53,15 +54,18 @@ static bool g_share_member = true;
 COOP_FIX("creature.nest_share_member", "BUG-9167", g_share_member,
          "creature: the world for a player's new nest goes out once the nest has a member (90 s at most)");
 constexpr double kShareWait = 90;
-// The game makes a nest herd's first member when its respawn time (+0x11C, mRespawnRate ms: 120000 here) has run
-// (cHerd_Update, docs/re/creature.md#creature-join-editor-first): a new player nest gets 2 s until its first member,
-// then the game's own time again.
-constexpr int32_t kFirstMemberMs = 2000;
+// The game makes a nest herd's next member when its respawn time (+0x11C, mRespawnRate ms: 120000 here) has run
+// (cHerd_Update, docs/re/creature.md#creature-join-editor-first). A player's nest with no living member (a new nest,
+// BUG-9167; a family that died, BUG-9175 and decision 2E "else one is spawned": the player needs a mate) gets kEmptyNestMs
+// until the next one, then the game's own time again (family_back, host_tick).
+constexpr int32_t kEmptyNestMs = 2000, kGameRespawnMs = 120000;
+static bool g_family_back = true;
+COOP_FIX("creature.nest_family_back", "BUG-9175", g_family_back,
+         "creature: a player's nest with no living member gets its next member in 2 s (a new nest, a family that died)");
+static uint32_t g_family_backs;
 struct ShareDue {
     uint8_t player = 0xFF;
     double since = -1;
-    void* herd = nullptr;
-    int32_t rate = 0; // the game's respawn time, put back after the first member
 };
 static std::array<ShareDue, founders::kMaxSeats> g_share_due;
 static uint32_t g_share_waits;
@@ -292,11 +296,8 @@ static void make_nest(void* ctx)
     // empty local copy faulted the game's claim). An online player gets the world again, once per new nest.
     if (player != party::kNobody && C.sess && player != C.sess->my_id()) {
         if (g_share_member) {
-            const int32_t rate = skg::field<int32_t>(herd, 0x11C);
-            g_share_due[seat] = {player, H->time_seconds(), herd, rate};
-            if (rate > kFirstMemberMs && rate < 3600000)
-                skg::field<int32_t>(herd, 0x11C) = kFirstMemberMs;
-            return; // host_tick sends it once the nest has a member
+            g_share_due[seat] = {player, H->time_seconds()};
+            return; // host_tick sends it once the nest has a member (family_back brings one in 2 s)
         }
         std::string share_err;
         if (world::share_with(player, share_err, true))
@@ -311,10 +312,44 @@ static int members_of(void* herd)
     return live_herd(herd) ? (int)((skg::field<uintptr_t>(herd, 0x44) - skg::field<uintptr_t>(herd, 0x40)) / 4) : -1;
 }
 
-static void rate_back(ShareDue& d)
+// the living members of `herd` (its list +0x40 keeps the dead until the game removes them)
+static int living_of(void* herd)
 {
-    if (d.rate > kFirstMemberMs && d.rate < 3600000 && live_herd(d.herd) && skg::field<int32_t>(d.herd, 0x11C) == kFirstMemberMs)
-        skg::field<int32_t>(d.herd, 0x11C) = d.rate;
+    struct F {
+        void* herd;
+        int n = 0;
+    } f{herd};
+    game::for_each_object([](void* c, uint32_t noun, void* u) {
+        auto& f = *(F*)u;
+        if (noun == 0x18EB45Eu && game::herd_of(c) == f.herd && game::object_alive(c) && !game::is_dead(c))
+            ++f.n;
+        return true;
+    }, &f);
+    return f.n;
+}
+
+// a player's nest never stays without a living member: the game's respawn in kEmptyNestMs while it has none
+static void family_back(size_t seat, void* herd)
+{
+    int32_t& rate = skg::field<int32_t>(herd, 0x11C);
+    if (!g_family_back || rate <= 0 || rate >= 3600000)
+        return;
+    const bool empty = living_of(herd) == 0;
+    // the game refills a nest that has bodies or eggs with eggs (2 min each, seen 2026-11-13): the nest's eggs hatch now
+    // (the herd's eggs +0x54..+0x58, an egg's time to hatch +0x1F0 ms: nest.cpp kEggHatch)
+    if (empty)
+        for (void** e = skg::field<void**>(herd, 0x54), **end = skg::field<void**>(herd, 0x58); e && e < end && end - e < 64; ++e)
+            if (*e && skg::readable(*e, 0x1F4) && skg::field<int32_t>(*e, 0x1F0) > kEmptyNestMs)
+                skg::field<int32_t>(*e, 0x1F0) = kEmptyNestMs;
+    if (empty && rate > kEmptyNestMs) {
+        g_nests[seat].rate = rate;
+        rate = kEmptyNestMs;
+        if (g_family_backs++ < 20)
+            H->log(M, SK_INFO, "home nests: seat %zu's nest has no living member: the next one in %d s (BUG-9175)", seat,
+                   kEmptyNestMs / 1000);
+    } else if (!empty && rate == kEmptyNestMs) {
+        rate = g_nests[seat].rate > kEmptyNestMs ? g_nests[seat].rate : kGameRespawnMs;
+    }
 }
 
 // BUG-9167: a new nest's world goes out once the nest has a member (or after kShareWait s)
@@ -325,14 +360,12 @@ static void share_due_tick(double now)
         if (d.since < 0)
             continue;
         if (party::player_of_seat((int)seat) != d.player) { // the player left (or another one sits there)
-            rate_back(d);
             d = {};
             continue;
         }
         const int members = members_of(g_nests[seat].herd);
         if (members == 0 && now - d.since < kShareWait)
             continue;
-        rate_back(d);
         std::string share_err;
         const bool ok = world::share_with(d.player, share_err, true);
         if (ok)
@@ -483,8 +516,10 @@ void host_tick(double now)
             continue; // its creature is not here (yet)
         net::Vec3 at;
         if (void* herd = nest_herd_near(profile, home, kNear, &at)) {
-            g_nests[seat] = {herd, at, species};
+            g_nests[seat] = {herd, at, species, g_nests[seat].herd == herd ? g_nests[seat].rate : 0};
             note_nest(seat, at);
+            if (party::player_of_seat((int)seat) != party::kNobody)
+                family_back(seat, herd); // (an offline player's nest is the AI's: it may die out, decision 8)
             continue;
         }
         // BUG-9173: the nest noted for this seat on this planet: its species key changed since (one a tick)
