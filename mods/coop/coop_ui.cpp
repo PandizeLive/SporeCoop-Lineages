@@ -2332,6 +2332,9 @@ void tick()
 static struct {
     Win box = nullptr, title = nullptr, name = nullptr, prev = nullptr, next = nullptr, give = nullptr;
     Win give_caption = nullptr, edge[4] = {};
+    // the arrows' own labels: a copied button draws its caption with the Co-op window button's offset (the "<" and ">"
+    // sat 5 px right of the pills' middle, the owner 2026-11-13), a label over an empty button is centred (as GIVE UP)
+    Win prev_caption = nullptr, next_caption = nullptr;
     bool failed = false;
 } g_dh;
 // the Co-op window's panel colour (its frame's content window [4 43 750 581], a filled window without a drawable) and
@@ -2398,7 +2401,15 @@ static bool dh_build()
     if (look && (g_dh.box = sui::button_like(main, D.like_button, {0, 0, 10, 10}, ""))) {
         sui::set_drawable(g_dh.box, look);
         sui::set_flag(g_dh.box, sui::kFlagIgnoreMouse, true);
-    } else {
+    }
+    // (2026-11-13: square on TITAN's QA games: they read Data\SporeCoop.package of the installed game, an older one
+    // without the image; "another image of ours here" tells an old package from a broken image)
+    H->log(M, look && g_dh.box ? SK_INFO : SK_WARN,
+           "ui: downed box background: image %p, look %p, window %p%s", img, look, g_dh.box,
+           img ? "" : sui::has_image(sui::fnv("lineages_tooltip"), sui::fnv("sporecoop"))
+                          ? ": the game's SporeCoop.package is an older one (no lineages_downed_panel): a square box"
+                          : ": no SporeCoop.package images here: a square box");
+    if (!g_dh.box) {
         const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | (kDownedBoxAlpha << 24);
         g_dh.box = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
         if (g_dh.box) sui::set_fill_color(g_dh.box, panel);
@@ -2409,8 +2420,10 @@ static bool dh_build()
     }
     g_dh.title = sui::label(main, {0, 0, 10, 10}, "SPECTATING", D.font_body, kWhite, sui::kAlignCenter);
     g_dh.name = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
-    g_dh.prev = button("<", -1);
-    g_dh.next = button(">", 1);
+    g_dh.prev = button("", -1);
+    g_dh.next = button("", 1);
+    g_dh.prev_caption = sui::label(main, {0, 0, 10, 10}, "<", D.font_body, kWhite, sui::kAlignCenter);
+    g_dh.next_caption = sui::label(main, {0, 0, 10, 10}, ">", D.font_body, kWhite, sui::kAlignCenter);
     g_dh.give = button("", 0);
     if (g_dh.give) { // the Co-op window's red button: its gold button shaded, the caption a white label on top (as Leave)
         sui::set_shade_color(g_dh.give, kDangerButtonShade);
@@ -2422,7 +2435,7 @@ static bool dh_build()
         H->log(M, SK_WARN, "ui: downed screen parts missing (give %p box %p)", g_dh.give, g_dh.box);
     }
     for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
-                  g_dh.next, g_dh.give, g_dh.give_caption})
+                  g_dh.next, g_dh.give, g_dh.give_caption, g_dh.prev_caption, g_dh.next_caption})
         if (w) { sui::add_ref(w); sui::set_visible(w, false); }
     return g_dh.give != nullptr;
 }
@@ -2452,11 +2465,16 @@ static void dh_apply(void*)
     const float arrow_y = b.y2 - pad - arrow_h;
     // front first: bring_to_front puts the window brought first on top (seen 2026-11-12: the box hid its own arrows
     // and the red button its caption when they were brought forward in the other order)
-    if (g_dh.give_caption) sui::set_flag(g_dh.give_caption, sui::kFlagIgnoreMouse, true);
+    for (Win c : {g_dh.give_caption, g_dh.prev_caption, g_dh.next_caption})
+        if (c) sui::set_flag(c, sui::kFlagIgnoreMouse, true);
+    const Rect next_r{b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h};
+    const Rect prev_r{b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h};
     place(g_dh.give_caption, want.show, want.give);
+    place(g_dh.next_caption, box, next_r);
+    place(g_dh.prev_caption, box, prev_r);
     place(g_dh.give, want.show, want.give);
-    place(g_dh.next, box, {b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h});
-    place(g_dh.prev, box, {b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h});
+    place(g_dh.next, box, next_r);
+    place(g_dh.prev, box, prev_r);
     place(g_dh.name, box, {b.x1 + arrow_w + pad, arrow_y, b.x2 - arrow_w - pad, arrow_y + arrow_h});
     if (g_dh.name && box) sui::set_caption(g_dh.name, want.name);
     place(g_dh.title, box, {b.x1, b.y1 + pad, b.x2, arrow_y});
@@ -2494,10 +2512,13 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
         H->run_outside_frame([](void*) {
             g_dh_queued = false;
             Win main = sui::main_window();
-            if (main && g_dh.give_caption && g_dh_shown.show) {
-                sui::bring_to_front(main, g_dh.give_caption);
-                sui::set_flag(g_dh.give_caption, sui::kFlagAlwaysInFront, true);
-            }
+            if (!main || !g_dh_shown.show) return;
+            for (Win c : {g_dh.give_caption, g_dh_shown.box ? g_dh.prev_caption : nullptr,
+                          g_dh_shown.box ? g_dh.next_caption : nullptr})
+                if (c) {
+                    sui::bring_to_front(main, c);
+                    sui::set_flag(c, sui::kFlagAlwaysInFront, true);
+                }
         }, nullptr);
     }
     return g_dh.give != nullptr || show; // the first frame: the parts are being made
@@ -2506,7 +2527,7 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
 void shutdown()
 {
     for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
-                  g_dh.next, g_dh.give, g_dh.give_caption}) // BUG-9156
+                  g_dh.next, g_dh.give, g_dh.give_caption, g_dh.prev_caption, g_dh.next_caption}) // BUG-9156
         if (w) {
             sui::set_visible(w, false);
             if (Win p = sui::parent(w)) sui::remove_child(p, w);

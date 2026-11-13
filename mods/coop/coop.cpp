@@ -4500,16 +4500,21 @@ static void draw_downed_hud(int sw, int sh)
     const float ring_r = std::max(18.f, sh * 0.036f);
     const float ring_y = sh * 0.815f;
     // the owner (2026-11-12): the button as wide as the box, the same gap between box, button and ring
-    const float w = std::max(220.f, sw * 0.17f), gap = 8.f;
+    const float gap = 8.f;
     const float btn_h = 36.f; // the Co-op window's button height
     const float btn_y1 = ring_y - ring_r - 3.f - gap, btn_y0 = btn_y1 - btn_h; // the ring's dark disc: radius + 3
     const bool cell = g_mode == modes::kCell; // BUG-9171
     const std::string cell_name = cell ? cellsync::spectated() : std::string();
     const bool box = cell ? !cell_name.empty() : spectating() && g_spec_id != 0xFF;
     const float box_h = 74.f; // 10 + the title row 24 + the arrow row 30 + 10 (coop_ui dh_apply)
+    const std::string name = !box ? std::string() : cell ? cell_name : g_sess.name_of(g_spec_id);
+    // wide enough for the name on one line between the arrows (the owner's quality check 2026-11-13: "CreatureHost"
+    // broke in two over the title): about 11 px a character of the Co-op window's font, the two arrows 60 each
+    size_t chars = 0;
+    for (unsigned char c : name) chars += (c & 0xC0) != 0x80;
+    const float w = std::min(sw * 0.6f, std::max(std::max(220.f, sw * 0.17f), chars * 11.f + 16.f + 2 * 60.f));
     const sui::Rect give{cx - w / 2, btn_y0, cx + w / 2, btn_y1};
     const sui::Rect box_area{cx - w / 2, btn_y0 - gap - box_h, cx + w / 2, btn_y0 - gap};
-    const std::string name = !box ? std::string() : cell ? cell_name : g_sess.name_of(g_spec_id);
     // the Co-op window's own look (owner 2026-11-12: "ensure consistency"); drawn by the mod only without it
     const bool native = coop_ui::set_downed_hud(true, box, name, give, box_area, on_downed_button);
     if (!native) {

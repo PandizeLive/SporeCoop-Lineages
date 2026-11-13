@@ -5329,6 +5329,10 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * The key names are few: `key 0x1B` for Escape (`key escape` fails). `call <addr> thiscall ...` faulted the MSI's game
   (2026-11-13): read fields with `mem.read` instead. A Creature save's profile can hold a Cell planet too (DuoQACreatureHost
   Game0: Diplomavil is Cell, Samuth is Creature): `coop.load Game0 Samuth`.
+* The QA games on TITAN read the game's data packages from the installed game (the registry's DataDir: the Steam
+  install's Data\SporeCoop.package), not from the QA copy's Data folder: a new image in build/SporeCoop.package is not
+  there until the installed package is updated (the downed box drew its square fallback, 2026-11-13; the log line "ui:
+  downed box background" says so). The MSI gets the package with `msi.ps1 deploy`.
 * Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m
   out there.
 
