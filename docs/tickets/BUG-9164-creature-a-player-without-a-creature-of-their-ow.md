@@ -30,5 +30,7 @@ creature.join_editor_first (on). coop.cpp join_editor_tick: a connected guest in
 ## Verification
 no-fail-run: a feature. Live 2026-11-13, TITAN host + guest with its own creature + a third game on a fresh profile: the guest with its own creature got no editor (correct); the fresh joiner was in its editor 21 s after the join command (on the host's species), added a part, Done: "own creature 2920802E recorded for world", "Joiner plays its own creature", the host made seat 3's nest ("home nests: seat 3 (Joiner) has its own nest of 7CE29548") and sent the world again; after that load the joiner's avatar was its own species again ("own avatar is now 2920802E"); the host and the other guest saw the joiner in the cocoon while it edited (coop.evolve partners: cocoon 2). Found on the way: BUG-9165 (the reload took the joiner's own DNA). The game's first-run account box shows over the stage on a fresh profile (closed by hand).
 
+Cross-PC 2026-11-13 (the MSI joining the TITAN host over Tailscale): its own editor opened about 25 s after the join (Submit -> 1 there); the host and a TITAN guest showed it in the cocoon (coop.evolve partners: cocoon 2); its saved creature got its own nest and the world.
+
 ## History
 - 2026-11-13: opened.

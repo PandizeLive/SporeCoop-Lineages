@@ -30,5 +30,7 @@ creature.keep_own_dna (on), coop.cpp own_dna_tick, guests in Creature with perso
 ## Verification
 no-fail-run: manual on TITAN (no lab lane on Windows). Live 2026-11-13, host + 2 guests: the joiner's DNA set to 250 (SetEvolutionPoints, a spend), worlds.ini [dna] D296F25C=250 written, `coop.share 2` on the host: after the load "own DNA 250 put back after a load of the world (the save had 398)", the joiner 250, the host 398. Fix off (`coop.fix creature.keep_own_dna off`): set to 200, `coop.share 2`: after the load the joiner had 398 (FAIL as reported). Second run (01:51): a world share started 2 s after the own editor's Done (the joiner still in the editor, the load deferred): "own DNA 250 put back after a load of the world (the save had 398)", the spend in that editor kept. The first version recorded the DNA only while the game was not busy and put back the value from before the editor (250 instead of 225 at 01:43): now it is recorded while busy too, only the put-back waits. Not covered: a guest's gain between the load and the put-back is overwritten.
 
+Cross-PC 2026-11-13: the MSI spent 25 in its join editor (398 -> 373); after the host's world came for its new nest: "own DNA 373 put back after a load of the world (the save had 398)"; again after later loads (the save had 548).
+
 ## History
 - 2026-11-13: opened.

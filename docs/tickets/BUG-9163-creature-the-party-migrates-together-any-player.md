@@ -32,3 +32,14 @@ no-fail-run: a feature. Live 2026-11-13, TITAN host + guest: `coop.evolve migrat
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: live with a real migration (the bar 701 crossed a threshold above 601; TITAN host + 2 TITAN guests + the MSI as a guest over Tailscale (relayed), 2026-11-13, all players with a creature of their own): (1) a guest's
+  own migration was never seen: its state goes 0 -> 1 on the return from the editor and the watch had been reset while
+  the game was in the editor; now the state seen before the editor is kept through it (a load starts over:
+  game::stage_epoch). (2) Then the MSI's migration warned everyone, 10 s later the host and both TITAN guests were in
+  their editors; but each of those "final touches" editors started that player's own migration and warned everyone again
+  (a cascade of rounds). Now one migration is one round: a warned game ignores further warnings for 300 s and a
+  migration from its warned editor tells nobody. Seen after that: every game at state 2 with the same new nest
+  (185 -465 -69, the host species' new nest); the host claimed it (CRG_ClaimNest), the world went to every guest, the
+  players' own nests were made 60 m from the new home (BUG-9166, BUG-9167, BUG-9168 found and fixed on the way) and
+  each guest moved into its own nest.
+

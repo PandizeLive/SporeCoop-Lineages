@@ -2374,13 +2374,14 @@ int submit_evolution_request()
 
 // the migration state of this game's player (cPlayer +0x69C property 0x514A219, docs/re/creature.md:
 // CreatureGame_AfterEditor): 1 = a migration started by this evolution (CRG_SpeciesMigrate), 2 = its goal
-static int host_migration()
+static int player_property(uint32_t id)
 {
     static uintptr_t a_GetProperty = H->sym("SporeCoop::Player_GetProperty");
     uint8_t* nm = (uint8_t*)game::noun_manager();
     void* pl = nm && skg::readable(nm + 0x74, 4) ? *(void**)(nm + 0x74) : nullptr;
-    return a_GetProperty && pl ? skg::thiscall<int>(a_GetProperty, pl, 0x514A219u) : -1;
+    return a_GetProperty && pl ? skg::thiscall<int>(a_GetProperty, pl, id) : -1;
 }
+static int host_migration() { return player_property(0x514A219u); }
 
 // ---- BUG-9163 (owner decision 2G): the party migrates together ----
 // "anyone starting the native migration warns every player in the world, 10 s later all go into the editor for final
@@ -2398,9 +2399,18 @@ static double g_mig_editor_at = -1, g_mig_editor_until = -1;
 static uint32_t g_mig_started, g_mig_heard, g_mig_editors;
 static std::string g_mig_by;
 constexpr double kMigrateWarn = 10, kMigrateWait = 30;
+// one migration is one round (2026-11-13, live: the MSI's migration warned everyone; each "final touches" editor then
+// started that player's own migration and warned everyone again, a second round of editors). A game that was warned
+// (or started one) ignores further warnings for kMigrateRound s, and a migration that its warned editor started is
+// part of the round: nobody is told again.
+constexpr double kMigrateRound = 300;
+static double g_mig_round_until = -1;
+static bool g_mig_told_editor;
+static uint32_t g_mig_ignored;
 static void migration_warned(uint8_t by, double now)
 {
     g_mig_by = g_sess.name_of(by);
+    g_mig_round_until = now + kMigrateRound;
     g_mig_editor_at = now + kMigrateWarn;
     g_mig_editor_until = now + kMigrateWarn + kMigrateWait;
     ++g_mig_heard;
@@ -2455,15 +2465,35 @@ static void join_editor_tick(double now)
 
 static void migration_tick(double now)
 {
+    // the migration starts on the return from the editor (CreatureGame_AfterEditor): the state seen before the editor is
+    // kept through it, else the 0 -> 1 was never seen (2026-11-13: a guest's game at state 1, nobody told)
+    // a load (another copy of the world, its saved state) starts over: game::stage_epoch moves with a load, not an editor
+    static uint32_t seen_world, seen_epoch;
+    const uint32_t epoch = game::stage_epoch(modes::kCreature);
+    if (seen_world != g_world || seen_epoch != epoch) {
+        seen_world = g_world;
+        seen_epoch = epoch;
+        g_mig_seen = -1;
+    }
+    if (g_mode == modes::kEditor || g_mode == modes::kEdit)
+        return;
     if (!g_migrate_together || !g_sess.connected() || g_mode != modes::kCreature) {
         g_mig_seen = -1;
         if (g_mode != modes::kCreature) g_mig_editor_at = -1;
         return;
     }
     const int mig = host_migration();
-    if (g_mig_seen == 0 && mig == 1) { // this game's own evolution started a migration
+    if (g_mig_seen == 0 && mig == 1 && (g_mig_told_editor || now < g_mig_round_until)) {
+        ++g_mig_started;
+        g_mig_editor_at = -1;
+        g_mig_told_editor = false;
+        LOG("migration: this game's migration is part of the party's round (by %s): nobody told again (BUG-9163)",
+            g_mig_by.c_str());
+    } else if (g_mig_seen == 0 && mig == 1) { // this game's own evolution started a migration
         ++g_mig_started;
         g_mig_editor_at = -1; // its own editor is done
+        g_mig_round_until = now + kMigrateRound;
+        g_mig_by = g_name;
         if (g_sess.role() == net::Role::Host) {
             send_migrate(g_sess.my_id(), -1, 0xFF);
             notice(g_name + "'s species is migrating to a new nest: everyone migrates together.", -1);
@@ -2483,9 +2513,10 @@ static void migration_tick(double now)
         return;
     }
     g_mig_editor_at = -1;
+    g_mig_told_editor = true;
     H->run_outside_frame([](void*) {
         const int r = submit_evolution_request();
-        if (r > 0) ++g_mig_editors;
+        if (r >= 0) ++g_mig_editors; // 0: Submit said false, the editor opens all the same (BUG-9164)
         LOG("migration: own editor for the final touches -> %d (BUG-9163)", r);
     }, nullptr);
 }
@@ -4980,6 +5011,12 @@ void setup_callbacks()
             const uint32_t world = r.u32();
             if (!r.ok() || kind != 1 || !g_migrate_together || g_mode != modes::kCreature || world != g_world) return;
             const double now = H->time_seconds();
+            if (now < g_mig_round_until) { // this round is under way already (warned, or started here)
+                ++g_mig_ignored;
+                LOG("migration: %s's migration is part of the round of %s (BUG-9163)", g_sess.name_of(by).c_str(),
+                    g_mig_by.c_str());
+                return;
+            }
             if (g_sess.role() == net::Role::Host && from != 0 && by == from) { // a guest's: everyone, the host too
                 send_migrate(by, -1, by);
                 migration_warned(by, now);
@@ -7310,9 +7347,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            return 0;
                        }
                        if (argc > 1 && !strcmp(argv[1], "migration")) { // tests (BUG-9163)
-                           char b[200];
-                           snprintf(b, sizeof b, "migration: state %d, started %u heard %u editors %u, editor in %.0f s (by %s)\n",
-                                    host_migration(), g_mig_started, g_mig_heard, g_mig_editors,
+                           char b[280];
+                           snprintf(b, sizeof b, "migration: state %d (last threshold %d, bar %.0f), started %u heard %u ignored %u editors %u, round %.0f s, editor in %.0f s (by %s)\n",
+                                    host_migration(), player_property(0x54FB6BFu), game::evolution_bar(), g_mig_started, g_mig_heard,
+                                    g_mig_ignored, g_mig_editors, g_mig_round_until < 0 ? -1.0 : g_mig_round_until - H->time_seconds(),
                                     g_mig_editor_at < 0 ? -1.0 : g_mig_editor_at - H->time_seconds(), g_mig_by.c_str());
                            H->out_printf(o, "%s", b);
                            return 0;

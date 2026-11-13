@@ -1350,6 +1350,13 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     }
 }
 
+// BUG-9168: with a nest of its own per player and nests rebuilt after a migration, a species has several nest herds in a
+// world (old ones dead or empty). A proxy went into the cached or first nest herd of its species, so a player's new nest
+// stayed empty on that player's game and its claim waited for ever ("no members here yet", the MSI 2026-11-13). It now
+// goes into the nearest living nest herd of its species. Off: the cached or first one (0.7.8).
+static bool g_nearest_nest_fix = true;
+COOP_FIX("npc.proxy_nearest_nest", "BUG-9168", g_nearest_nest_fix,
+         "npc: a guest's copy of a nest member joins the nearest living nest herd of its species");
 static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
 {
     void* species_nest = species;
@@ -1373,13 +1380,29 @@ static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos,
         void* species;
         void* found;
         void* preferred;
-    } f{species_nest, nullptr, preferred};
+        net::Vec3 at;
+        float best;
+        bool nearest;
+    } f{species_nest, nullptr, preferred, pos, 1e30f, g_nearest_nest_fix};
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto* f = (Find*)u;
             if (noun != game::kHerdNoun || !game::object_alive(o) || game::herd_species(o) != f->species ||
                 !game::herd_nest(o))
                 return true;
+            if (f->nearest) { // the nearest one that has not died out (+0x190)
+                void* nest = game::herd_nest(o);
+                net::Vec3 q;
+                if (!skg::readable(o, 0x194) || skg::field<uint8_t>(o, 0x190) || !game::object_alive(nest) ||
+                    !game::object_position(nest, q))
+                    return true;
+                const float d = net::dist(q, f->at);
+                if (d < f->best) {
+                    f->best = d;
+                    f->found = o;
+                }
+                return true;
+            }
             if (!f->found || o == f->preferred) f->found = o;
             return o != f->preferred;
         },

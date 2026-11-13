@@ -3313,3 +3313,19 @@ species (no second nest). On the player's own game the same +0xA4 change stopped
 for partners' nests on the host only. The editor's complexity meter (the dotted bar top right) full: a dragged part
 snaps back (no cost); remove or move a part instead (QA).
 
+## A migration with a nest per player (2026-11-13, feat/lineages-47)
+<a id="creature-migration-own-nests"></a>
+
+BUG-9163, BUG-9166..9168. ✔ (runtime) Migration thresholds: player property 0x54FB6BF held 150 (the last one passed)
+at a bar of 601; an editor at 701 started a migration (0x514A219 0 -> 1) and set it to 701, so the next threshold is
+between 601 and 701 (the first at 150 or below). Each game decides on the return from its own editor, with the bar it
+has (the party's bar, BUG-9162). ✔ After the party's migration every game (the host and three guests with species of
+their own) pointed CreatureGame_NestHerdFor(1) at the same new nest, the host species' new nest; the guests' avatars
+joined that herd when the host's world came. ✔ A nest herd made by CreateHerd starts with no members: +0x11C
+(mRespawnRate ms) was 120000 on these herds; +0xF4 the target size (4); +0x114 / +0x118 floats 10.0 / 15.0; +0x120 /
++0x124 the brain range (0, 5). With +0x11C set to 2000 the first member came 4-6 s after the nest was made.
+✔ On a guest the copies of the host's nest members join a nest herd of their species (npc.cpp proxy_herd); a species can
+have several nest herds after rebuilt nests (old ones extinct, +0x190): choose by distance. Test tools: `coop.evolve
+migration` (state, last threshold, bar, round), `coop.homes extinct <seat>` (decision 8: a nest dies out and is made
+again), `coop.nest home` on a guest (its home nest, the host's home for it, joins and fails).
+

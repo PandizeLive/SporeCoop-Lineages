@@ -25,6 +25,11 @@
   (BUG-9165).
 - Creature: a partner who evolves keeps their nest; its family takes the new
   species (no second nest, no world reload) (BUG-9151).
+- Creature: a migration started by a guest's own evolution now warns everyone,
+  and one migration is one round of editors (BUG-9163).
+- Creature: after a migration every player moves into their own new nest: its
+  world waits for its first family member and a save of its own, and the guest's
+  copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

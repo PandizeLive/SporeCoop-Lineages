@@ -45,6 +45,26 @@ static uint32_t g_made, g_failed, g_rebuilt, g_ally_set, g_shares, g_followed, g
 // family take the new species in place, as the game's own evolution does with the player's family (the guest's game
 // mirrors these members). Before, the host found no nest of the new species, built a second one elsewhere, left the old
 // one standing as an AI nest of the old body and sent the whole world again. Off: a new nest (0.7.8).
+// BUG-9167: the world for a player's new nest went out at once, before the game had put a member in the new herd (it
+// respawns members after its respawn time, about a minute here). On the guest the empty copy died out (2026-11-13: the
+// MSI's new nest gone from its game a few minutes later) or could not be joined ("no members here yet"), so the player
+// stayed in the host's nest. The world now goes out once the new nest has a member, kShareWait s at most.
+static bool g_share_member = true;
+COOP_FIX("creature.nest_share_member", "BUG-9167", g_share_member,
+         "creature: the world for a player's new nest goes out once the nest has a member (90 s at most)");
+constexpr double kShareWait = 90;
+// The game makes a nest herd's first member when its respawn time (+0x11C, mRespawnRate ms: 120000 here) has run
+// (cHerd_Update, docs/re/creature.md#creature-join-editor-first): a new player nest gets 2 s until its first member,
+// then the game's own time again.
+constexpr int32_t kFirstMemberMs = 2000;
+struct ShareDue {
+    uint8_t player = 0xFF;
+    double since = -1;
+    void* herd = nullptr;
+    int32_t rate = 0; // the game's respawn time, put back after the first member
+};
+static std::array<ShareDue, founders::kMaxSeats> g_share_due;
+static uint32_t g_share_waits;
 static bool g_follow = true;
 COOP_FIX("creature.nest_follows_evolution", "BUG-9151", g_follow,
          "creature: a partner who evolves keeps their nest; its herd and family take the new species (no second nest, no world resend)");
@@ -209,11 +229,58 @@ static void make_nest(void* ctx)
     // the player's world is a copy of ours: without the new nest in it their game has no home to hatch at (and an
     // empty local copy faulted the game's claim). An online player gets the world again, once per new nest.
     if (player != party::kNobody && C.sess && player != C.sess->my_id()) {
+        if (g_share_member) {
+            const int32_t rate = skg::field<int32_t>(herd, 0x11C);
+            g_share_due[seat] = {player, H->time_seconds(), herd, rate};
+            if (rate > kFirstMemberMs && rate < 3600000)
+                skg::field<int32_t>(herd, 0x11C) = kFirstMemberMs;
+            return; // host_tick sends it once the nest has a member
+        }
         std::string share_err;
         if (world::share_with(player, share_err, true))
             g_shares++;
         else
             H->log(M, SK_WARN, "home nests: seat %d's world not sent again: %s", seat, share_err.c_str());
+    }
+}
+
+static int members_of(void* herd)
+{
+    return live_herd(herd) ? (int)((skg::field<uintptr_t>(herd, 0x44) - skg::field<uintptr_t>(herd, 0x40)) / 4) : -1;
+}
+
+static void rate_back(ShareDue& d)
+{
+    if (d.rate > kFirstMemberMs && d.rate < 3600000 && live_herd(d.herd) && skg::field<int32_t>(d.herd, 0x11C) == kFirstMemberMs)
+        skg::field<int32_t>(d.herd, 0x11C) = d.rate;
+}
+
+// BUG-9167: a new nest's world goes out once the nest has a member (or after kShareWait s)
+static void share_due_tick(double now)
+{
+    for (size_t seat = 1; seat < g_share_due.size(); ++seat) {
+        ShareDue& d = g_share_due[seat];
+        if (d.since < 0)
+            continue;
+        if (party::player_of_seat((int)seat) != d.player) { // the player left (or another one sits there)
+            rate_back(d);
+            d = {};
+            continue;
+        }
+        const int members = members_of(g_nests[seat].herd);
+        if (members == 0 && now - d.since < kShareWait)
+            continue;
+        rate_back(d);
+        std::string share_err;
+        const bool ok = world::share_with(d.player, share_err, true);
+        if (ok)
+            g_shares++;
+        if (members > 0 && now - d.since > 1)
+            g_share_waits++;
+        H->log(M, ok ? SK_INFO : SK_WARN, "home nests: seat %zu's world goes out %.0f s after its nest was made (%d member(s)%s)%s%s",
+               seat, now - d.since, members, members == 0 ? ", waited long enough" : "", ok ? "" : ": not sent: ",
+               share_err.c_str());
+        d = {};
     }
 }
 
@@ -275,6 +342,7 @@ void host_tick(double now)
     g_next = now + 2;
     if (!game::in_creature_stage() || game::cinematic_playing() || world::time_paused() || world::load_queued())
         return;
+    share_due_tick(now);
     net::Vec3 home;
     if (!host_home(home))
         return;
@@ -324,6 +392,7 @@ bool home_for(uint8_t player, net::Vec3& out)
 void on_world_change()
 {
     g_nests = {};
+    g_share_due = {};
     g_queued = false;
     g_next = 0;
 }
@@ -351,9 +420,9 @@ std::string status()
             }
             continue;
         }
-        snprintf(b, sizeof b, "  seat %zu: species %08X nest (%.0f %.0f %.0f) %.0f m from the host's, members %d\n", i, g_nests[i].species,
-                 p.x, p.y, p.z, have_home ? net::dist(p, home) : -1.f,
-                 (int)((skg::field<uintptr_t>(g_nests[i].herd, 0x44) - skg::field<uintptr_t>(g_nests[i].herd, 0x40)) / 4));
+        snprintf(b, sizeof b, "  seat %zu: species %08X nest (%.0f %.0f %.0f) %.0f m from the host's, members %d%s\n", i, g_nests[i].species,
+                 p.x, p.y, p.z, have_home ? net::dist(p, home) : -1.f, members_of(g_nests[i].herd),
+                 g_share_due[i].since >= 0 ? ", its world goes out with its first member" : "");
         out += b;
     }
     return out;

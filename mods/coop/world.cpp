@@ -569,6 +569,9 @@ struct PendingShare {
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
     uint32_t tag = 0;  // the caller's tag, given back on a failure (coop.cpp: the guest's join serial)
     bool on_planet = false; // the last save was refused: the ship is on a planet (BUG-0382: share_wait)
+    uint64_t asked = 0;     // BUG-9166: when the share was asked for (a save posted before it lacks what changed since)
+    uint64_t posted = 0;    // when its save was posted
+    bool waited = false;    // BUG-9166: logged once
 };
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
@@ -587,6 +590,7 @@ bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
             }
         PendingShare ps{peer, 0, true};
         ps.tag = tag;
+        ps.asked = GetTickCount64();
         g_pending.push_back(ps);
         return true;
     }
@@ -624,6 +628,13 @@ COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session 
 COOP_FIX("world.world_reset", "BUG-0074", g_world_reset_fix, "world: the session end drops the guest's queued world loads");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
 COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
+// BUG-9166: a share asked for while another share's save is being written went out with that save, made before the
+// reason for the share (2026-11-13: three home nests made 2 s apart after a migration; the second guest's world came
+// from the save posted for the first one, without its own new nest: "the host's home nest has no nest herd here").
+// Such a share now waits until that save is done and gets a save of its own. Off: it goes out with the older save.
+static bool g_fresh_save_fix = true;
+COOP_FIX("world.share_fresh_save", "BUG-9166", g_fresh_save_fix,
+         "world: a share asked for after another share's save was posted waits for a save of its own");
 // BUG-0276: the host's share save posted 70 ms after the game entered the Tribe stage was never
 // written (no "game saved" box, no file); after 10 s the share went out anyway with the slot's
 // previous files, a Creature save, and every guest loaded Creature while the host played Tribe.
@@ -1870,16 +1881,31 @@ void tick(net::Session& s)
             // waiting at a stage change, or a guest that joins during another one's save): this
             // share goes out with it. N saves in one frame (or a second one during the first) may
             // break the slot and left a "game saved" box open on the host.
+            bool older = false; // BUG-9166: a save posted before this share was asked for is being written
             for (auto& q : g_pending)
                 if (&q != &p && !q.need_save && q.latest && now < q.latest) {
+                    if (g_fresh_save_fix && p.asked && q.posted && q.posted < p.asked) {
+                        older = true;
+                        continue;
+                    }
                     p.need_save = false;
                     p.at = q.at;
                     p.latest = q.latest;
                     p.mode = q.mode;
+                    p.posted = q.posted;
                     H->log(M, SK_INFO, "world: the share for player %u goes out with the save for player %u",
                            p.peer, q.peer);
                     break;
                 }
+            if (p.need_save && older) { // one save at a time: this one after it
+                if (!p.waited) {
+                    H->log(M, SK_INFO, "world: the share for player %u waits for a save of its own (one posted before it was "
+                                       "asked for is being written, BUG-9166)", p.peer);
+                    p.waited = true;
+                }
+                i++;
+                continue;
+            }
         }
         if (p.need_save) {
             // a stage that just began (loading screen, setup) is saved once the player controls
@@ -1903,6 +1929,7 @@ void tick(net::Session& s)
                     p.need_save = false;
                     p.at = now + 2500;
                     p.latest = now + 10000;
+                    p.posted = now;
                     p.mode = game::mode_id();
                     if (g_land_after_ms >= 0 && p.mode == modes::kSpace) { // tests: the ship lands before the save is written
                         g_land_at = now + (uint64_t)g_land_after_ms;
