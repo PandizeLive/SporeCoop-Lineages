@@ -1261,11 +1261,20 @@ static bool reply_launch(net::Session& s, uint8_t peer, LaunchMessage phase, uin
     return s.send_reliable_to(peer, net::MSG_SPACE_LAUNCH, w);
 }
 
+// BUG-9187: the launch offer carried seats 0 and 1 (species, nation) and the guest compared it with its whole saved
+// roster, player identities included: a CIV2 roster (identities) or a third founder never matched, so a guest never
+// took the host's Civ victory as its own. The offer now carries every founded seat and the guest compares the seats
+// only. Off: two seats, the whole roster compared.
+static bool g_launch_all_seats = true;
+COOP_FIX("space.launch_all_seats", "BUG-9187", g_launch_all_seats,
+         "space: the launch offer carries every founder seat and matches them without player identities");
+
 static bool matching_launch_world(const LaunchOffer& offer)
 {
     if (offer.planet != modes::current_world_name()) return false;
     founders::Roster local;
-    return founders::read(current_game_key(),local,founders::Stage::Civilization) && local == offer.pair;
+    if (!founders::read(current_game_key(),local,founders::Stage::Civilization)) return false;
+    return g_launch_all_seats ? local.same_seats(offer.pair) : local == offer.pair;
 }
 
 bool offer_launch(net::Session& s, uint8_t peer, uint32_t join)
@@ -1286,9 +1295,10 @@ bool offer_launch(net::Session& s, uint8_t peer, uint32_t join)
     w.u32(join);
     w.str8(planet);
     w.u32(offer.checksum);
-    for (const auto& founder : {offer.pair.home(), offer.pair.guest()}) {
-        w.u32(founder.species);
-        w.u32(founder.faction);
+    const size_t seats = g_launch_all_seats ? std::max<size_t>(2, offer.pair.seats()) : 2;
+    for (size_t i = 0; i < seats; ++i) { // seats 2.. after the two older guests read (BUG-9187)
+        w.u32(offer.pair.entries[i].species);
+        w.u32(offer.pair.entries[i].faction);
     }
     if (!s.send_reliable_to(peer,net::MSG_SPACE_LAUNCH,w)) return false;
     offer.phase = LaunchMessage::Offer;
@@ -1311,7 +1321,7 @@ void on_launch_message(net::Session& s, uint8_t from, net::Reader& r)
         offered.join = join;
         offered.planet = r.str8();
         offered.checksum = r.u32();
-        for (size_t i = 0; i < 2; ++i) {
+        for (size_t i = 0; i < offered.pair.entries.size() && (i < 2 || r.left() >= 8); ++i) {
             offered.pair.entries[i].species = r.u32();
             offered.pair.entries[i].faction = r.u32();
         }

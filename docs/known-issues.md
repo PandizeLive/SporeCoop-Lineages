@@ -2188,3 +2188,12 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 * Reproduce: not on demand (once in about an hour on the DuoQAJiffStand copy).
 * Known: the TRG_* cinematic support log (tribe.cpp) names the caller the next time.
 * Ticket: BUG-9184.
+
+## Space: a guest's homeworld card is blank after a personal launch (2026-11-13, BUG-9188)
+<a id="issue-space-guest-blank-card"></a>
+
+* What happens: the communication card next to the minimap shows a blank white picture on every guest; the host's
+  shows its species. Cosmetic.
+* Reproduce: the four-founder launch (profile DuoQAJiffSpaceReady, docs/re/space.md#space-four-founder-launch).
+* Ticket: BUG-9188.
+

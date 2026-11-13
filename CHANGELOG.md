@@ -6,6 +6,8 @@
   game-over screen while the party plays on; the host decides (BUG-9183).
 - Tribe: a guest's villagers hunt an animal and party at their fire pit by
   right-click; the host refused both before (BUG-9185).
+- Space: a player who joins while the host is already in Space launches from
+  the saved Civilization victory with 3-4 founders too (BUG-9187).
 - Tribe: a guest gives food to a rival village by right-clicking its hut in
   the social stance, as the host does (BUG-9186).
 - Creature / Adventure: the downed screen as the owner drew it: a SPECTATING

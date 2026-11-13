@@ -801,3 +801,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9184](BUG-9184-tribe-the-host-s-game-showed-the-population-game.md) | open | bug | tribe | 2026-11-13 |  | Tribe: the host's game showed the population game over with no population event through the hold |
 | [BUG-9185](BUG-9185-tribe-the-host-refuses-a-guest-s-hunt-and-party.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: the host refuses a guest's Hunt and Party right-click orders |
 | [BUG-9186](BUG-9186-tribe-a-guest-s-social-right-click-on-a-rival-vi.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: a guest's social right-click on a rival village's hut gives no food gift |
+| [BUG-9187](BUG-9187-space-launch-a-guest-never-matches-the-host-s-re.md) | fixed | bug | space | 2026-11-13 | unreleased | Space launch: a guest never matches the host's retained Civ victory once the save has player identities or 3-4 founders |
+| [BUG-9188](BUG-9188-space-a-guest-s-homeworld-communication-card-bot.md) | open | bug | space | 2026-11-13 |  | Space: a guest's homeworld communication card (bottom left) stays blank after a personal launch |

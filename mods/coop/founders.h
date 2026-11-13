@@ -196,6 +196,14 @@ struct Roster {
     }
     bool contains_faction(uint32_t faction) const { return by_faction(faction) != nullptr; }
     bool operator==(const Roster&) const = default;
+    // the same founded seats (species and nation of each), whoever plays them: a roster sent over the network carries
+    // no player identities (BUG-9187)
+    bool same_seats(const Roster& o) const
+    {
+        for (size_t i = 0; i < entries.size(); ++i)
+            if (entries[i].species != o.entries[i].species || entries[i].faction != o.entries[i].faction) return false;
+        return true;
+    }
 };
 
 // planet_file is world::current_game_key(), or spaceext::game_key() in Space.

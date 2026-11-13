@@ -2652,3 +2652,28 @@ the guest" was a parse: a guest's `coop.wstate` prints `st res money=100000(unsy
 after its arrival in Space (shared::brief); the guest's game had 100000, the host's too (the guests' trace lines of
 the same second). worlddiff.State reads the number before the suffix (and keeps the unsynced names in
 `res_unsynced`). Not a desync of the game.
+
+## Four founders launch from one Civ victory (2026-11-13, feat/lineages-47)
+<a id="space-four-founder-launch"></a>
+
+Roadmap phase 6 step 1, BUG-9187.
+* ✔ (live) Fixture: the four-founder Jiff Civ save (profile DuoQAJiffGrad) with six NPC cities spawned
+  (cCivExpansion::SpawnNextCity until it returns 0) and taken with cCity::Capture, spread over the four founder nations
+  (two to the host, one to each partner): CivMode_SpaceReady true on every game, the "Complete Civilization stage" badge,
+  the full progress bar; the mod kept it as the Space-ready Civilization (Games-sporecoop-launch). Kept as profile
+  DuoQAJiffSpaceReady. Founders' profiles: host DuoQAJiffGrad's identity, Late = DuoQAStageGuest, Fourth =
+  DuoQACreatureGuest, the MSI = MSIGuest.
+* ✔ (live) The host's History check opened the launch vote; with nobody voting it timed out ("the editor opens (time is
+  up)") into the host's blank spaceship editor; ship, liftoff, captain, Mission Control ("been there", "yes", then the
+  first answer three times), a zoom out to the solar system (GetCurrentContext 1). The end of the vote told each guest
+  "Open Civilization History and click its checkmark to design your ship" (coop.cpp MSG_VOTE, editor 96B24187); Late and
+  Fourth each opened their own blank editor from their own History and reached "Welcome to Space!" with their own ship.
+* ✔ (live) A player joining while the host is in Space takes the other path: the launch offer, the retained victory
+  loaded, then Ready (world.cpp guest_launch_tick). It never matched with identities or 3+ seats (BUG-9187, fixed).
+* ~ All four share the host's empire ("Gentmin Empire", 100,000 money), as decided (1X A). A guest's homeworld card is
+  blank (BUG-9188). The player list shows the host as "Space, other world" on guests until they leave the planet (the
+  host was in its solar system).
+* Seen on the way: History, its caption OK and the launch check sit at (985,750), (683,470), (997,745) in a 1024x768
+  window; in the spaceship editor three slow drags from the palette's first row onto the stage and "Name your
+  Spaceship" (510,744), then the check (1000,745). Scale by the window size (800x600, 1280x960 used here).
+

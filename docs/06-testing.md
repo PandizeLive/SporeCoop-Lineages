@@ -5354,3 +5354,9 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   guests follow); aim a guest's camera with duo_native_ui.view_tribal_point on `Console(51)` (the MSI tunnel 47850). The
   native NPC tribes that form after ~25 minutes of play are the better targets; a hill can hide a hut the projection
   calls on screen.
+* Space-ready four-founder fixture (2026-11-13): profile DuoQAJiffSpaceReady (a copy; work on a copy of it), host
+  instance with that profile, guests DuoQAStageGuest ("Late"), DuoQACreatureGuest ("Fourth") and the MSI's MSIGuest:
+  `coop.host 47839 JiffHost 4`, everyone joins, all four founder nations are bound by identity. The recipe and the
+  launch clicks: docs/re/space.md#space-four-founder-launch. A guest joining while the host is in Space should be a
+  fresh game at the menu (the MSI's long-running game ran out of address space and its load never finished).
+
