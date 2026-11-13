@@ -321,18 +321,9 @@ static void host_tick(double now)
     }
 }
 
-// guest: join the herd of our own nest at the host's home when ours is elsewhere
-static void follow_home(double now)
+// the nest nearest the home the host told us (15 m), or null
+static void* home_nest()
 {
-    if (!g_home_fix || !a_JoinNestHerd || g_host_home_at < 0 || now - g_host_home_at > 5 || now - g_home_try_at < 10)
-        return;
-    void* av = game::avatar();
-    net::Vec3 mine;
-    if (!av || !game::in_creature_stage() || game::cinematic_playing() || game::health(av) <= 0)
-        return;
-    if (game::nest_position(av, mine) && net::dist(mine, g_host_home) < 15.f)
-        return; // the same nest
-    g_home_try_at = now;
     struct Find { net::Vec3 at; void* nest = nullptr; float best = 15.f; } f{g_host_home};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
@@ -348,6 +339,31 @@ static void follow_home(double now)
             return true;
         },
         &f);
+    return f.nest;
+}
+
+void* home_herd()
+{
+    if (!g_home_fix || g_host_home_at < 0 || H->time_seconds() - g_host_home_at > 5 || !game::in_creature_stage())
+        return nullptr;
+    void* n = home_nest();
+    void* herd = n && !IsBadReadPtr(n, 0x130) ? field<void*>(n, 0x128) : nullptr;
+    return herd && !IsBadReadPtr(herd, 0x48) ? herd : nullptr;
+}
+
+// guest: join the herd of our own nest at the host's home when ours is elsewhere
+static void follow_home(double now)
+{
+    if (!g_home_fix || !a_JoinNestHerd || g_host_home_at < 0 || now - g_host_home_at > 5 || now - g_home_try_at < 10)
+        return;
+    void* av = game::avatar();
+    net::Vec3 mine;
+    if (!av || !game::in_creature_stage() || game::cinematic_playing() || game::health(av) <= 0)
+        return;
+    if (game::nest_position(av, mine) && net::dist(mine, g_host_home) < 15.f)
+        return; // the same nest
+    g_home_try_at = now;
+    struct { void* nest; } f{home_nest()};
     if (!f.nest || IsBadReadPtr(f.nest, 0x130) || !field<void*>(f.nest, 0x128)) {
         g_home_fails++;
         H->log(M, SK_WARN, "nest: the host's home nest (%.0f %.0f %.0f) has no nest herd here", g_host_home.x, g_host_home.y,

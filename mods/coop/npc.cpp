@@ -1,4 +1,6 @@
 #include "npc.h"
+
+#include "nest.h"
 #include "home_nests.h"
 #include "party.h"
 #include "adventure.h"
@@ -1929,9 +1931,9 @@ static void own_family_tick(double now)
     // world; after the host gave our nest another key (an evolution, a nest taken back: BUG-9151, BUG-9173) no nest
     // herd here has that key, the copy stood at our nest in a herd of its own and was never our mate (the MSI 2026-11-13).
     static const uintptr_t set_herd = H->sym("SporeCoop::Creature_SetHerd");
-    void* home = game::avatar_herd();
-    if (home && !game::herd_nest(home))
-        home = nullptr;
+    // (the home the host told us, not the avatar's herd: before the avatar joined its own nest that was the host's
+    // nest, the copies went there and our own nest stayed empty: "no members here yet", never joined; TITAN 2026-11-13)
+    void* home = nest::home_herd();
     for (auto& [id, px] : g_proxies) {
         if (!px.c || (px.key.instance != hk.instance && px.key.instance != lk) || !game::object_alive(px.c) ||
             game::is_dead(px.c) || game::destroy_pending(px.c))

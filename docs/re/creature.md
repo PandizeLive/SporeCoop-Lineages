@@ -3367,4 +3367,11 @@ BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a4
 * Design note (decision 2S): one creature has two species on a guest (its own key and the host's key of it). BUG-9169,
   BUG-9173, BUG-9175's herd and BUG-9176 all come from that; roadmap 1b (one stable key per identity, the same on every
   game) would remove these patches.
+* ✔ (BUG-9177, real mouse 2026-11-13) The mate's card: the pink mate face when the mate is of the player species (vt 0xD0 at
+  0xB6C9D1: +0xB20 == PlayerSpecies, the key at cSpeciesManager +0xA4, [0x1CF0C24] +0xA4: instance, type, group), the
+  green ally face when the game takes it for another, friendly species. A creation put on the avatar only (BUG-0517) left
+  that key at the world's species: the own family was "another species". The key written to the avatar's species: the
+  pink face at once, also with the mod unloaded. The cursor (hearts) comes from CreatureClickAction 9 either way.
+* ✔ `H->world_to_screen` gives a creature's feet with the stock lens: with the wider FoV the drawn creature is elsewhere
+  (the MSI: 200 px off at 11 m); hover the body seen in a picture, not that point.
 

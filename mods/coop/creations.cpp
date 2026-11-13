@@ -244,6 +244,38 @@ static void player_species_tick()
     H->log(M, SK_INFO, "creations: the world's player species %08X -> %08X (BUG-0508)", g_ps_from.instance, to.instance);
 }
 
+// BUG-9177 (owner, 2026-11-13: "They should show the pink mate icon"), roadmap 1b step 1. In the game the creature the
+// player plays IS the player species: PlayerSpecies (the key above), the avatar, its family and the answer of creature
+// vt 0xD0 all agree. Here a player's own creation is put on the avatar (apply_own_avatar, BUG-0517) and the key above
+// stayed the world's: the game took the player's own family for another, allied species: the friendly face on the
+// mate's card (seen with the real mouse on TITAN, also with the mod unloaded: the key 2919A821, the avatar and its
+// family 2920607A; the key written to 2920607A: the pink mate face at once). In Creature the key now follows the
+// creature the own avatar wears, on every game. `coop.fix creature.own_player_species off`: the world's key.
+static bool g_own_ps_fix = true;
+COOP_FIX("creature.own_player_species", "BUG-9177", g_own_ps_fix,
+         "creature: the game's player species is the creature the player plays (the mate's pink face, the family as in the game)");
+static unsigned g_own_ps_set;
+static void own_player_species_tick()
+{
+    if (!g_own_ps_fix || game::mode_id() != modes::kCreature)
+        return;
+    void* av = game::avatar();
+    uint32_t* k = player_species_slot();
+    if (!av || !k)
+        return;
+    const game::Key own = game::species_key(av);
+    if (!own.instance || (k[0] == own.instance && k[1] == own.type && k[2] == own.group))
+        return;
+    if (game::species_by_key(own) != game::species_profile(av))
+        return; // the avatar's species is not (yet) the manager's profile of that key
+    const uint32_t was = k[0];
+    k[0] = own.instance;
+    k[1] = own.type;
+    k[2] = own.group;
+    if (g_own_ps_set++ < 20)
+        H->log(M, SK_INFO, "creations: the game's player species %08X -> %08X, the creature played (BUG-9177)", was, own.instance);
+}
+
 // ---- bundles: a creation with its records ----
 struct Bundle {
     Key key;                         // the creation (crt/cll/ufo key)
@@ -3564,6 +3596,7 @@ void tick(double now)
     }
     apply_own_avatar();
     player_species_tick(); // BUG-0508
+    own_player_species_tick(); // BUG-9177
     bar_tick(); // BUG-0358
 }
 

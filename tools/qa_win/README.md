@@ -12,6 +12,7 @@ Background and pitfalls: docs/06-testing.md#testing-two-pc-msi.
 | `msi.ps1 deploy / start / stop / tunnel` | Copies the build to the MSI, starts or stops Spore there, opens the console tunnel. |
 | `respawn_fade.py <dier> <watcher>...` | Cell: a respawn must not darken the other screens (BUG-9122). |
 | `dis.py <instance or msi> dis <address> [bytes]` / `calls <crash base> <addr>...` | Game code read from a running game and disassembled (no Ghidra here); a crash's stack scan reduced to real call sites. |
+| `hover.ps1 -Instance N -Pattern <regex> -Out <png> [-MatingCall] [-Up px]` | Hovers the REAL mouse pointer over a creature (its line in `coop.evolve mates`) and saves the window with the cursor drawn in (the console's `move` is a virtual cursor; the game's `shot` has no cursor). Owner's OK needed: it moves their mouse. |
 | `social_hits.py msi <host> <npc>...` | Creature: befriending by real input on the MSI never hurts the creature on the host (BUG-9136). |
 
 Rules (owner, 2026-11-11 / 2026-11-12):

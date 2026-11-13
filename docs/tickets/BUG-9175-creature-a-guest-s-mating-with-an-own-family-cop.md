@@ -38,3 +38,4 @@ no-fail-run: manual on two PCs (no Windows lab lane). FAIL (08:17, before): the 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: fixed on feat/lineages-47 (decision 2S A), live on two PCs.
+- 2026-11-13 (later): the copies join the nest herd the host told us as home (nest::home_herd), not the avatar's herd: before the avatar had joined its own nest that was the host's nest, the copies went there and the own nest stayed empty ("no members here yet", joins=0 fails=8 on the TITAN guest); after: joins=1.

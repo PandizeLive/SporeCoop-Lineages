@@ -5317,8 +5317,16 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   that may wipe; the MSI's Jiff copy Game0 was changed that way on 2026-11-13.
 * A Civ save with four founder nations takes no late joiner (no party seat): the Civ late-capital tests need a save with
   a free founder seat.
-* Console `move` moves the cursor but the game's hover card does not follow it (`cursor`: virtual=0); clicks work. The
-  key names are few: `key 0x1B` for Escape (`key escape` fails). `call <addr> thiscall ...` faulted the MSI's game
+* ~ superseded (2026-11-13): see the next point. Console `move` moves the cursor but the game's hover card does not follow it (`cursor`: virtual=0); clicks work.
+* CORRECTION (2026-11-13, feat/lineages-47): console `move`, `click`, `drag` use a virtual cursor (sporekit/focus.cpp: the
+  game's cursor reads return it for 5 s after the last move; the real pointer does not move), so a hover checked later
+  than that shows where the real pointer is. A hover test with the real pointer: `tools/qa_win/hover.ps1 -Instance N
+  -Pattern '<regex of the creature's line in coop.evolve mates>' -Out <png>` (brings the window to the front, clicks its
+  title bar, moves the real pointer, saves the window with the cursor drawn in: the game's `shot` has no cursor). With
+  the pointer over the title bar or the HUD the game rates every creature class 0. The game's own mate: an arrow with
+  hearts as the cursor and the pink mate face on its card (BUG-9177). `-At 'x,y'` hovers a client point (a game with
+  the mod unloaded, or a creature whose drawn spot differs from `screen x y`: the wide FoV).
+* The key names are few: `key 0x1B` for Escape (`key escape` fails). `call <addr> thiscall ...` faulted the MSI's game
   (2026-11-13): read fields with `mem.read` instead. A Creature save's profile can hold a Cell planet too (DuoQACreatureHost
   Game0: Diplomavil is Cell, Samuth is Creature): `coop.load Game0 Samuth`.
 * Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m

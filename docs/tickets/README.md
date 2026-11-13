@@ -791,3 +791,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9174](BUG-9174-creature-a-guest-s-nestmate-never-shows-the-mate.md) | open | bug | creature | 2026-11-13 |  | Creature: a guest's nestmate never shows the mate icon or hearts (the game offers no copy as mate) |
 | [BUG-9175](BUG-9175-creature-a-guest-s-mating-with-an-own-family-cop.md) | open | bug | creature | 2026-11-13 |  | Creature: a guest's mating with an own-family copy stalls after the click (no animal target) |
 | [BUG-9176](BUG-9176-creature-a-guest-s-goal-card-says-its-own-specie.md) | open | bug | creature | 2026-11-13 |  | Creature: a guest's goal card says its own species is extinct (the host-key copies all converted) |
+| [BUG-9177](BUG-9177-creature-the-mate-s-card-shows-the-friendly-face.md) | open | bug | creature | 2026-11-13 |  | Creature: the mate's card shows the friendly face, not the pink mate face (the game's player species is not the creature played) |

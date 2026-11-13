@@ -32,6 +32,8 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Creature: the mate's card shows the pink mate face again: the game's player
+  species is the creature the player plays, on every game (BUG-9177).
 - Creature: a guest can evolve through its own mate: the click on the mate
   ends in the cocoon and its editor (the game's pairing cannot run with the
   host's copy); a player's nest whose family died gets a member back in

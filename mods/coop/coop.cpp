@@ -4227,17 +4227,28 @@ static void SK_THISCALL mate_keeper(void* self, uint32_t a, uint32_t b)
     if (now < next)
         return;
     next = now + 0.5;
+    // an offer the game cleared at once is one its own check refuses (0xD4B2A0: its mate before, a busy one, ...): that
+    // copy is left out for a while (the TITAN guest 2026-11-13: the same copy offered 190 times in 95 s, another one kept)
+    static uint32_t last = 0, refused = 0;
+    static double last_at = 0, refused_until = 0;
+    if (last && now - last_at < 2.0) {
+        refused = last;
+        refused_until = now + 30;
+    }
+    last = 0;
     struct Pick {
-        void *herd, *profile, *best = nullptr;
-        net::Vec3 nest;
-        float d = 40.f;
-    } p{game::herd_of(g_local), game::species_profile(g_local)};
+        void *herd, *profile;
+        uint32_t skip;
+        void* best = nullptr;
+        net::Vec3 nest{};
+        float d = 1e9f; // the nearest to the nest, wherever it roams (a lone member 73 m out was never offered)
+    } p{game::herd_of(g_local), game::species_profile(g_local), now < refused_until ? refused : 0};
     void* nest = p.herd ? game::herd_nest(p.herd) : nullptr;
     if (!nest || !p.profile || !game::object_position(nest, p.nest))
         return;
     game::for_each_object([](void* c, uint32_t noun, void* u) {
         auto& p = *static_cast<Pick*>(u);
-        if (noun == 0x18EB45Eu && own_family_copy(c, p.herd, p.profile)) {
+        if (noun == 0x18EB45Eu && own_family_copy(c, p.herd, p.profile) && game::object_serial(c) != p.skip) {
             const float d = net::dist(p.nest, game::position(c));
             if (d < p.d) {
                 p.d = d;
@@ -4248,6 +4259,8 @@ static void SK_THISCALL mate_keeper(void* self, uint32_t a, uint32_t b)
     }, &p);
     if (!p.best)
         return;
+    last = game::object_serial(p.best);
+    last_at = now;
     skg::thiscall<void>(g_ptr_assign, slot, p.best); // AddRef, as the game's own offer (0xD529FF)
     skg::field<uint32_t>(p.best, 0xB58) |= 0x10;
     skg::field<uint32_t>(skg::field<void*>(p.best, 0xB4C), 0x5FC) |= 0x4000;
