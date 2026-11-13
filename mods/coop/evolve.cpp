@@ -223,6 +223,8 @@ struct Wrapped {
     void* c;
     uint32_t serial;
     Cocoon cc;
+    net::Vec3 at{};       // where it went in: held there (the host's members run their own AI: one walked half out)
+    net::Quat rot{};
 };
 std::map<uint8_t, std::vector<Wrapped>> g_family_cocoons;
 uint32_t g_family_wrapped, g_family_out;
@@ -248,7 +250,7 @@ static void family_in(uint8_t who, void* body, double now)
         if (noun != 0x18EB45Eu || c == f.body || c == f.avatar || !game::object_alive(c) || game::is_dead(c) ||
             game::species_profile(c) != f.profile || net::dist(game::position(c), f.at) > kFamilyRange)
             return true;
-        f.list->push_back({c, game::object_serial(c), {}});
+        f.list->push_back({c, game::object_serial(c), {}, game::position(c), game::orientation(c)});
         return true;
     }, &f);
     for (auto& w : list) {
@@ -273,6 +275,7 @@ static void family_keep(uint8_t who, double now)
             w.cc.state = 2;
         }
         if (w.cc.state == 2) keep(w.c, w.cc, now);
+        if (net::dist(game::position(w.c), w.at) > 0.2f) game::teleport(w.c, w.at, w.rot);
     }
 }
 

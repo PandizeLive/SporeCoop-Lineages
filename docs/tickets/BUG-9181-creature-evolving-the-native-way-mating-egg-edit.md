@@ -33,3 +33,5 @@ Live 2026-11-13 (the MSI as a guest, the owner's report first): FAIL (the owner)
 ## History
 - 2026-11-13: opened.
 - 2026-11-13 (later): the update filter keeps lent proxies; family_tick (BUG-9161) leaves proxies alone (it gave copies the host's species after a respawn); the shell sized 1/0.7 of the radius (at least 1); a partner's pool 3 effect ends after 6 s (the mating call rings, E1B24DDB, the sender sends no stop for pool 3). Live on two PCs.
+- 2026-11-13 (later, TITAN's real mouse with the owner's OK): the host's view of the MSI in its editor: the family's cocoons (4 wrapped), much larger shells; back: the cocoons open and the family stands at the nest. Seen: one family member's head through the side of its shell (the host's members run their own AI and walked): wrapped members are now held where they went in (teleported back); a small head at a shell's front stays unexplained (likely a hatchling born after the wrap). A click beside the moving mate started a mating without a target: the 30 s stall path took over (finished_by_mod 1). The test games run at 10 FPS now.
+
