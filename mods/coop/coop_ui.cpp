@@ -70,7 +70,33 @@ constexpr uint32_t kDialogLayout = 0x34A6339E; // the game's account dialog (fra
 constexpr uint32_t kGold = 0xFFFFCC4D, kWhite = 0xFFFFFFFF, kDim = 0xFF9DB8CC, kGreen = 0xFF8CF08C,
                    kRed = 0xFFFF7A6A, kYellow = 0xFFFFD866;
 constexpr float kW = 760, kH = 600;
-constexpr uint32_t kDangerButtonShade = 0xFFAD535D;
+constexpr uint32_t kDangerButtonShade = 0xFFAD535D; // the red without our images (an older package)
+// the owner (2026-11-13): the game's gold buttons and their shaded red "look a bit dim and grimy": every button of the
+// mod (all copy D.like_button) draws data/ui/lineages_button_gold_*, the red ones lineages_button_red_* (tools/
+// make_icons.py), in the game's button layout; without the images (an older package) the game's look and the shade
+static void* g_red_look; // the red buttons' drawable, null: shade the gold
+static bool g_bright_buttons = true;
+COOP_FIX("ui.bright_buttons", "BUG-9179", g_bright_buttons,
+         "ui: the mod's buttons draw their own brighter gold and red (the game's: dim and grimy, the owner 2026-11-13)");
+static void* button_look(void* game_look, const char* colour)
+{
+    static const char* const kStates[4] = {"normal", "disabled", "hover", "pressed"};
+    void* img[4] = {};
+    for (int i = 0; i < 4; i++)
+        img[i] = sui::image(sui::fnv((std::string("lineages_button_") + colour + "_" + kStates[i]).c_str()), 0x2F7D0004,
+                            sui::fnv("sporecoop"));
+    void* look = sui::std_drawable_states(game_look, img, 4);
+    for (void* i : img)
+        if (i) sui::release(i); // the drawable holds its own references
+    return look;
+}
+static void apply_red(Win button)
+{
+    if (g_red_look)
+        sui::set_drawable(button, g_red_look);
+    else
+        sui::set_shade_color(button, kDangerButtonShade);
+}
 constexpr int kSpaceRows = 12;
 static bool g_space_page; // the lobby shows the Space page instead
 static unsigned g_slots_shown; // the player slot count last written into the lobby's box (0: none)
@@ -391,7 +417,7 @@ static Win shade_danger_button(std::vector<Win>& page, Win button, const std::st
     // Draw the caption above the button with a mouse-transparent native label.
     Win caption = add_label(page, sui::area(button), title, kWhite, sui::kAlignCenter);
     if (caption) {
-        sui::set_shade_color(button, kDangerButtonShade);
+        apply_red(button);
         sui::set_label_color(button, 0);
     }
     return caption;
@@ -998,6 +1024,14 @@ static void build_dialog()
     H->log(M, SK_DEBUG, "ui: dialog font %08X", D.font_body);
     D.like_button = login;
     D.font_button = sui::font(login);
+    if (g_bright_buttons && login) { // BUG-9179: every copy of the model button takes this look
+        void* game_look = sui::drawable(login);
+        void* gold = button_look(game_look, "gold");
+        g_red_look = gold ? button_look(game_look, "red") : nullptr;
+        if (gold) sui::set_drawable(login, gold);
+        H->log(M, gold && g_red_look ? SK_INFO : SK_WARN, "ui: bright buttons: gold %p red %p%s (BUG-9179)", gold,
+               g_red_look, gold ? "" : ": the game's look (no lineages_button images in the package, or another class)");
+    }
     // keep the frame, glow, logo and close button; hide the account dialog's own content
     for (uint32_t id : {0x0451D381u, 0x0519E168u, 0x06555818u, 0x065D20A8u, 0x0519D9B8u, 0x0451A4C0u})
         if (Win w = sui::find(root, id))
@@ -2444,7 +2478,7 @@ static bool dh_build()
         if (a) sui::center_caption(a); // (a copied button's caption sat right of the middle, the owner 2026-11-13)
     g_dh.give = button("", 0);
     if (g_dh.give) { // the Co-op window's red button: its gold button shaded, the caption a white label on top (as Leave)
-        sui::set_shade_color(g_dh.give, kDangerButtonShade);
+        apply_red(g_dh.give);
         sui::set_label_color(g_dh.give, 0);
         g_dh.give_caption = sui::label(root, {0, 0, 10, 10}, "GIVE UP", D.font_body, kWhite, sui::kAlignCenter);
     }

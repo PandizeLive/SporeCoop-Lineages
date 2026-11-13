@@ -207,6 +207,9 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2R | Push feat/lineages-47 (the overnight commits) to the fork: A now; B after the live checks; C not yet | B, after the live checks |
 | 2S | The stalled guest mating (BUG-9175): A fix it before Space; B Space first | A (owner 2026-11-13: "This plus the stall needs to be fixed. Investigate if we're over engineering and if it'd be easier to redo anything with what you know now. Let's actively prevent spaghetti coding.") |
 | 2T | After the guest mating fix (2026-11-13): A one species key per player creature first (roadmap 1b widened: removes the two-key patches and BUG-9176), then Space; B Space now (2Q B), 1b later; C the owner's live check of the mating first | A (owner 2026-11-13; first the mate's hover card checked with the real mouse on TITAN: "We need this solved.") |
+| 2U | Copy the new SporeCoop.package into the owner's Steam Spore install (TITAN's QA games read it): A yes; B no | A (owner 2026-11-13: "Yes"; asked without its ID at the time; the old file in out/owner-install-backup/) |
+| 2V | After the downed-box check (2026-11-13): A the 1b cleanup (2T A: remove the patches the player-species fix made redundant); B the player list's name wrap and the downed box in Cell / Adventure first | asked 2026-11-13 (asked without its ID at the time) |
+| 2W | Copy the package with the brighter buttons (BUG-9179) into the owner's Steam Spore install too: A yes; B no (TITAN keeps the game's look until the next install) | asked 2026-11-13 |
 
 Next free ID: 2Q.
 

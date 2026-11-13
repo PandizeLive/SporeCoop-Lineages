@@ -519,6 +519,32 @@ void* std_drawable_tooltip(void* image)
     return d;
 }
 
+void* std_drawable_states(void* src, void* const* images, int n)
+{
+    static uintptr_t ctor = H->sym("UTFWin::StdDrawable::StdDrawable");
+    if (!ctor || !src || n < 1 || n > 8 || IsBadReadPtr(src, 0x7C))
+        return nullptr;
+    for (int i = 0; i < n; i++)
+        if (!images[i])
+            return nullptr;
+    uint8_t* d = (uint8_t*)utf_new(0x7C);
+    if (!d)
+        return nullptr;
+    thiscall<void*>(ctor, d);
+    if (*(uintptr_t*)d != *(uintptr_t*)src) { // not the class of the game's button: leave its look alone
+        obj_release(d);
+        return nullptr;
+    }
+    for (int i = 0; i < n; i++) {
+        *(void**)(d + 0x10 + i * 4) = images[i];
+        obj_addref(images[i]);
+    }
+    const uint8_t* s = (const uint8_t*)src; // the layout (mode, cuts, scale) and the values after the hit mask
+    memcpy(d + 0x30, s + 0x30, 0x4C - 0x30);
+    memcpy(d + 0x50, s + 0x50, 0x7C - 0x50);
+    return d;
+}
+
 // ---------------- events ----------------
 struct HandlerBox {
     std::function<bool(Win, const Msg&)> fn;
