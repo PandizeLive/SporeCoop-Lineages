@@ -209,7 +209,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2B | Space: how difficulty scales | A; owner asked whether parties need a friend list and whether to switch from slots now (see 2O) |
 | 2C | Space: the Galactic Core ending | A |
 | 2D | Creature: the "cocoon" | the native cocoon (owner: NPC species wrap into a cocoon and come out as a new species; Claude was wrong that the game has none); built 2026-11-13 (BUG-9160: the game's own cocoon animations and effects, live) |
-| 2E | Creature: how evolving starts | owner's rule: native mating call; the nearest mate answers, else one is spawned; the player clicks the mate to start; built 2026-11-13 (BUG-9160, BUG-9161: no vote, the egg scene replaced by the cocoon; BUG-9175: a guest's click ends in the cocoon and the editor, "else one is spawned" as a dead family brought back in seconds) |
+| 2E | Creature: how evolving starts (the owner's full sequence 2026-11-13 in BUG-9181: the game's mating, dance and egg; the family in cocoons while the player edits; back, the family out first, the player hatches from its egg) | owner's rule: native mating call; the nearest mate answers, else one is spawned; the player clicks the mate to start; built 2026-11-13 (BUG-9160, BUG-9161: no vote, the egg scene replaced by the cocoon; BUG-9175: a guest's click ends in the cocoon and the editor, "else one is spawned" as a dead family brought back in seconds) |
 | 2F | Creature: DNA when two players evolve at once | B, personal DNA (owner: "Everyone gets their own DNA."); built 2026-11-13 (BUG-9162, live on TITAN) |
 | 2G | Creature: who moves the party's nest | owner's rule: anyone starting the native migration warns every player in the world, 10 s later all go into the editor for final touches (downed or dead players too, cleaned up) and migrate together; built 2026-11-13 (BUG-9163; live across PCs with a real migration: one round of editors, the claim, each player in their own new nest) |
 | 2H | Space: what ends Civ for a party | A |
@@ -229,8 +229,9 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2V | After the downed-box check (2026-11-13): A the 1b cleanup (2T A: remove the patches the player-species fix made redundant); B the player list's name wrap and the downed box in Cell / Adventure first | A (owner 2026-11-13: "2VA"; asked without its ID at the time) |
 | 2W | Copy the package with the brighter buttons (BUG-9179) into the owner's Steam Spore install too: A yes; B no (TITAN keeps the game's look until the next install) | A (owner 2026-11-13: "2WA") |
 | 2X | 1b, how far (2026-11-13): A one key per player creation on every game, the owner's own game included, made from the owner's persistent identity (removes BUG-9169's copy conversion, BUG-9173's nest note after one migration, BUG-9176); B keys only stable across rejoins (the owner's own game keeps its own key: BUG-9169 and BUG-9176 stay); C Space first, 1b later | A (owner 2026-11-13: "2XA - I feel this is needed for MMO work.") |
+| 2Y | The ring of old player nests round the host's nest (left by the old keys: one more nest per rejoin): A the host removes, once per save, the nests the mod made for players that belong to no seat any more; B leave them | asked 2026-11-13 |
 
-Next free ID: 2Y. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
+Next free ID: 2Z. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
 
 Answers of 2026-11-12 (1X-2M), notes:
 * 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species
