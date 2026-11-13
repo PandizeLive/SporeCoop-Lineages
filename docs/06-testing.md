@@ -5317,4 +5317,10 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   that may wipe; the MSI's Jiff copy Game0 was changed that way on 2026-11-13.
 * A Civ save with four founder nations takes no late joiner (no party seat): the Civ late-capital tests need a save with
   a free founder seat.
+* Console `move` moves the cursor but the game's hover card does not follow it (`cursor`: virtual=0); clicks work. The
+  key names are few: `key 0x1B` for Escape (`key escape` fails). `call <addr> thiscall ...` faulted the MSI's game
+  (2026-11-13): read fields with `mem.read` instead. A Creature save's profile can hold a Cell planet too (DuoQACreatureHost
+  Game0: Diplomavil is Cell, Samuth is Creature): `coop.load Game0 Samuth`.
+* Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m
+  out there.
 

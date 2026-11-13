@@ -2178,3 +2178,16 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   wiped-out village is no longer captured, so this only matters with `coop.fix tribe.party_wipe off` or an older save
   whose partner village was captured before. For tests the page comes back with `coop.fix ui.village_page on`.
   Ticket: BUG-9153.
+
+## Creature: a guest's mating stalls after the click on its mate (BUG-9175)
+
+* What happens: a guest clicks the nestmate offered as mate (hearts, the mate icon): its creature starts the mating and
+  stands there; no partner walks in, no cocoon. Clicking again has made them mate before.
+* Reproduce: a guest with its own creature at its own nest, the mating call, a click on the hearted nestmate;
+  `coop.evolve mates` shows action 02D852F0, target 00000000. Ticket: BUG-9175.
+
+## Creature: a guest's goal card calls its own species extinct (BUG-9176)
+
+* What happens: "The <own species> species is extinct!" on a guest whose creature is its own.
+* Reproduce: a guest with its own creature at its own nest; the hunt goal of its own species' host key. Ticket: BUG-9176.
+

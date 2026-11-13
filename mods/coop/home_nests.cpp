@@ -126,6 +126,9 @@ static void* nest_herd_near(void* profile, const net::Vec3& at, float within, ne
 static bool g_flat_site = true;
 COOP_FIX("creature.nest_site_flat", "BUG-9167", g_flat_site,
          "creature: a player's new nest is put where the land around it is flat too (not a small island)");
+static bool g_closest_height = true;
+COOP_FIX("creature.nest_site_closest_height", "BUG-9173", g_closest_height,
+         "creature: more spots for a player's nest (55-100 m), then the closest in height (up to 20 m) instead of none");
 // decision 2: a flat spot 45-80 m from the host's home nest, at its height (within 6 m), 25 m from every other nest
 static bool site_near(const net::Vec3& home, net::Vec3& out)
 {
@@ -165,26 +168,65 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
             }
         return true;
     };
+    // BUG-9173: the closest in height of the spots clear of other nests, when none is within 6 m of the home's height
+    // (a host nest on a slope, Samuth 2026-11-13: 42 tries, no nest, the player's family the host's species: no mate)
+    struct {
+        int no_ground = 0, height = 0, near_nest = 0;
+        float best_dh = 1e9f;
+        net::Vec3 best{};
+    } why;
+    // the spots tried: 12 directions at 60, 50, 70, 45, 80 m (as before); BUG-9173: then 24 directions at 55-100 m (a
+    // ring of old nests at 50-65 m filled every one of the first 60 on Samuth)
+    std::vector<std::pair<float, float>> spots; // (distance m, direction degrees)
+    for (float dist : {60.f, 50.f, 70.f, 45.f, 80.f})
+        for (int k = 0; k < 12; k++)
+            spots.push_back({dist, k * 30 + dist});
+    if (g_closest_height)
+        for (float dist : {55.f, 65.f, 75.f, 90.f, 100.f})
+            for (int k = 0; k < 24; k++)
+                spots.push_back({dist, k * 15 + 7.5f});
     for (int pass = g_flat_site ? 0 : 1; pass < 2; ++pass) // 0: flat land around it, 1: as before
-        for (float dist : {60.f, 50.f, 70.f, 45.f, 80.f})
-            for (int k = 0; k < 12; k++) {
-                const float a = (k * 30 + dist) * 0.0174533f;
+            for (const auto& [dist, deg] : spots) {
+                const float a = deg * 0.0174533f;
                 net::Vec3 q{home.x + dist * (u.x * std::cos(a) + v.x * std::sin(a)), home.y + dist * (u.y * std::cos(a) + v.y * std::sin(a)),
                             home.z + dist * (u.z * std::cos(a) + v.z * std::sin(a))};
                 const float g = game::ground_radius(q), len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
-                if (!std::isfinite(g) || std::fabs(g - h0) > 6 || len < 1)
+                if (!std::isfinite(g) || g < 1 || len < 1) {
+                    why.no_ground += pass == 1;
                     continue;
+                }
                 q = {q.x * g / len, q.y * g / len, q.z * g / len};
                 bool clear = true;
                 for (const auto& o : nests)
                     clear &= net::dist(o, q) >= 25.f;
-                if (clear && (pass == 1 || flat_around(q))) {
+                if (!clear) {
+                    why.near_nest += pass == 1;
+                    continue;
+                }
+                if (std::fabs(g - h0) > 6) {
+                    why.height += pass == 1;
+                    if (std::fabs(g - h0) < why.best_dh) {
+                        why.best_dh = std::fabs(g - h0);
+                        why.best = q;
+                    }
+                    continue;
+                }
+                if (pass == 1 || flat_around(q)) {
                     if (pass == 1 && g_flat_site)
                         H->log(M, SK_INFO, "home nests: no spot with flat land around it 45-80 m from the host's nest: one without");
                     out = q;
                     return true;
                 }
             }
+    static int told = 0;
+    if (told++ < 5)
+        H->log(M, SK_WARN, "home nests: no spot at the home's height (radius %.1f): %d no ground, %d off by more than 6 m "
+               "(the closest %.1f m), %d within 25 m of a nest", h0, why.no_ground, why.height,
+               why.best_dh < 1e8f ? why.best_dh : -1.f, why.near_nest);
+    if (g_closest_height && why.best_dh < 20.f) {
+        out = why.best;
+        return true;
+    }
     return false;
 }
 
@@ -355,6 +397,68 @@ static void follow_species(void* ctx)
     g_follow_members += x.changed;
 }
 
+// BUG-9173: each seat's nest is noted per planet in worlds.ini (section "nest<seat>", "x y z"). A player whose creature
+// comes back under another species key (a rejoin under another network id: roadmap 1b) gets that nest back, following
+// the new key as after an evolution (BUG-9151); before, every such session built one more nest next to the host's
+// (Samuth 2026-11-13: a ring of 12 at 50-65 m that left no spot for a new one). Off: a new nest each time.
+static bool g_note_fix = true;
+COOP_FIX("creature.nest_note", "BUG-9173", g_note_fix,
+         "creature: a player's nest is noted per planet and taken back when their species key changed (not a new one)");
+static std::array<net::Vec3, founders::kMaxSeats> g_noted{};
+static std::array<uint32_t, founders::kMaxSeats> g_noted_world{};
+constexpr uint32_t kNotedSpecies = 1; // g_nests[].species of a nest found by its note (its old key is not known)
+
+static void note_nest(size_t seat, const net::Vec3& at)
+{
+    const uint32_t w = g_note_fix && C.world ? C.world() : 0;
+    if (!w || (g_noted_world[seat] == w && net::dist(g_noted[seat], at) < 1))
+        return;
+    char key[16], v[64];
+    snprintf(key, sizeof key, "nest%zu", seat);
+    snprintf(v, sizeof v, "%.1f %.1f %.1f", at.x, at.y, at.z);
+    creations::world_note_set(key, w, v);
+    g_noted[seat] = at;
+    g_noted_world[seat] = w;
+}
+
+// the live nest herd at the spot noted for `seat` on this planet (not the host's, not another seat's), or null
+static void* noted_nest(size_t seat, const net::Vec3& home, net::Vec3& at)
+{
+    const uint32_t w = g_note_fix && C.world ? C.world() : 0;
+    if (!w)
+        return nullptr;
+    char key[16];
+    snprintf(key, sizeof key, "nest%zu", seat);
+    const std::string s = creations::world_note(key, w);
+    net::Vec3 p{};
+    if (s.empty() || sscanf(s.c_str(), "%f %f %f", &p.x, &p.y, &p.z) != 3 || net::dist(p, home) > kNear)
+        return nullptr;
+    struct F {
+        net::Vec3 p;
+        void* own;
+        void* herd = nullptr;
+        net::Vec3 at{};
+    } f{p, game::avatar_herd()};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto& f = *(F*)u;
+            net::Vec3 q;
+            if (!f.herd && noun == game::kHerdNoun && o != f.own && live_herd(o) && !skg::field<uint8_t>(o, 0x190) &&
+                nest_pos_of(o, q) && net::dist(q, f.p) < 6) {
+                f.herd = o;
+                f.at = q;
+            }
+            return true;
+        },
+        &f);
+    for (size_t i = 1; f.herd && i < g_nests.size(); ++i)
+        if (i != seat && g_nests[i].herd == f.herd)
+            return nullptr;
+    if (f.herd)
+        at = f.at;
+    return f.herd;
+}
+
 void host_tick(double now)
 {
     if (!g_fix || !is_host() || now < g_next || g_queued)
@@ -380,8 +484,17 @@ void host_tick(double now)
         net::Vec3 at;
         if (void* herd = nest_herd_near(profile, home, kNear, &at)) {
             g_nests[seat] = {herd, at, species};
+            note_nest(seat, at);
             continue;
         }
+        // BUG-9173: the nest noted for this seat on this planet: its species key changed since (one a tick)
+        if (g_follow && g_nests[seat].species != kNotedSpecies && party::player_of_seat((int)seat) != party::kNobody)
+            if (void* herd = noted_nest(seat, home, at)) {
+                g_nests[seat] = {herd, at, kNotedSpecies};
+                g_queued = true;
+                H->run_outside_frame(follow_species, (void*)(intptr_t)seat);
+                return;
+            }
         // BUG-9151: its nest of the species it played before is still here: that nest follows (one a tick)
         if (g_follow && g_nests[seat].species && g_nests[seat].species != species && nest_pos_of(g_nests[seat].herd, at) &&
             net::dist(at, home) < kNear && party::player_of_seat((int)seat) != party::kNobody) {

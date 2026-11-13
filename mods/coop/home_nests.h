@@ -25,6 +25,7 @@ namespace home_nests {
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> notice; // shown to every player
+    std::function<uint32_t()> world;                // the planet's id (worlds.ini notes: each seat's nest, BUG-9173)
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

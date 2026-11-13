@@ -282,3 +282,4 @@ SporeCoop::Creature_SetSprint ; Tribe / Creature: a guest sees and hears the spr
 SporeCoop::Tribe_HutStateIs2 ; BUG-9153: the null-hut guard of the Tribe UI's ring code is off on GOG 2016 (unsupported build)
 SporeCoop::TribeHutUI_HandleMessage ; BUG-9153: a guest's Add Baby sent to the host is off on GOG 2016 (unsupported build)
 SporeCoop::TribeStage_AddGoalProgress ; BUG-9155: the party wipe's test win (coop.tribe win) is off on GOG 2016 (unsupported build)
+SporeCoop::CreatureMateKeeper ; BUG-9174: a guest's own-family copy offered as mate (icon, hearts) is off on GOG 2016 (unsupported build)

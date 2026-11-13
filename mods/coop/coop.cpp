@@ -4186,6 +4186,70 @@ static bool mate_step(void* avatar, uintptr_t a2, uintptr_t a3, uintptr_t a4, ui
     return g_native_mate_step(avatar, a2, a3, a4, a5, state);
 }
 
+// BUG-9174: the Creature game's mate keeper (0xD52270, every frame) keeps the nestmate offered as mate in its slot
+// (+0x38, an intrusive pointer), marked +0xB58 bit 0x10 (CreatureClickAction 9: the mate icon) and its controller
+// +0x5FC bit 0x4000; it offers none while the avatar's +0x1678 > 0 and clears one through 0xD4B180. It picks from the
+// avatar's own family; a guest's family are copies of the host's members (npc.cpp), never picked: no mate icon and no
+// hearts on a guest (owner, 2026-11-12 and 2026-11-13). Now a guest's empty slot gets the nearest grown copy of its own
+// species in its own nest herd. Off: no mate offered on a guest (the click still mates, BUG-0177).
+static bool g_guest_mate_fix = true;
+COOP_FIX("creature.guest_mate_offer", "BUG-9174", g_guest_mate_fix,
+         "creature: a guest's nest offers a copy of its family as mate (the mate icon and hearts, as on the host)");
+static void (SK_THISCALL* g_native_mate_keeper)(void*, uint32_t, uint32_t);
+static uintptr_t g_ptr_assign;   // SporeCoop::IntrusivePtr_Assign
+static void* g_mate_keeper;      // tests: the keeper (this) seen last
+static uint32_t g_mate_offers;   // tests: copies put in the slot
+
+static bool own_family_copy(void* c, void* herd, void* profile)
+{
+    return c && c != g_local && game::is_puppet(c) && game::object_alive(c) && !game::is_dead(c) &&
+           game::herd_of(c) == herd && game::species_profile(c) == profile &&
+           skg::field<int32_t>(c, 0xB34) == 1 && skg::field<void*>(c, 0xB4C); // grown (0xC0B8D0), a controller (0xD4B180)
+}
+
+static void SK_THISCALL mate_keeper(void* self, uint32_t a, uint32_t b)
+{
+    g_native_mate_keeper(self, a, b);
+    g_mate_keeper = self;
+    if (!g_guest_mate_fix || !g_ptr_assign || !self || !g_sess.connected() || g_sess.role() == net::Role::Host ||
+        !game::in_creature_stage() || !g_local || g_local != game::avatar() || (game_busy() & (busy::kLoading | busy::kEditor)))
+        return;
+    void** slot = (void**)((uint8_t*)self + 0x38);
+    if (*slot || skg::field<int32_t>(g_local, 0x1678) > 0)
+        return; // the game offers one itself, or none now
+    static double next = 0;
+    const double now = H->time_seconds();
+    if (now < next)
+        return;
+    next = now + 0.5;
+    struct Pick {
+        void *herd, *profile, *best = nullptr;
+        net::Vec3 nest;
+        float d = 40.f;
+    } p{game::herd_of(g_local), game::species_profile(g_local)};
+    void* nest = p.herd ? game::herd_nest(p.herd) : nullptr;
+    if (!nest || !p.profile || !game::object_position(nest, p.nest))
+        return;
+    game::for_each_object([](void* c, uint32_t noun, void* u) {
+        auto& p = *static_cast<Pick*>(u);
+        if (noun == 0x18EB45Eu && own_family_copy(c, p.herd, p.profile)) {
+            const float d = net::dist(p.nest, game::position(c));
+            if (d < p.d) {
+                p.d = d;
+                p.best = c;
+            }
+        }
+        return true;
+    }, &p);
+    if (!p.best)
+        return;
+    skg::thiscall<void>(g_ptr_assign, slot, p.best); // AddRef, as the game's own offer (0xD529FF)
+    skg::field<uint32_t>(p.best, 0xB58) |= 0x10;
+    skg::field<uint32_t>(skg::field<void*>(p.best, 0xB4C), 0x5FC) |= 0x4000;
+    if (g_mate_offers++ < 10)
+        trace::line("creature", "mate offered: own family copy %p, %.1f m from the nest (BUG-9174)", p.best, p.d);
+}
+
 static void* (SK_THISCALL* g_get_creature_effect)(void*, uint32_t);
 static void* (SK_THISCALL* g_start_creature_effect)(void*, bool, uint32_t, uint32_t);
 
@@ -4220,7 +4284,9 @@ void mate_hearts_tick(double now)
     }
     game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
         auto& local = *static_cast<LocalCreature*>(ctx);
-        if (noun != 0x18EB45Eu || creature == g_local || game::is_puppet(creature) ||
+        // (BUG-9174: a guest's own family copy offered as mate gets the hearts too)
+        if (noun != 0x18EB45Eu || creature == g_local ||
+            (game::is_puppet(creature) && !(g_guest_mate_fix && game::species_profile(creature) == game::species_profile(g_local))) ||
             !game::object_alive(creature) || game::is_dead(creature) || game::herd_of(creature) != local.herd ||
             skg::cdecl_call<int>(g_mate_classify, creature) != 9)
             return true;
@@ -4248,6 +4314,9 @@ void mate_hearts_tick(double now)
 std::string mates_report()
 {
     if (!g_local || !g_mate_classify || !g_get_creature_effect) return "no own creature here\n";
+    // BUG-9172: in Cell (or in a load) g_local is no creature: its "herd" field held a float and the nest read faulted
+    if (!game::in_creature_stage() || g_local != game::avatar() || (game_busy() & (busy::kLoading | busy::kEditor)))
+        return "not in Creature with an own creature (or loading, or in an editor)\n";
     struct Ctx {
         void* herd;
         net::Vec3 me;
@@ -4268,6 +4337,9 @@ std::string mates_report()
     c.out += line;
     snprintf(line, sizeof line, "own species %p/%08X, herd species %p\n", game::species_profile(g_local),
              game::species_key(g_local).instance, c.herd ? game::herd_species(c.herd) : nullptr);
+    c.out += line;
+    snprintf(line, sizeof line, "mate keeper %p slot %p wait %d, copies offered %u (BUG-9174)\n", g_mate_keeper,
+             g_mate_keeper ? skg::field<void*>(g_mate_keeper, 0x38) : nullptr, skg::field<int32_t>(g_local, 0x1678), g_mate_offers);
     c.out += line;
     game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
         auto& c = *static_cast<Ctx*>(ctx);
@@ -6948,6 +7020,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         H->sym("SporeCoop::CreatureMatePositionReached"));
     if (const auto step = H->sym("SporeCoop::CreatureMateStep"); step && g_get_animal_target && g_mate_position_reached)
         H->hook_create(M, (void*)step, (void*)mate_step, (void**)&g_native_mate_step);
+    g_ptr_assign = H->sym("SporeCoop::IntrusivePtr_Assign");
+    if (const auto keeper = H->sym("SporeCoop::CreatureMateKeeper"); keeper && g_ptr_assign) // BUG-9174
+        H->hook_create(M, (void*)keeper, (void*)mate_keeper, (void**)&g_native_mate_keeper);
     g_get_creature_effect = reinterpret_cast<decltype(g_get_creature_effect)>(
         H->sym("Simulator::cCreatureBase::GetEffectFromPools"));
     g_start_creature_effect = reinterpret_cast<decltype(g_start_creature_effect)>(
@@ -7190,6 +7265,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     home_nests::Ctx hc; // roadmap phase 2
     hc.sess = &g_sess;
     hc.notice = [](const std::string& t) { notice(t, -1); };
+    hc.world = [] { return g_world; };
     home_nests::init(H, M, hc);
     game::set_damage_filter(npc::damage_filter);
     support_init();

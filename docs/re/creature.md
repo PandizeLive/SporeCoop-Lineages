@@ -3333,3 +3333,27 @@ again), `coop.nest home` on a guest (its home nest, the host's home for it, join
 (spawn_creature passes age 1) whatever the host's member is (a new nest's first member is a baby, hp 16 of 46, on the
 host). ✔ `coop.nest look x y z` moves the own creature next to the point (tests; it moved the host).
 
+## The mate keeper and a guest's mate (2026-11-13, feat/lineages-47)
+<a id="creature-mate-keeper"></a>
+
+BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a413, tools/qa_win/dis.py).
+* ✔ CreatureClickAction 0xD30830 calls 0xD2FFD0 for a creature; it returns 9 (mate) when the creature's +0xB58 has
+  bit 0x10, else 7 for a friendly one (0xD3035C / 0xD3036E).
+* ✔ 0xD52270 (thiscall(this, u32, u32) ret 8, every frame in Creature: "SporeCoop::CreatureMateKeeper") keeps the nestmate
+  offered as mate in this+0x38 (an intrusive pointer, IntrusivePtr_Assign) and marks it: +0xB58 |= 0x10 and its
+  controller (+0xB4C) +0x5FC |= 0x4000. Before it: the avatar grown (+0xB34 == 1), +0xB5E clear, its herd with a nest
+  (+0x160); none offered while the avatar's +0x1678 > 0 (0xD526F7). A mate that fails 0xD4B2A0 is cleared by 0xD4B180
+  (thiscall(this, mate) ret 4: both bits off without a null check of the controller, Release, slot 0, timer this+0x3C).
+  0xD4B2A0 (thiscall(this, c) ret 4): vt+0x2C false, +0x135 set, +0xB5E clear, grown, the avatar's species (+0xB20, read by
+  0xC0BD30), +0xC0 vt+0x58 false, not this+0x14, 0xBCA230(+0xB48, 3, 1, 0, 0) == -1. Candidates come from the avatar's list
+  +0x1124 (object ids); with none eligible it spawns one of the avatar's species near the nest (0xD52B86) and marks it.
+* ✔ The nestmate's own answer 0xD6D360 also sets bit 0x10 and starts the hearts (0x9005E011).
+* ✔ (runtime, the MSI) A guest's own-family copies are never offered (slot 0, all class 7); one put in the slot with both
+  bits is class 9 and stays there (the game's own check accepts it); a click on it starts the mating approach (action
+  02D852F0) that then stalls (BUG-9175).
+* ✔ 0xC0B8D0 = "grown" (+0xB34 == 1), 0xC02DD0 = avatar +0x1678. `call <addr> thiscall ...` from the console faulted the
+  game (a misuse of the console's call, not the function): read fields with mem.read instead.
+* ✔ (BUG-9173) Nest herds made by home_nests have target 4 and respawn 120000 ms (2000 right after they are made); a
+  partner's species key changes with its network id (roadmap 1b), so a nest found only by species is lost between
+  sessions: each seat's nest is noted per planet (worlds.ini nest<seat>).
+

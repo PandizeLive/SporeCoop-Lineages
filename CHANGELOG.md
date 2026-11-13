@@ -32,6 +32,12 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Creature: a guest's nest offers a copy of its family as mate: the mate icon
+  and hearts, as on the host (BUG-9174).
+- Creature: a returning player gets their old nest back when their creature
+  comes back under another species id, instead of a new nest each session;
+  more spots for a new nest when old ones crowd the home (BUG-9173).
+- Tests: `coop.evolve mates` in Cell no longer crashes the game (BUG-9172).
 - Cell: a knocked-out cell watches a partner (SPECTATING <name>, Tab for the
   next one) until it is up again (BUG-9171).
 - Civ: a late joiner without a creature of their own goes into the creature
