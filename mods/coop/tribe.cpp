@@ -7142,6 +7142,13 @@ static const char* request_performance(const Target& target)
 // gift order (CMD_ACTION 9 on that village: party_gift on the host) and the game does not get it.
 static bool g_gift_press;
 static uint32_t g_gift_presses;
+// BUG-9186: the same holds for a rival village on a guest's game (the MSI 2026-11-13: social stance, own villager
+// selected, the rival's hover card shown, a right press on its hut: no order; the guest's copy of a rival runs no game
+// AI). That press on a rival's hut sends the gift order too; the host checks it as a native gift (BUG-9033: a live
+// recipient with a hut, the game's price, the sender's food) and runs the game's own gift. Off: party villages only.
+static bool g_rival_gift = true;
+COOP_FIX("tribe.rival_gift_click", "BUG-9186", g_rival_gift,
+         "tribe: a guest's social right-click on a rival village's hut gives it food (the game's own gift on the host)");
 static bool party_village_here(void* t)
 {
     if (!t || t == g_own_village) return false;
@@ -7166,7 +7173,7 @@ static bool party_gift_input(unsigned message, uintptr_t, int x, int y)
     void* best = nullptr;
     float nearest = 9.f;
     for (void* t : all_tribes()) {
-        if (!party_village_here(t)) continue;
+        if (!party_village_here(t) && !(g_rival_gift && t && t != g_own_village && !F<uint8_t>(t, 0x556))) continue;
         void* hut = F<void*>(t, 0x368);
         net::Vec3 p;
         if (!hut || !game::object_alive(hut) || !game::object_position(hut, p)) continue;

@@ -800,3 +800,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9183](BUG-9183-tribe-a-guest-whose-own-village-is-wiped-out-see.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: a guest whose own village is wiped out sees the game's own game-over screen |
 | [BUG-9184](BUG-9184-tribe-the-host-s-game-showed-the-population-game.md) | open | bug | tribe | 2026-11-13 |  | Tribe: the host's game showed the population game over with no population event through the hold |
 | [BUG-9185](BUG-9185-tribe-the-host-refuses-a-guest-s-hunt-and-party.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: the host refuses a guest's Hunt and Party right-click orders |
+| [BUG-9186](BUG-9186-tribe-a-guest-s-social-right-click-on-a-rival-vi.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: a guest's social right-click on a rival village's hut gives no food gift |

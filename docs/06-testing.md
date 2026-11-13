@@ -5348,3 +5348,9 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   `coop.tribe` on the guest ("tribe last order") and on the host ("cmds_done", "rejected", "last order: from=")
   show what each click became. A fresh copy of the owner's Jiff save: profile DuoQAJiffFresh (seat 1 bound to the MSI
   with `coop.tribe bind_founder 1 2`).
+* Rival villages for guest order tests (2026-11-13): `coop.tribe npc_tribe 4 -150` on the host puts one on the far side
+  of the host's village; after a raid or attack it is at war and the guest's villager keeps fighting it (down, party
+  wipe, world reload). Move a villager or an animal with tools/tests/duo_tribe_rescue.py `move` on the host (the
+  guests follow); aim a guest's camera with duo_native_ui.view_tribal_point on `Console(51)` (the MSI tunnel 47850). The
+  native NPC tribes that form after ~25 minutes of play are the better targets; a hill can hide a hut the projection
+  calls on screen.
