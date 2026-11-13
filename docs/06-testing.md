@@ -5301,3 +5301,20 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * Tribe copies of the Jiff save made after BUG-9147 hold an empty host village: after some minutes the native game over
   comes (`coop.status` busy: cinematic,paused) and stops every founding; its check mark goes on.
 * Founder seats are capped at 4: a copy with 4 seats (two of offline players) founds no village for a fifth person.
+
+## Windows QA pitfalls seen 2026-11-13 (feat/lineages-47)
+<a id="testing-qa-pitfalls-1113"></a>
+
+* `mod.reload coop` ends the network session on that game: host again (`coop.host`) and join every guest again; a
+  host reload drops every guest. A world-load test after a reload starts from the host's world, not the guest's state.
+* Editor drags at 30 FPS: the first `drag` after bringing a window to the front often does nothing; `move`, `button x y
+  down`, two `move`s and `button x y up` with half-second pauses works; on the MSI (slower) only that way. A full
+  complexity meter (the dotted bar top right) makes a dragged part snap back without cost: remove or move a part.
+* `coop.nest look x y z` moves the own creature next to the point (it moved the host once).
+* `key tab` from the console posts window messages: code that reads the key's real state (GetAsyncKeyState, the
+  spectate's Tab) does not see it.
+* A save's checkpoint (the Tribe party wipe's world refresh) writes into the loaded slot: copy a test save before a run
+  that may wipe; the MSI's Jiff copy Game0 was changed that way on 2026-11-13.
+* A Civ save with four founder nations takes no late joiner (no party seat): the Civ late-capital tests need a save with
+  a free founder seat.
+

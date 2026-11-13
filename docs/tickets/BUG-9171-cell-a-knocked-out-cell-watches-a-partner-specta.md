@@ -30,5 +30,10 @@ cell.spectate (on), cellsync.cpp spectate_tick: while the own cell is knocked ou
 ## Verification
 no-fail-run: a feature. Live 2026-11-13, TITAN host + guest on a Cell save: `coop.pool hurt 1 60` on the host knocked the guest out: "spectate ... downed=1 partner=0 'CellHost' camera_follow=<the host puppet's index>", SPECTATING CellHost on screen; the host swam away: the guest's camera at the host (`coop.pool cam`: 28 m from the own cell), the host's cell and the cells around it shown after the view-centre change (6 m: sharp, a big predator and food around); after the knockout "downed=0 ... camera_follow=00000000", the camera 1.2 m from the own cell; 0 faults on both. Seen: farther than about 20 m from the own cell the game draws everything blurred (the partner too); Tab not pressed (one partner). The Creature-style box with the < > arrows and GIVE UP is not in Cell (G still gives up).
 
+Cross-PC 2026-11-13: the MSI joined the TITAN Cell host as a third player; knocked out (`coop.pool hurt 2 60` on the
+host) it watched the nearest standing partner, the TITAN guest ("partner=1 'CellGuest'", camera 7 m from its own cell,
+SPECTATING CellGuest on its screen); the scene there was drawn blurred on the MSI at 7 m too. Tab cannot be tested from
+the QA console (`key` posts messages; the spectate reads the key's real state).
+
 ## History
 - 2026-11-13: opened.
