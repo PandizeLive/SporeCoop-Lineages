@@ -2328,8 +2328,164 @@ void tick()
     }
 }
 
+// ---- BUG-9156: the downed screen in the Co-op window's look ----
+static struct {
+    Win box = nullptr, title = nullptr, name = nullptr, prev = nullptr, next = nullptr, give = nullptr;
+    Win give_caption = nullptr, edge[4] = {};
+    bool failed = false;
+} g_dh;
+// the Co-op window's panel colour (its frame's content window [4 43 750 581], a filled window without a drawable) and
+// the edge of its inner boxes (#7891A0, read from a screenshot 2026-11-12); the owner: "Transparency at like 60%"
+constexpr uint32_t kMenuPanelFallback = 0xFF203A4A, kMenuBoxEdge = 0xFF7891A0, kDownedBoxAlpha = 0x66;
+static uint32_t menu_panel_fill()
+{
+    if (D.root)
+        for (Win frame : sui::children(D.root)) {
+            const Rect a = sui::area(frame);
+            if (a.x1 != 0 || a.y1 != 0 || a.w() != 760 || a.h() != 600) continue;
+            for (Win inner : sui::children(frame)) {
+                const Rect b = sui::area(inner);
+                if (b.x1 == 4 && b.y1 == 43 && !sui::drawable(inner)) {
+                    const uint32_t f = sui::fill_color(inner);
+                    if (f >> 24) return f;
+                }
+            }
+        }
+    return kMenuPanelFallback;
+}
+struct DownedWant {
+    bool show = false, box = false;
+    std::string name;
+    Rect give{}, box_area{};
+    bool operator==(const DownedWant& o) const
+    {
+        return show == o.show && box == o.box && name == o.name && give.x1 == o.give.x1 && give.y1 == o.give.y1 &&
+               give.x2 == o.give.x2 && give.y2 == o.give.y2 && box_area.x1 == o.box_area.x1 &&
+               box_area.y1 == o.box_area.y1 && box_area.x2 == o.box_area.x2 && box_area.y2 == o.box_area.y2;
+    }
+};
+static DownedWant g_dh_want, g_dh_shown;
+static bool g_dh_queued;
+static void (*g_dh_click)(int);
+
+static bool dh_build()
+{
+    if (g_dh.give) return true;
+    if (g_dh.failed) return false;
+    if (!D.root) { // the Co-op window's layout gives the gold button and the font; it stays hidden unless opened
+        build_dialog();
+        if (D.root) sui::set_visible(D.root, g_want_open);
+    }
+    Win main = sui::main_window();
+    if (!D.like_button || !main) { g_dh.failed = true; return false; }
+    auto button = [&](const std::string& caption, int code) {
+        Win w = sui::button_like(main, D.like_button, {0, 0, 10, 10}, caption);
+        if (!w) return w;
+        sui::set_font(w, D.font_body);
+        sui::add_handler(w, [code](Win, const sui::Msg& m) {
+            if (!sui::is_click(m)) return false;
+            if (g_dh_click) g_dh_click(code);
+            return true;
+        });
+        return w;
+    };
+    // the box: the Co-op window's own panel colour, see-through (60%), with its inner boxes' light edge
+    const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | (kDownedBoxAlpha << 24);
+    g_dh.box = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (g_dh.box) sui::set_fill_color(g_dh.box, panel);
+    for (Win& e : g_dh.edge) {
+        e = sui::label(main, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+        if (e) sui::set_fill_color(e, kMenuBoxEdge);
+    }
+    g_dh.title = sui::label(main, {0, 0, 10, 10}, "SPECTATING", D.font_body, kWhite, sui::kAlignCenter);
+    g_dh.name = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
+    g_dh.prev = button("<", -1);
+    g_dh.next = button(">", 1);
+    g_dh.give = button("", 0);
+    if (g_dh.give) { // the Co-op window's red button: its gold button shaded, the caption a white label on top (as Leave)
+        sui::set_shade_color(g_dh.give, kDangerButtonShade);
+        sui::set_label_color(g_dh.give, 0);
+        g_dh.give_caption = sui::label(main, {0, 0, 10, 10}, "GIVE UP", D.font_body, kWhite, sui::kAlignCenter);
+    }
+    if (!g_dh.give || !g_dh.box || !g_dh.title || !g_dh.name || !g_dh.prev || !g_dh.next) {
+        g_dh.failed = !g_dh.give;
+        H->log(M, SK_WARN, "ui: downed screen parts missing (give %p box %p)", g_dh.give, g_dh.box);
+    }
+    for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
+                  g_dh.next, g_dh.give, g_dh.give_caption})
+        if (w) { sui::add_ref(w); sui::set_visible(w, false); }
+    return g_dh.give != nullptr;
+}
+
+static void dh_apply(void*)
+{
+    g_dh_queued = false;
+    const DownedWant want = g_dh_want;
+    if (!dh_build()) return;
+    Win main = sui::main_window();
+    const bool box = want.show && want.box;
+    auto place = [&](Win w, bool on, const Rect& r) {
+        if (!w) return;
+        if (on) {
+            sui::set_area(w, r);
+            if (main) {
+                if (sui::parent(w) != main) sui::add_child(main, w);
+                sui::bring_to_front(main, w);
+                sui::set_flag(w, sui::kFlagAlwaysInFront, true);
+            }
+        }
+        sui::set_visible(w, on);
+    };
+    const Rect& b = want.box_area;
+    const float arrow_w = 50.f, arrow_h = 30.f, pad = 8.f, e = 1.f;
+    const float arrow_y = b.y1 + b.h() / 2 + 2;
+    // front first: bring_to_front puts the window brought first on top (seen 2026-11-12: the box hid its own arrows
+    // and the red button its caption when they were brought forward in the other order)
+    if (g_dh.give_caption) sui::set_flag(g_dh.give_caption, sui::kFlagIgnoreMouse, true);
+    place(g_dh.give_caption, want.show, want.give);
+    place(g_dh.give, want.show, want.give);
+    place(g_dh.next, box, {b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h});
+    place(g_dh.prev, box, {b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h});
+    place(g_dh.name, box, {b.x1 + arrow_w + pad, arrow_y, b.x2 - arrow_w - pad, arrow_y + arrow_h});
+    if (g_dh.name && box) sui::set_caption(g_dh.name, want.name);
+    place(g_dh.title, box, {b.x1, b.y1 + 6, b.x2, arrow_y - 2});
+    place(g_dh.edge[0], box, {b.x1, b.y1, b.x2, b.y1 + e});
+    place(g_dh.edge[1], box, {b.x1, b.y2 - e, b.x2, b.y2});
+    place(g_dh.edge[2], box, {b.x1, b.y1, b.x1 + e, b.y2});
+    place(g_dh.edge[3], box, {b.x2 - e, b.y1, b.x2, b.y2});
+    place(g_dh.box, box, b);
+    g_dh_shown = want;
+}
+
+bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& give, const Rect& box_area,
+                    void (*on_click)(int))
+{
+    if (!g_ok || g_dh.failed) return false;
+    g_dh_click = on_click;
+    DownedWant want;
+    want.show = show;
+    want.box = box;
+    want.name = name;
+    want.give = give;
+    want.box_area = box_area;
+    if (!show) want = DownedWant{};
+    g_dh_want = want;
+    if (!(want == g_dh_shown) && !g_dh_queued) {
+        g_dh_queued = true;
+        H->run_outside_frame(dh_apply, nullptr); // UI changes: outside Present
+    }
+    return g_dh.give != nullptr || show; // the first frame: the parts are being made
+}
+
 void shutdown()
 {
+    for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
+                  g_dh.next, g_dh.give, g_dh.give_caption}) // BUG-9156
+        if (w) {
+            sui::set_visible(w, false);
+            if (Win p = sui::parent(w)) sui::remove_child(p, w);
+        }
+    g_dh = {};
     mouse::set_graphics_input(nullptr);
     mouse::set_list_input(nullptr);
     if (D.root)

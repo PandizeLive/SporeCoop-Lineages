@@ -38,5 +38,15 @@ arrows and Tab switch partners, the box is left out when there is nobody to watc
 "Hold G to give up" line in the status block is left out while the button shows. Live on the MSI: the box, the button
 and the ring as in the mock-up, 0 faults.
 
+The owner then asked for the look of the Co-op window ("The red button doesn't match our button on the co-op menu",
+"the backdrop of the spectating box, should be similar to menus too. Transparency at like 60%"). The box, the arrows
+and GIVE UP are now the game's own windows (coop_ui::set_downed_hud, made with the Co-op window's button and font):
+the box is the Co-op window's panel colour (read from the window, #203A4A) at 40% opacity with its inner boxes'
+#7891A0 edge, the arrows are its gold buttons, GIVE UP is shaded as its Leave button with a white caption on top.
+The D3D drawing stays as the fallback when the native windows cannot be made; the ring stays D3D. Live on the MSI
+(two games, Samuth.spo, 2026-11-12): side by side with the Co-op window's Leave and arrow buttons, 0 faults. First
+build: the box drew over its own arrows and the button over its caption (see docs/08-ui.md, Stacking); fixed by
+bringing the front-most window forward first.
+
 ## History
 - 2026-11-12: opened.

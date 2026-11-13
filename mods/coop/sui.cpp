@@ -218,6 +218,8 @@ void set_ids(Win w, uint32_t cid, uint32_t cmd)
 }
 void set_font(Win w, uint32_t f) { vcall<void>(w, 0x84 / 4, f); }
 void set_shade_color(Win w, uint32_t argb) { vcall<void>(w, 0x5C / 4, argb); }
+void set_fill_color(Win w, uint32_t argb) { vcall<void>(w, 0xAC / 4, argb); }
+uint32_t fill_color(Win w) { return vcall<uint32_t>(w, 0xA4 / 4); }
 void add_child(Win p, Win c) { vcall<void>(p, 0xD8 / 4, c); }
 void remove_child(Win p, Win c) { vcall<void>(p, 0xDC / 4, c); }
 void bring_to_front(Win p, Win c) { vcall<void>(p, 0xE8 / 4, c); }

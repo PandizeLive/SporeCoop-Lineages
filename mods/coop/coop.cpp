@@ -3895,6 +3895,12 @@ static uint32_t g_spec_clicks;
 static bool g_spec_tab;
 static int g_spec_btn[3][4]; // the < and > buttons and GIVE UP on screen: x0, y0, x1, y1
 static uint32_t g_spec_switches;
+static int g_spec_step; // a native < > or GIVE UP press (coop_ui::set_downed_hud), consumed by spectate_tick
+static void on_downed_button(int code)
+{
+    if (code == 0) creature_rescue::give_up_now();
+    else g_spec_step = code;
+}
 
 static bool spectating()
 {
@@ -3942,7 +3948,8 @@ static void spectate_tick()
     std::sort(ids.begin(), ids.end());
     auto at = std::find(ids.begin(), ids.end(), g_spec_id);
     if (at == ids.end()) { g_spec_id = targets.front().id; at = std::find(ids.begin(), ids.end(), g_spec_id); }
-    int step = 0;
+    int step = g_spec_step;
+    g_spec_step = 0;
     HWND gw = H->game_window ? (HWND)H->game_window() : nullptr;
     const bool tab = gw && GetForegroundWindow() == gw && (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
     if (tab && !g_spec_tab) step = 1;
@@ -3991,38 +3998,45 @@ static void draw_downed_hud(int sw, int sh)
     const float cx = sw / 2.f;
     const float ring_r = std::max(18.f, sh * 0.036f);
     const float ring_y = sh * 0.815f;
-    const float btn_h = std::max(22.f, sh * 0.036f), btn_w = std::max(140.f, sw * 0.135f);
+    const float btn_h = 36.f, btn_w = std::max(150.f, sw * 0.13f); // the Co-op window's button height
     const float btn_y1 = ring_y - ring_r - 8.f, btn_y0 = btn_y1 - btn_h;
-    float top = btn_y0;
-    if (spectating() && g_spec_id != 0xFF) {
-        const float box_h = std::max(46.f, sh * 0.062f), box_w = std::max(btn_w, sw * 0.135f);
-        const float y0 = btn_y0 - 6.f - box_h, y1 = btn_y0 - 6.f;
-        ring_timer::panel(H, cx - box_w / 2, y0, cx + box_w / 2, y1, 7.f, 0xE0141820u, 0xFFB8BCC4u);
-        const char* title = "SPECTATING";
-        bold((int)(cx - text_width(title) / 2.f), (int)(y0 + 6), 0xFFFFFFFFu, title);
-        const std::string name = g_sess.name_of(g_spec_id);
-        const float ny = y0 + box_h * 0.62f;
-        H->overlay_text((int)(cx - text_width(name) / 2.f), (int)(ny - 6), 0xFFD8DCE0u, name.c_str());
-        const float ax[2] = {cx - box_w / 2 + 16.f, cx + box_w / 2 - 16.f};
-        for (int b = 0; b < 2; ++b) {
-            ring_timer::arrow(H, ax[b], ny, 7.f, b == 0, 0xFFFFD040u);
-            g_spec_btn[b][0] = (int)(ax[b] - 14); g_spec_btn[b][1] = (int)(ny - 14);
-            g_spec_btn[b][2] = (int)(ax[b] + 14); g_spec_btn[b][3] = (int)(ny + 14);
+    const bool box = spectating() && g_spec_id != 0xFF;
+    const float box_h = 72.f, box_w = std::max(btn_w + 60.f, sw * 0.17f);
+    const sui::Rect give{cx - btn_w / 2, btn_y0, cx + btn_w / 2, btn_y1};
+    const sui::Rect box_area{cx - box_w / 2, btn_y0 - 6.f - box_h, cx + box_w / 2, btn_y0 - 6.f};
+    const std::string name = box ? g_sess.name_of(g_spec_id) : std::string();
+    // the Co-op window's own look (owner 2026-11-12: "ensure consistency"); drawn by the mod only without it
+    const bool native = coop_ui::set_downed_hud(true, box, name, give, box_area, on_downed_button);
+    if (!native) {
+        if (box) {
+            ring_timer::panel(H, box_area.x1, box_area.y1, box_area.x2, box_area.y2, 7.f, 0xE0141820u, 0xFFB8BCC4u);
+            const char* title = "SPECTATING";
+            bold((int)(cx - text_width(title) / 2.f), (int)(box_area.y1 + 6), 0xFFFFFFFFu, title);
+            const float ny = box_area.y1 + box_h * 0.62f;
+            H->overlay_text((int)(cx - text_width(name) / 2.f), (int)(ny - 6), 0xFFD8DCE0u, name.c_str());
+            const float ax[2] = {box_area.x1 + 16.f, box_area.x2 - 16.f};
+            for (int b = 0; b < 2; ++b) {
+                ring_timer::arrow(H, ax[b], ny, 7.f, b == 0, 0xFFFFD040u);
+                g_spec_btn[b][0] = (int)(ax[b] - 14); g_spec_btn[b][1] = (int)(ny - 14);
+                g_spec_btn[b][2] = (int)(ax[b] + 14); g_spec_btn[b][3] = (int)(ny + 14);
+            }
         }
-        top = y0;
+        ring_timer::panel(H, give.x1, give.y1, give.x2, give.y2, btn_h / 2, 0xF0B01E1Eu, 0xFF3A0808u);
+        const char* text = "GIVE UP";
+        bold((int)(cx - text_width(text) / 2.f), (int)(btn_y0 + btn_h / 2 - 7), 0xFFFFFFFFu, text);
+        g_spec_btn[2][0] = (int)give.x1; g_spec_btn[2][1] = (int)give.y1;
+        g_spec_btn[2][2] = (int)give.x2; g_spec_btn[2][3] = (int)give.y2;
     }
-    (void)top;
-    ring_timer::panel(H, cx - btn_w / 2, btn_y0, cx + btn_w / 2, btn_y1, btn_h / 2, 0xF0B01E1Eu, 0xFF3A0808u);
-    const char* give = "GIVE UP";
-    bold((int)(cx - text_width(give) / 2.f), (int)(btn_y0 + btn_h / 2 - 7), 0xFFFFFFFFu, give);
-    g_spec_btn[2][0] = (int)(cx - btn_w / 2); g_spec_btn[2][1] = (int)btn_y0;
-    g_spec_btn[2][2] = (int)(cx + btn_w / 2); g_spec_btn[2][3] = (int)btn_y1;
     if (ring_timer::enabled())
         ring_timer::draw(H, cx, ring_y, ring_r, creature_rescue::own_left(), creature_rescue::own_revive(), H->time_seconds());
 }
 
 void on_overlay(void*, int, void*)
 {
+    static bool s_downed_parts;
+    const bool downed_now = g_spectate_fix && creature_rescue::down() && (g_mode == modes::kCreature || g_mode == modes::kScenario);
+    if (s_downed_parts && !downed_now) coop_ui::set_downed_hud(false, false, "", {}, {}, nullptr); // BUG-9156: up again
+    s_downed_parts = downed_now;
     if (build_id() == 0xDC04AEE5u) editor_depth::draw(); // BUG-9103
     coop_ui::draw_tooltip(); // BUG-9107
     modes::CellScope cell_scope; // BUG-0271
@@ -4044,6 +4058,7 @@ void on_overlay(void*, int, void*)
         int line_y = (int)(sh * 0.16f);
         const bool downed_hud = g_spectate_fix && creature_rescue::down(); // BUG-9156: the owner's layout at the bottom
         creature_rescue::set_give_up_button(downed_hud);
+        if (!downed_hud) coop_ui::set_downed_hud(false, false, "", {}, {}, nullptr);
         if (downed_hud) draw_downed_hud(sw, sh);
         else if (ring_timer::enabled() && creature_rescue::down()) {
             const float r = ring_timer::radius_for(sh) * 1.4f;

@@ -70,6 +70,8 @@ void set_flag(Win w, uint32_t flag, bool on);
 void set_ids(Win w, uint32_t control_id, uint32_t command_id);
 void set_font(Win w, uint32_t font_id);
 void set_shade_color(Win w, uint32_t argb);
+void set_fill_color(Win w, uint32_t argb); // the window's own background (Window vt 0xAC; 0 alpha: none)
+uint32_t fill_color(Win w);                 // (vt 0xA4)
 uint32_t font(Win w);
 void add_child(Win parent, Win child);
 void remove_child(Win parent, Win child);

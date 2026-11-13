@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include "sui.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -110,6 +111,13 @@ void draw_tooltip();
 bool step_aside(int x, int y, double secs);
 int input_lock_now(); // the game's input lock count (cGameInputManager +0x110; > 0 = clicks are dropped)
 void shutdown(); // mod unload: hide our windows
+// BUG-9156 (owner 2026-11-12: "The red button doesn't match our button on the co-op menu. You need to ensure
+// consistency"): the downed screen's box and buttons are the Co-op window's own look (its gold button, its font, the
+// tooltip background). Called every frame (also from the overlay: the change itself runs outside the frame). show:
+// the parts are up; box: the SPECTATING box with `name` and its < > buttons; give / box_area: screen rects;
+// on_click(-1 previous, +1 next, 0 give up). True when the native parts exist (else the caller draws its own).
+bool set_downed_hud(bool show, bool box, const std::string& name, const sui::Rect& give, const sui::Rect& box_area,
+                    void (*on_click)(int));
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
 extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the first three games only (BUG-0183)
