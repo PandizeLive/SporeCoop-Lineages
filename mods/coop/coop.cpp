@@ -2283,6 +2283,45 @@ static uint32_t g_evo_key_before = 0; // host: its avatar's species when its edi
 static int g_evo_age_before = -1;     // host: its avatar's age (+0xB34) then
 static bool g_evo_cine = false;       // host: a cinematic held a share since the last evolution
 static unsigned g_evo_inplace = 0, g_evo_fallback = 0; // tests: guests kept in place, worlds sent after all
+// the creature stage's own evolution request, as its message handler 0xD42E50 builds it when the avatar meets its mate
+// (docs/re/creations.md#creations-evolution-request): +0x90 the evolution tag (the editor's result is applied to the
+// species), +0x94 the collected parts, the flags, +0x70 cPlayer +0x10FC..+0x1108; through the hook (h_Submit). -1: not
+// possible here, else Submit's result. Outside the frame. (Was coop.vote evolve's, BUG-0457.)
+int submit_evolution_request()
+{
+    if (game::mode_id() != modes::kCreature) return -1;
+    uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit"),
+              assign = H->sym("SporeCoop::IntrusivePtr_Assign"), push = H->sym("SporeCoop::VectorU32_PushBack"),
+              nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
+    void* av = game::avatar();
+    void* nm = nouns ? skg::cdecl_call<void*>(nouns) : nullptr;
+    void* pl = nm && getp ? skg::thiscall<void*>(getp, nm) : nullptr;
+    if (!ctor || !submit || !assign || !push || !av || !pl || !skg::readable((char*)pl + 0x10E8, 0x24)) return -1;
+    void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
+    if (!req) return -1;
+    skg::thiscall<void*>(ctor, req);
+    skg::field<uint32_t>(req, 0xC) = 0x465C50BAu;
+    game::Key k = game::species_key(av);
+    skg::field<uint32_t>(req, 0x10) = k.instance;
+    skg::field<uint32_t>(req, 0x14) = k.type;
+    skg::field<uint32_t>(req, 0x18) = k.group;
+    skg::field<uint32_t>(req, 0x90) = 0x64AA168u;
+    if (void* items = skg::field<void*>(pl, 0x10E8))
+        skg::thiscall<void*>(assign, (char*)req + 0x94, items);
+    for (int o : {0x34, 0x36, 0x37, 0x38, 0x39, 0x3B})
+        skg::field<uint8_t>(req, o) = 0;
+    skg::field<uint8_t>(req, 0x3C) = 1;
+    skg::field<uint8_t>(req, 0x3D) = 1;
+    for (int o = 0x10FC; o <= 0x1108; o += 4) {
+        uint32_t v = skg::field<uint32_t>(pl, o);
+        skg::thiscall<void*>(push, (char*)req + 0x70, &v);
+    }
+    const bool r = skg::cdecl_call<bool>(submit, req);
+    if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
+        *(uint8_t*)f = 1;
+    return r ? 1 : 0;
+}
+
 // the migration state of this game's player (cPlayer +0x69C property 0x514A219, docs/re/creature.md:
 // CreatureGame_AfterEditor): 1 = a migration started by this evolution (CRG_SpeciesMigrate), 2 = its goal
 static int host_migration()
@@ -2291,6 +2330,81 @@ static int host_migration()
     uint8_t* nm = (uint8_t*)game::noun_manager();
     void* pl = nm && skg::readable(nm + 0x74, 4) ? *(void**)(nm + 0x74) : nullptr;
     return a_GetProperty && pl ? skg::thiscall<int>(a_GetProperty, pl, 0x514A219u) : -1;
+}
+
+// ---- BUG-9163 (owner decision 2G): the party migrates together ----
+// "anyone starting the native migration warns every player in the world, 10 s later all go into the editor for final
+// touches (downed or dead players too) and migrate together". A game whose own evolution started the migration (its
+// player's property 0x514A219 goes 0 -> 1 after its editor, CRG_SpeciesMigrate) tells the others (MSG_MIGRATE: a guest
+// to the host, the host to every guest); each other player gets a 10 s warning and then its own evolution editor (the
+// creature stage's request, through the personal editor and the cocoon). The host's own editor ends in the host's
+// migration, and the host's migration sends every guest the world (BUG-0508's path), so the party lands at the new nest
+// together. A player who is down or dead then gets its editor once it stands again (30 s at most). Off: each game alone.
+static bool g_migrate_together = true;
+COOP_FIX("creature.migrate_together", "BUG-9163", g_migrate_together,
+         "creature: a migration started by any player warns everyone; 10 s later everyone edits and the party migrates together");
+static int g_mig_seen = -1;
+static double g_mig_editor_at = -1, g_mig_editor_until = -1;
+static uint32_t g_mig_started, g_mig_heard, g_mig_editors;
+static std::string g_mig_by;
+constexpr double kMigrateWarn = 10, kMigrateWait = 30;
+static void migration_warned(uint8_t by, double now)
+{
+    g_mig_by = g_sess.name_of(by);
+    g_mig_editor_at = now + kMigrateWarn;
+    g_mig_editor_until = now + kMigrateWarn + kMigrateWait;
+    ++g_mig_heard;
+    feed(g_mig_by + "'s species is migrating to a new nest. Everyone migrates together: your editor opens in 10 s for "
+                    "final touches.");
+}
+static void send_migrate(uint8_t by, int to /* -1: every guest */, uint8_t skip)
+{
+    net::Writer w;
+    w.u8(1);
+    w.u8(by);
+    w.u32(g_world);
+    if (to >= 0) {
+        g_sess.send_reliable_to((uint8_t)to, net::MSG_MIGRATE, w);
+        return;
+    }
+    for (auto& p : g_sess.players())
+        if (p.id != g_sess.my_id() && p.id != skip) g_sess.send_reliable_to(p.id, net::MSG_MIGRATE, w);
+}
+static void migration_tick(double now)
+{
+    if (!g_migrate_together || !g_sess.connected() || g_mode != modes::kCreature) {
+        g_mig_seen = -1;
+        if (g_mode != modes::kCreature) g_mig_editor_at = -1;
+        return;
+    }
+    const int mig = host_migration();
+    if (g_mig_seen == 0 && mig == 1) { // this game's own evolution started a migration
+        ++g_mig_started;
+        g_mig_editor_at = -1; // its own editor is done
+        if (g_sess.role() == net::Role::Host) {
+            send_migrate(g_sess.my_id(), -1, 0xFF);
+            notice(g_name + "'s species is migrating to a new nest: everyone migrates together.", -1);
+        } else
+            send_migrate(g_sess.my_id(), 0, 0xFF);
+        LOG("migration: started by this game's evolution: the others are told (BUG-9163)");
+    }
+    if (mig >= 0) g_mig_seen = mig;
+    if (g_mig_editor_at < 0 || now < g_mig_editor_at) return;
+    if (now > g_mig_editor_until) { // never stood again in time
+        LOG("migration: no editor for this player (busy, down or dead for %0.f s, BUG-9163)", kMigrateWait);
+        g_mig_editor_at = -1;
+        return;
+    }
+    if (!g_local || game::is_dead(g_local) || creature_rescue::down() || game_busy() || mode_switch_pending()) {
+        g_mig_editor_at = now + 1;
+        return;
+    }
+    g_mig_editor_at = -1;
+    H->run_outside_frame([](void*) {
+        const int r = submit_evolution_request();
+        if (r > 0) ++g_mig_editors;
+        LOG("migration: own editor for the final touches -> %d (BUG-9163)", r);
+    }, nullptr);
 }
 static int g_evo_migration_before = -1;
 static uint32_t g_evo_seen_key = 0; // host: the avatar's species, age and migration in the Creature stage
@@ -3531,6 +3645,7 @@ void on_frame(void*, int, void*)
     evolve::own_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9160: out of the own cocoon
     evolve::egg_tick(game::mode_id(), now);                             // BUG-9161: an egg scene that never ends
     evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
+    migration_tick(now); // BUG-9163: the party migrates together
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
     party::tick(now);                           // roadmap 0b
@@ -4773,6 +4888,18 @@ void setup_callbacks()
                 dna_spend_resync(); // BUG-0466
                 g_dna_rx++;
             }
+            return;
+        }
+        if (type == net::MSG_MIGRATE) { // BUG-9163: a player's evolution started the migration
+            const uint8_t kind = r.u8(), by = r.u8();
+            const uint32_t world = r.u32();
+            if (!r.ok() || kind != 1 || !g_migrate_together || g_mode != modes::kCreature || world != g_world) return;
+            const double now = H->time_seconds();
+            if (g_sess.role() == net::Role::Host && from != 0 && by == from) { // a guest's: everyone, the host too
+                send_migrate(by, -1, by);
+                migration_warned(by, now);
+            } else if (g_sess.role() == net::Role::Client && from == 0 && by != g_sess.my_id())
+                migration_warned(by, now);
             return;
         }
         if (type == net::MSG_DNA_OWN && from == 0 && g_sess.role() == net::Role::Client) { // BUG-9162: our kill's DNA
@@ -7087,6 +7214,23 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            H->out_printf(o, "%s", out.c_str());
                            return 0;
                        }
+                       if (argc > 1 && !strcmp(argv[1], "migrate")) { // tests (BUG-9163): as if this game's evolution started a migration
+                           if (g_sess.role() == net::Role::Host) send_migrate(g_sess.my_id(), -1, 0xFF);
+                           else send_migrate(g_sess.my_id(), 0, 0xFF);
+                           char b[160];
+                           snprintf(b, sizeof b, "migration announced; this game's state %d, started %u heard %u editors %u\n",
+                                    host_migration(), g_mig_started, g_mig_heard, g_mig_editors);
+                           H->out_printf(o, "%s", b);
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "migration")) { // tests (BUG-9163)
+                           char b[200];
+                           snprintf(b, sizeof b, "migration: state %d, started %u heard %u editors %u, editor in %.0f s (by %s)\n",
+                                    host_migration(), g_mig_started, g_mig_heard, g_mig_editors,
+                                    g_mig_editor_at < 0 ? -1.0 : g_mig_editor_at - H->time_seconds(), g_mig_by.c_str());
+                           H->out_printf(o, "%s", b);
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "partners")) { // tests: each partner's puppet, cocoon and screen spot
                            for (auto& [id, r] : g_remotes) {
                                char b[260];
@@ -7306,37 +7450,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            // 0xD42E50 builds it when the avatar meets its mate (docs/re/creations.md#creations-evolution-request):
                            // +0x90 the evolution tag (the editor's result is applied to the species), +0x94 the
                            // collected parts, the flags, +0x70 cPlayer +0x10FC..+0x1108; through the vote (the hook)
-                           uintptr_t ctor = H->sym("EditorRequest_ctor"), submit = H->sym("Editors::EditorRequest::Submit"),
-                                     assign = H->sym("SporeCoop::IntrusivePtr_Assign"), push = H->sym("SporeCoop::VectorU32_PushBack"),
-                                     nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
-                           void* av = game::avatar();
-                           void* nm = nouns ? skg::cdecl_call<void*>(nouns) : nullptr;
-                           void* pl = nm && getp ? skg::thiscall<void*>(getp, nm) : nullptr;
-                           if (!ctor || !submit || !assign || !push || !av || !pl || !skg::readable((char*)pl + 0x10E8, 0x24)) {
+                           int r = submit_evolution_request();
+                           if (r < 0) {
                                SAY("not possible here");
                                return 1;
                            }
-                           void* req = skg::cdecl_call<void*>(H->sym("GeneralAllocator::new_"), (size_t)0x9C, "EditorRequest", 0, 0, 0, 0);
-                           skg::thiscall<void*>(ctor, req);
-                           skg::field<uint32_t>(req, 0xC) = 0x465C50BAu;
-                           game::Key k = game::species_key(av);
-                           skg::field<uint32_t>(req, 0x10) = k.instance;
-                           skg::field<uint32_t>(req, 0x14) = k.type;
-                           skg::field<uint32_t>(req, 0x18) = k.group;
-                           skg::field<uint32_t>(req, 0x90) = 0x64AA168u;
-                           if (void* items = skg::field<void*>(pl, 0x10E8))
-                               skg::thiscall<void*>(assign, (char*)req + 0x94, items);
-                           for (int o : {0x34, 0x36, 0x37, 0x38, 0x39, 0x3B})
-                               skg::field<uint8_t>(req, o) = 0;
-                           skg::field<uint8_t>(req, 0x3C) = 1;
-                           skg::field<uint8_t>(req, 0x3D) = 1;
-                           for (int o = 0x10FC; o <= 0x1108; o += 4) {
-                               uint32_t v = skg::field<uint32_t>(pl, o);
-                               skg::thiscall<void*>(push, (char*)req + 0x70, &v);
-                           }
-                           bool r = skg::cdecl_call<bool>(submit, req);
-                           if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
-                               *(uint8_t*)f = 1;
                            SAY("evolution request submitted -> %d\n", (int)r);
                        } else if (argc > 1 && !strcmp(argv[1], "action") && g_sess.role() == net::Role::Host) {
                            // an action vote like the superweapon's (tests, BUG-0043)

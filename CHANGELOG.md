@@ -17,6 +17,8 @@
   (BUG-9161).
 - Creature: every player has their own DNA to spend; the progress bar stays the
   party's (BUG-9162).
+- Creature: when anyone's species starts migrating, everyone is warned and gets
+  their editor 10 s later, and the party migrates together (BUG-9163).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

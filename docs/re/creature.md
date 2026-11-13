@@ -3285,3 +3285,13 @@ then SetEvolutionPoints for the budget: `dna_sync_raw(dna(), bar + d)` moves onl
 only the budget. `call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:N` goes through the mod's hook (on_dna)
 like a game reward. The cocoon's shell is sized by the creature's bounding radius / 0.9 (a radius 1.24 creature fitted at
 scale 1, a 1.40 one with a long neck did not; 1.67 fitted at 1.86).
+
+## The party migrates together (2026-11-13, feat/lineages-47)
+<a id="creature-migrate-together"></a>
+
+BUG-9163. A game's own migration start is its player's property 0x514A219 going 0 -> 1 after its editor (coop.cpp
+host_migration, readable on any game). Test pitfall: AddEvolutionPoints +250 from 351 crossed a brain level (CRG_BrainUpgrade3
+F6A4B1E3 started while the editor opened and stayed over it without its buttons, BUG-0404; ended with
+`call SporeCoop::cCinematicManager_EndCinematic thiscall <Simulator::cCinematicManager::Get()>`) but did not start a
+migration (0 -> 0 at 601 / 1000).
+
