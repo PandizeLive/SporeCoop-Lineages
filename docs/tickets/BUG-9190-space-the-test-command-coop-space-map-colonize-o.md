@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 3d3d7d9f
 tests: tools/qa_win (manual, 2026-11-13)
 signature: GetSpeciesProfile+0x12 read 0x268 after coop.space map colonize on a tech-5 planet
 docs:
