@@ -110,11 +110,27 @@ Phase 0 (foundation) comes before phases 2-5 (owner, 2026-11-12: "1A").
 | 3 | Tribe: each player's village from their own nest through the game's Tribe-start logic; 3-4 founders in every rule that counts founders (objectives, rivals, alliances, hut upgrades); orders, food, rescue and outfits per seat. | built 2026-11-12 (`tribe.multi_founders`); live-tested with 3 players on two PCs on a copy of the owner's Jiff save: the old broken partner village repaired and bound, a third village founded, orders and food per seat, a rejoin keeps its seat. Not yet live: a fresh Creature -> Tribe start (needs the host's clicks), rescue / give-up, the outfit vote. (docs/re/tribe.md#tribe-multi-founders) |
 | 4 | Joining late (decisions 4, 5): detect a species, else the create-a-creature prompt; catch up to the host's home. | built 2026-11-12. Tribe live-tested with four founder villages on two PCs: a joiner on the host's creature is told why and gets the "choose your own creature" row in the Co-op window; their pick founds their village with no rejoin, caught up to the host's (hut level, members, racks); all games agree. Civ live-tested 2026-11-12 with four games: three late capitals (one per partner) caught up with the host capital; a joiner without a creature now gets the same prompt in Civ (fixed after the test showed only a chat notice). Tribe stand-in villages (decision 14, BUG-9150) built and live-tested 2026-11-12: a joiner without a creature gets a village at once that wears the host's creature, and their own creature replaces it in place. Not yet live: the "Create New Creature" editor button (off), BUG-9138's two-waiting-partners case, the Civ loading screen (decision 14, Civ part). (docs/re/tribe.md#tribe-late-joiners, docs/re/civ.md#civ-late-capital) |
 | 5 | Civ: each player's city from their own tribe; 3-4 nations in the campaign rules (with BUG-9054, BUG-9056, BUG-9073). | built and live-tested 2026-11-12: a native Tribe -> Civ graduation with four founder villages (TITAN host + 2 TITAN guests + the MSI) founded one capital per founder seat, each with its own species and commanded by its own player, on every game; 0 faults. (docs/re/civ.md#civ-four-founders-live) |
-| 6 | Space: the personal launch per seat. | planned |
+| 6 | Space: the personal launch per seat. | planned; survey 2026-11-13 below |
 | 1b | Stable species keys per identity (a partner's creature keeps its key across rejoins under another network id). | planned |
 | 7 | Adventure creatures simulated by the host (BUG-9114). | waiting (needs clicks on the owner's PC or the MSI) |
 
 The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-no-own-villages-three-players.md.
+
+Phase 6 survey (2026-11-13, overnight; nothing built yet). With 1X A ("A party will always progress together and
+share") co-op keeps one shared empire, so 2N's protected home (a planet several parties leave) matters for the MMO, not
+for one party: a guest's game loads the host's save, so the party's homeworld is everyone's own home there (the game
+calls it the player's), and a partner's colonies show as an allied "<name>'s empire" (docs/re/space.md section 15). The
+two-founder spots to change, in order:
+1. The Civ -> Space hand-off (2J, every seat launches): world.cpp launch_archive keys the archive by the pair
+   (home + guest() species and factions), the launch offer (MSG_SPACE_LAUNCH, world.cpp send of the Offer) writes and
+   reads exactly two founders, creations::needs_launch_checkpoint takes the pair; civ.cpp founder_space_ready and about
+   15 more places test `g_founder_nations.guest().faction` (seat 1 only) as "a founder world".
+2. Space keyed by identity and party (party.cpp) instead of network id or name: spacecoop.cpp captains, space_allies.cpp
+   and space_map.cpp colonies (kept in the host's memory only today), space_rivalry.cpp and space_diplomacy.cpp.
+3. Colonies and progress per identity in a side file (2A); enemies run by whoever of the party is in the system (1Z,
+   squadron.cpp is hard-wired to player 0); difficulty per party (2B); the Galactic Core per party (2C).
+Test fixture needed first: a Space-ready Civ world with 3-4 founder nations (the four-founder Abber saves are not Space
+ready).
 
 ## Playthrough status, 2-4 players (2026-11-12, asked by the owner)
 
