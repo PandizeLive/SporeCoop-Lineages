@@ -9,6 +9,11 @@
   Leave-style button as wide as the panel).
 - Creature: a crash when a player who joined dead confirmed the death message
   is fixed (BUG-9157).
+- Tribe: a step lost to a party wipe shows red on the progress bar until the
+  party wins it back (BUG-9155); a wipe right after a win now refreshes every
+  player's world as soon as the game has saved.
+- Tribe: a crash when a totem got more pieces than its five slots is fixed
+  (BUG-9158).
 - Tribe: a player's last villager is knocked out even when no partner
   villager is alive, so the host's game no longer ends; nobody reviving it
   leads to the party wipe instead (BUG-9147).

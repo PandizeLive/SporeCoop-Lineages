@@ -12,6 +12,7 @@
 #include "game.h"
 #include "modes.h"
 #include "sui.h"
+#include "sporekit_game.hpp"
 
 namespace progress_debt {
 namespace {
@@ -29,6 +30,7 @@ float g_sent = -1;
 uint32_t g_mode = 0, g_world = 0;
 void (*g_notice)(const std::string&, int);
 bool g_repaid = false; // host: the last gain cleared the debt (a notice on the next tick)
+float g_tribe_goal = -1; // host, Tribe: the progress before the first unrepaid wipe (the debt: this minus the progress)
 
 // the bar: the HUD's progress strip (control 0x051B5478, its fill window 0x0652A628) in screen
 // pixels, found outside the frame (UI reads); the fill inside it is the stage's progress 0..1
@@ -37,10 +39,15 @@ bool g_repaid = false; // host: the last gain cleared the debt (a notice on the 
 // its own DNA, so the fill's end is read from the game's own marker (0x051B5168, a zero-width window
 // at the fill's end, the green arrow) and the debt is drawn back from it at the bar's average rate.
 constexpr uint32_t kBarId = 0x051B5478, kFillId = 0x0652A628, kMarkerId = 0x051B5168;
+// Tribe (runtime 2026-11-12, 1280x960): the same bar 0x051B5478 holds three sections 0x051B54C0..C2
+// (233-422, 423-804, 808-1179 of 231-1202) for its 5 wins (1, 2 and 2 steps: the widths' share); the
+// fill has no window there (0x0652A628 and the marker are missing), it fills the sections' steps in turn
+constexpr uint32_t kTribeSections[3] = {0x051B54C0, 0x051B54C1, 0x051B54C2};
 struct Bar {
     bool shown = false;
     float x1 = 0, y1 = 0, x2 = 0, y2 = 0;
     float edge = -1; // the marker's x (-1: not found)
+    float sx1[3] = {}, sx2[3] = {}; // Tribe: the sections (x2 <= x1: missing)
 };
 Bar g_bar;
 double g_bar_asked = -1e9;
@@ -54,6 +61,7 @@ uint32_t g_draws_at_owing = 0;
 bool g_skip_logged = false;
 
 bool here(uint32_t mode) { return mode == modes::kCreature || mode == modes::kCell; }
+bool drawn(uint32_t mode) { return here(mode) || mode == modes::kTribe; } // where the debt shows on the bar
 bool is_host() { return S && S->connected() && S->role() == net::Role::Host; }
 bool is_guest() { return S && S->connected() && S->role() == net::Role::Client; }
 
@@ -86,6 +94,15 @@ bool progress(uint32_t mode, float& done, float& total)
         total = 1000.f;
         return true;
     }
+    if (mode == modes::kTribe && game::mode_id() == modes::kTribe) { // the wins: cPlayer +0x10F0 / +0x10F4
+        void* nm = game::noun_manager();
+        void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr;
+        if (!p || !skg::readable((uint8_t*)p + 0x10F0, 8))
+            return false;
+        done = *(float*)((uint8_t*)p + 0x10F0);
+        total = *(float*)((uint8_t*)p + 0x10F4);
+        return std::isfinite(done) && std::isfinite(total) && total > 0 && total < 100;
+    }
     return false;
 }
 
@@ -106,7 +123,18 @@ void find_bar(void*)
             for (sui::Win c : sui::children(w))
                 stack.push_back(c);
     }
-    sui::Win fill = bar ? sui::find(bar, kFillId) : nullptr;
+    sui::Win fill = bar && g_mode != modes::kTribe ? sui::find(bar, kFillId) : nullptr;
+    if (bar && g_mode == modes::kTribe) {
+        for (int i = 0; i < 3; ++i)
+            if (sui::Win s = sui::find(bar, kTribeSections[i])) {
+                const sui::Rect r = sui::screen_rect(s);
+                b.sx1[i] = r.x1;
+                b.sx2[i] = r.x2;
+                if (i == 0) { b.x1 = r.x1; b.y1 = r.y1; b.y2 = r.y2; }
+                b.x2 = std::max(b.x2, r.x2);
+            }
+        b.shown = b.sx2[0] > b.sx1[0] && b.x2 - b.x1 > 50 && b.y2 - b.y1 > 4;
+    }
     if (fill) {
         sui::Rect r = sui::screen_rect(fill);
         // the green fill inside the window, measured on screenshots at 1440x1080 (both stages:
@@ -136,6 +164,7 @@ void init(const SkHost* host, net::Session* session, void (*notify)(const std::s
 
 void reset()
 {
+    g_tribe_goal = -1;
     g_ledger = {};
     g_heard = {};
     g_sent = -1;
@@ -158,8 +187,25 @@ void tick(uint32_t mode, uint32_t world, double now)
         return;
     }
     if (is_host()) {
-        if (g_ledger.place(g_mode, g_world) && g_sent > 0)
-            send(now); // the old debt is gone
+        if (g_ledger.place(g_mode, g_world)) {
+            g_tribe_goal = -1;
+            if (g_sent > 0)
+                send(now); // the old debt is gone
+        }
+        // Tribe: won back step by step (only lowered, and only read in the stage itself: values passing
+        // during a reload never raise it)
+        float done = 0, total = 0;
+        if (g_fix && mode == modes::kTribe && g_ledger.mode == modes::kTribe && g_tribe_goal > 0 && g_ledger.owed > 0 &&
+            progress(modes::kTribe, done, total)) {
+            const float owe = std::max(0.f, std::min(g_tribe_goal, total) - done);
+            if (owe < g_ledger.owed) {
+                g_ledger.owed = owe < 0.001f ? 0.f : owe;
+                if (g_ledger.owed <= 0) {
+                    g_tribe_goal = -1;
+                    if (g_notice) g_notice("The lost step is won back.", -1);
+                }
+            }
+        }
         if (g_ledger.owed != g_sent && now - g_last_sent > 0.25)
             send(now);
         else if (g_ledger.owed > 0 && now - g_last_sent > 2)
@@ -170,7 +216,7 @@ void tick(uint32_t mode, uint32_t world, double now)
                 g_notice("Progress debt refilled: progress counts again.", -1);
         }
     }
-    if (current().owed > 0 && here(g_mode)) {
+    if (current().owed > 0 && drawn(g_mode)) {
         if (g_owing_since < 0) {
             g_owing_since = now;
             g_draws_at_owing = g_draws;
@@ -186,7 +232,7 @@ void tick(uint32_t mode, uint32_t world, double now)
         }
     } else
         g_owing_since = -1;
-    if (g_fix && here(g_mode) && current().owed > 0 && !g_bar_busy && now - g_bar_asked > 0.25) {
+    if (g_fix && drawn(g_mode) && current().owed > 0 && !g_bar_busy && now - g_bar_asked > 0.25) {
         g_bar_busy = true;
         g_bar_asked = now;
         H->run_outside_frame(find_bar, nullptr);
@@ -231,6 +277,18 @@ int absorb_food(int gain)
     return (int)std::lround(left);
 }
 
+void step_lost(float before)
+{
+    if (!g_fix || !is_host() || g_mode != modes::kTribe || !(before > 0))
+        return;
+    g_ledger.place(g_mode, g_world);
+    float done = 0, total = 0;
+    if (!progress(modes::kTribe, done, total))
+        done = before - 1;
+    g_tribe_goal = std::max(g_tribe_goal, std::min(before, total > 0 ? total : before));
+    g_ledger.owed = std::max(0.f, g_tribe_goal - std::max(0.f, done));
+}
+
 bool owing(uint32_t mode)
 {
     const Ledger& l = current();
@@ -240,7 +298,7 @@ bool owing(uint32_t mode)
 float owed()
 {
     const Ledger& l = current();
-    return g_fix && l.mode == g_mode && here(g_mode) ? l.owed : 0.f;
+    return g_fix && l.mode == g_mode && drawn(g_mode) ? l.owed : 0.f;
 }
 
 void message(uint8_t from, net::Reader& r)
@@ -266,17 +324,24 @@ const char kTintHlsl[] =
     "  float green = saturate((c.g - max(c.r, c.b)) * 4);\n" // only the fill: a grey clip or the white arrow stay
     "  return float4(lerp(c.rgb, float3(l * 0.66, l * 0.21, l * 0.23), green), 1);\n"
     "}\n";
-IDirect3DPixelShader9* g_ps = nullptr;
+// Tribe: the lost step's empty slot (dark blue) in the Creature debt's red (navy (27, 34, 85) -> about
+// (146, 40, 43)); the slot's icons and the section borders keep their light and dark
+const char kTintBlueHlsl[] =
+    "sampler s0 : register(s0);\n"
+    "float4 main(float2 uv : TEXCOORD0) : COLOR {\n"
+    "  float4 c = tex2D(s0, uv);\n"
+    "  float l = c.b * 1.3 + c.g * 0.4;\n"
+    "  float blue = saturate((c.b - max(c.r, c.g)) * 10);\n"
+    "  return float4(lerp(c.rgb, float3(l * 1.2, l * 0.33, l * 0.35), blue), 1);\n"
+    "}\n";
+namespace {
+IDirect3DPixelShader9* g_ps = nullptr;      // the green fill's tint
+IDirect3DPixelShader9* g_ps_blue = nullptr; // Tribe: the empty slot's tint
 IDirect3DDevice9* g_ps_device = nullptr;
 bool g_ps_failed = false;
 uint32_t g_tinted = 0;
-IDirect3DPixelShader9* tint_shader(IDirect3DDevice9* device)
+IDirect3DPixelShader9* compile_ps(IDirect3DDevice9* device, const char* src, size_t len)
 {
-    if (g_ps && g_ps_device == device)
-        return g_ps;
-    if (g_ps_failed)
-        return nullptr;
-    g_ps_failed = true; // one try (a missing compiler: the flat strip)
     HMODULE dc = LoadLibraryA("d3dcompiler_47.dll");
     if (!dc)
         dc = LoadLibraryA("d3dcompiler_43.dll");
@@ -286,7 +351,7 @@ IDirect3DPixelShader9* tint_shader(IDirect3DDevice9* device)
     if (!compile)
         return nullptr;
     IUnknown *code = nullptr, *errors = nullptr;
-    HRESULT hr = compile(kTintHlsl, sizeof kTintHlsl - 1, "debt_tint", nullptr, nullptr, "main", "ps_2_0", 0, 0, &code, &errors);
+    HRESULT hr = compile(src, len, "debt_tint", nullptr, nullptr, "main", "ps_2_0", 0, 0, &code, &errors);
     if (errors)
         errors->Release();
     if (FAILED(hr) || !code)
@@ -295,57 +360,42 @@ IDirect3DPixelShader9* tint_shader(IDirect3DDevice9* device)
     void** vt = *(void***)code;
     auto ptr = ((void*(WINAPI*)(IUnknown*))vt[3])(code);
     IDirect3DPixelShader9* ps = nullptr;
-    if (ptr && SUCCEEDED(device->CreatePixelShader((const DWORD*)ptr, &ps))) {
-        g_ps = ps;
+    if (!ptr || FAILED(device->CreatePixelShader((const DWORD*)ptr, &ps)))
+        ps = nullptr;
+    code->Release();
+    return ps;
+}
+IDirect3DPixelShader9* tint_shader(IDirect3DDevice9* device, bool blue)
+{
+    if (g_ps_device == device && g_ps)
+        return blue ? g_ps_blue : g_ps;
+    if (g_ps_failed)
+        return nullptr;
+    g_ps_failed = true; // one try (a missing compiler: the flat strip)
+    g_ps = compile_ps(device, kTintHlsl, sizeof kTintHlsl - 1);
+    g_ps_blue = g_ps ? compile_ps(device, kTintBlueHlsl, sizeof kTintBlueHlsl - 1) : nullptr;
+    if (g_ps) {
         g_ps_device = device;
         g_ps_failed = false;
     }
-    code->Release();
-    return g_ps;
+    return blue ? g_ps_blue : g_ps;
 }
 
-void draw()
+// The bar's own pixels in [x1, x2) x [y1, y2), recoloured: the stretch is copied from the back buffer and
+// drawn again with a small pixel shader that turns its green (or Tribe's empty blue) into a deep, slightly
+// desaturated red with the same light and dark (the tick marks and the shine stay). Without a shader: a
+// flat red strip.
+void tint(IDirect3DDevice9* device, bool blue, float x1f, float y1f, float x2f, float y2f)
 {
-    if (!g_fix || !here(g_mode))
-        return;
-    if (!g_bar.shown) {
-        g_skip = "the progress bar is not on screen (not found or hidden)";
-        return;
-    }
-    const float debt = owed();
-    float done = 0, total = 0;
-    if (debt <= 0)
-        return;
-    if (!progress(g_mode, done, total)) {
-        g_skip = "no progress value for this stage";
-        return;
-    }
-    auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
-    if (!device) {
-        g_skip = "no device";
-        return;
-    }
-    const float w = g_bar.x2 - g_bar.x1;
-    const float end = g_bar.edge >= 0 ? g_bar.edge : g_bar.x1 + w * std::clamp(done / total, 0.f, 1.f);
-    if (end - g_bar.x1 < 2.f || done <= 0) {
-        g_skip = "the bar's fill is empty here";
-        return;
-    }
-    const float rate = (end - g_bar.x1) / done; // pixels per point, the bar's average up to here
-    // never thinner than 4 px (a few DNA on a 1000-point bar), never past the bar's start
-    const float start = std::max(g_bar.x1, end - std::max(4.f, debt * rate));
-    // The bar's own pixels, recoloured: the stretch is copied from the back buffer and drawn again
-    // with a small pixel shader that turns its green into a deep, slightly desaturated red with the
-    // same light and dark (the tick marks and the shine stay). Without a shader: a flat red strip.
-    const int ix1 = (int)std::floor(start), ix2 = (int)std::ceil(end);
-    const int iy1 = (int)std::floor(g_bar.y1), iy2 = (int)std::ceil(g_bar.y2);
+    const int ix1 = (int)std::floor(x1f), ix2 = (int)std::ceil(x2f);
+    const int iy1 = (int)std::floor(y1f), iy2 = (int)std::ceil(y2f);
     if (ix2 - ix1 < 1 || iy2 - iy1 < 1)
         return;
     IDirect3DStateBlock9* saved = nullptr;
     if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved)))
         return;
     IDirect3DTexture9* copy = nullptr;
-    IDirect3DPixelShader9* ps = tint_shader(device);
+    IDirect3DPixelShader9* ps = tint_shader(device, blue);
     if (ps) {
         IDirect3DSurface9* back = nullptr;
         D3DSURFACE_DESC bd{};
@@ -396,13 +446,57 @@ void draw()
         device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
         struct Vertex { float x, y, z, rhw; DWORD color; };
         const DWORD c = 0xFF8A2E33;
-        Vertex q[] = {{start, g_bar.y1, 0, 1, c}, {end, g_bar.y1, 0, 1, c}, {start, g_bar.y2, 0, 1, c}, {end, g_bar.y2, 0, 1, c}};
+        Vertex q[] = {{x1f, y1f, 0, 1, c}, {x2f, y1f, 0, 1, c}, {x1f, y2f, 0, 1, c}, {x2f, y2f, 0, 1, c}};
         device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vertex));
     }
     saved->Apply();
     saved->Release();
     if (copy) copy->Release(); // made per frame: nothing of ours in D3DPOOL_DEFAULT when the device resets
     g_draws++;
+}
+
+} // namespace
+
+void draw()
+{
+    if (!g_fix || !drawn(g_mode))
+        return;
+    if (!g_bar.shown) {
+        g_skip = "the progress bar is not on screen (not found or hidden)";
+        return;
+    }
+    const float debt = owed();
+    float done = 0, total = 0;
+    if (debt <= 0)
+        return;
+    if (!progress(g_mode, done, total)) {
+        g_skip = "no progress value for this stage";
+        return;
+    }
+    auto* device = static_cast<IDirect3DDevice9*>(H->d3d_device());
+    if (!device) {
+        g_skip = "no device";
+        return;
+    }
+    if (g_mode == modes::kTribe) { // the lost steps after the fill, each its own slot
+        const int from = (int)std::floor(done + 0.001f), to = std::min((int)std::lround(total), from + (int)std::lround(debt));
+        for (int k = from; k < to; ++k) {
+            float x1 = 0, x2 = 0;
+            if (step_slot(g_bar.sx1, g_bar.sx2, 3, k, total, x1, x2))
+                tint(device, true, x1, g_bar.y1, x2, g_bar.y2);
+        }
+        return;
+    }
+    const float w = g_bar.x2 - g_bar.x1;
+    const float end = g_bar.edge >= 0 ? g_bar.edge : g_bar.x1 + w * std::clamp(done / total, 0.f, 1.f);
+    if (end - g_bar.x1 < 2.f || done <= 0) {
+        g_skip = "the bar's fill is empty here";
+        return;
+    }
+    const float rate = (end - g_bar.x1) / done; // pixels per point, the bar's average up to here
+    // never thinner than 4 px (a few DNA on a 1000-point bar), never past the bar's start
+    const float start = std::max(g_bar.x1, end - std::max(4.f, debt * rate));
+    tint(device, false, start, g_bar.y1, end, g_bar.y2);
 }
 
 std::string debug()

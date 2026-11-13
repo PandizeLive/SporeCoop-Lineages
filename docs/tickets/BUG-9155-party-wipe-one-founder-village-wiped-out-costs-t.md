@@ -45,5 +45,20 @@ stayed 000021CB, "MSI's nation would have lost its last city: it keeps it, and t
 back to nation 000021CC"), city 1 became 000021CC on both games, 0 faults. Not seen: a real NPC siege, the money
 branch, the host's own last city (the native Civ game over is not known).
 
+## The red marker in Tribe (2026-11-12)
+Decision 1U: the lost step shows red. progress_debt (BUG-9119's ledger) holds Tribe steps: party_wipe calls
+progress_debt::step_lost with the progress before it; the host owes (the progress before the first unrepaid wipe) minus
+(the progress now), lowered as wins come back ("The lost step is won back."), and sends it to the guests as before.
+Every game tints the lost step's empty slot on its own bar red (the Creature debt's red; the bar 0x051B5478 holds three
+sections 0x051B54C0..C2 with 1, 2 and 2 of the 5 steps, progress_debt_logic.h step_slot, host-tested). Live on the MSI
+(two games, a Tribe test copy): a test win then a wipe: the guest's bar showed step 1 green and step 2 red (owed 1);
+the next win cleared it on both games, 0 faults.
+
+A wipe right after a win (the game saving) refused the world refresh ("Wait for the current save"), so the partner kept
+the old bar and totem; the refresh is now tried again each second for a minute (wipe_refresh). Seen once on the MSI
+before the change; after it the refresh ran at once in every try (the retry path itself not seen live).
+
+The test command `coop.tribe win` added a totem piece itself on top of the game's own: see BUG-9158.
+
 ## History
 - 2026-11-12: opened.

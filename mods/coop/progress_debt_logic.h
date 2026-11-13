@@ -40,4 +40,30 @@ struct Ledger {
     }
 };
 
+// Tribe: where step k (0-based) of `total` lies on the bar's sections (x1s[i]..x2s[i]; x2 <= x1: missing):
+// each section holds steps in proportion to its width (Tribe: 1, 2 and 2 of 5), split evenly inside it
+inline bool step_slot(const float* x1s, const float* x2s, int sections, int k, float total, float& x1, float& x2)
+{
+    float width = 0;
+    for (int i = 0; i < sections; ++i)
+        width += x2s[i] > x1s[i] ? x2s[i] - x1s[i] : 0.f;
+    if (width <= 0 || total <= 0 || k < 0)
+        return false;
+    const float per = width / total;
+    int first = 0;
+    for (int i = 0; i < sections; ++i) {
+        const float w = x2s[i] - x1s[i];
+        if (w <= 0)
+            continue;
+        const int n = std::max(1, (int)std::lround(w / per));
+        if (k < first + n) {
+            x1 = x1s[i] + w * (k - first) / n;
+            x2 = x1s[i] + w * (k - first + 1) / n;
+            return true;
+        }
+        first += n;
+    }
+    return false;
+}
+
 } // namespace progress_debt

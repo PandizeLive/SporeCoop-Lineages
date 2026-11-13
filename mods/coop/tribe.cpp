@@ -24,6 +24,7 @@
 #include "world.h"
 #include "driver.h"
 #include "game.h"
+#include "progress_debt.h"
 #include "modes.h"
 #include "mouse.h"
 #include "shared.h"
@@ -2070,6 +2071,30 @@ static bool SK_THISCALL h_HutUI(void* self, void* window, void* msg)
     return o_HutUI(self, window, msg);
 }
 
+// BUG-9158: Totem_AddSegment (0xC8DDA0) puts the new piece's model into slot <pieces> of the totem's model vector
+// (+0x108 / +0x10C, 5 slots: the stage's 5 wins) without a bounds check; a 6th piece released whatever lay past the
+// vector (0x131, 0x19) and crashed in Graphics::Model::Release (MSI 2026-11-12, twice, a test copy whose totem had more
+// pieces than wins). A full totem now gets no further piece (the win itself counts as before).
+static bool g_totem_guard = true;
+COOP_FIX("tribe.totem_full", "BUG-9158", g_totem_guard, "tribe: a full totem gets no further piece instead of a crash");
+static uint32_t g_totem_guarded;
+typedef void(SK_THISCALL* AddSegment_t)(void*, int, const void*);
+static AddSegment_t o_AddSegment;
+static void SK_THISCALL h_AddSegment(void* totem, int kind, const void* color)
+{
+    if (g_totem_guard && totem && skg::readable((uint8_t*)totem + 0x108, 0x30)) {
+        const uintptr_t pieces = (F<uintptr_t>(totem, 0x120) - F<uintptr_t>(totem, 0x11C)) / 4;
+        const uintptr_t slots = (F<uintptr_t>(totem, 0x10C) - F<uintptr_t>(totem, 0x108)) / 4;
+        if (slots > 0 && slots < 64 && pieces >= slots) {
+            if (g_totem_guarded++ < 8)
+                H->log(M, SK_WARN, "tribe: totem %p is full (%u pieces, %u slots): no further piece (BUG-9158)", totem,
+                       (unsigned)pieces, (unsigned)slots);
+            return;
+        }
+    }
+    o_AddSegment(totem, kind, color);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -2105,6 +2130,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         return false;
     }
     H->hook_create(M, (void*)a_BTTick, (void*)h_BTTick, (void**)&o_BTTick);
+    if (uintptr_t a = H->sym("SporeCoop::Totem_AddSegment")) // BUG-9158
+        H->hook_create(M, (void*)a, (void*)h_AddSegment, (void**)&o_AddSegment);
     if (uintptr_t key = H->sym("SporeCoop::AbilityBar_OnKey"))
         H->hook_create(M, (void*)key, (void*)h_AbilityKey, (void**)&o_AbilityKey);
     if (uintptr_t hut = H->sym("SporeCoop::Tribe_HutStateIs2")) // BUG-9153
@@ -5749,6 +5776,19 @@ COOP_FIX("tribe.party_wipe", "BUG-9155", g_party_wipe,
          "tribe: a founder village wiped out costs the whole party its newest win (or 10% food) instead of a capture");
 static uint32_t g_party_wipes;
 static std::string g_last_wipe;
+// the wipe's world refresh, when the game was saving (a win's autosave) or loading at that moment: tried again each
+// second for a minute (seen 2026-11-12: a wipe right after a win kept the partner's old bar and totem)
+static double g_wipe_refresh_until = 0, g_wipe_refresh_next = 0;
+static void wipe_refresh(double now)
+{
+    std::string error;
+    if (world::checkpoint_reload(error)) { g_wipe_refresh_until = 0; return; }
+    if (!g_wipe_refresh_until) {
+        g_wipe_refresh_until = now + 60;
+        H->log(M, SK_INFO, "tribe: party wipe refresh waits: %s (BUG-9155)", error.c_str());
+    }
+    g_wipe_refresh_next = now + 1;
+}
 constexpr float kRivalRelation = -5.f;
 
 struct GoalRecord { uintptr_t vt; int kind; void* tribe; uintptr_t zero; };
@@ -5814,8 +5854,11 @@ static std::string party_wipe(int seat)
         F<GoalRecord*>(ui, 0x44) = e - 1; // the newest win leaves the history
         void* nm = game::noun_manager();
         void* player = nm ? F<void*>(nm, 0x74) : nullptr;
-        if (player && skg::readable((uint8_t*)player + 0x10F0, 4))
-            F<float>(player, 0x10F0) = std::max(0.f, F<float>(player, 0x10F0) - 1.f);
+        if (player && skg::readable((uint8_t*)player + 0x10F0, 4)) {
+            const float before = F<float>(player, 0x10F0);
+            F<float>(player, 0x10F0) = std::max(0.f, before - 1.f);
+            progress_debt::step_lost(before); // decision 1U: the lost step shows red on the bar until it is won back
+        }
         drop_totem_piece((size_t)(e - b));
         void* village = last.tribe && game::object_alive(last.tribe) ? last.tribe : nullptr;
         std::string name = "a village";
@@ -5862,6 +5905,14 @@ static std::string party_wipe(int seat)
 
 static void founder_rescue_tick(double now)
 {
+    if (g_wipe_refresh_until && now >= g_wipe_refresh_next) {
+        if (now > g_wipe_refresh_until) {
+            g_wipe_refresh_until = 0;
+            H->log(M, SK_WARN, "tribe: party wipe refresh gave up after 60 s (BUG-9155)");
+            if (C.notice) C.notice("The party wipe could not refresh the world: partners see the old totem until the next load.");
+        } else
+            wipe_refresh(now);
+    }
     for (size_t seat = 0; seat < g_founder_rescues.size(); ++seat) {
         auto& rescue = g_founder_rescues[seat];
         if (!rescue.until) continue;
@@ -5920,7 +5971,10 @@ static void founder_rescue_tick(double now)
         rescue.grace_until = now + 2;
         if (C.notice && !wiped) C.notice(revived ? "Your partner revived the last villager." :
             "The last villager respawned at its village. Food setback " + std::to_string((int)cost) + ".");
-        if (wiped) refresh_hut = true; // BUG-9155: the reload redraws the totem and the bar on every game
+        if (wiped) { // BUG-9155: the reload redraws the totem and the bar on every game (again later if busy now)
+            wipe_refresh(now);
+            refresh_hut = false;
+        }
         if (refresh_hut) {
             std::string error;
             if (!world::checkpoint_reload(error) && C.notice) C.notice("Village recovered; world refresh failed: " + error);
@@ -8618,20 +8672,48 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() == 1 && a[0] == "wins") return goal_history_line() + "\nparty wipes: " + std::to_string(g_party_wipes) +
         (g_last_wipe.empty() ? "" : "\nlast: " + g_last_wipe); // BUG-9155
+    if (a.size() == 1 && a[0] == "totems") { // BUG-9155 tests: each founder village's totem: pieces and model slots
+        std::string out;
+        for (size_t seat = 0; seat < founder_seats(); ++seat) {
+            void* village = founder_village((int)seat);
+            void* t = village ? F<void*>(village, 0x19D0) : nullptr;
+            char line[512];
+            if (!t || !game::object_alive(t) || !skg::readable((uint8_t*)t + 0x80, 0xC0)) {
+                snprintf(line, sizeof line, "seat %zu: no totem\n", seat);
+                out += line;
+                continue;
+            }
+            const uintptr_t types = F<uintptr_t>(t, 0x11C), types_end = F<uintptr_t>(t, 0x120);
+            const uintptr_t slots = F<uintptr_t>(t, 0x108);
+            snprintf(line, sizeof line,
+                     "seat %zu totem %p: pieces %d (cap %d) colours %d; +108 %08X +10C %08X +110 %08X +114 %08X "
+                     "+118 %08X; height +80 %.2f radius +90 %.2f\n  slots:",
+                     seat, t, (int)((types_end - types) / 4), (int)((F<uintptr_t>(t, 0x124) - types) / 4),
+                     (int)((F<uintptr_t>(t, 0x134) - F<uintptr_t>(t, 0x130)) / 12), (unsigned)slots,
+                     F<uint32_t>(t, 0x10C), F<uint32_t>(t, 0x110), F<uint32_t>(t, 0x114), F<uint32_t>(t, 0x118),
+                     F<float>(t, 0x80), F<float>(t, 0x90));
+            out += line;
+            for (int i = 0; i < 8 && slots && skg::readable((void*)(slots + i * 4), 4); ++i) {
+                snprintf(line, sizeof line, " %08X", *(uint32_t*)(slots + i * 4));
+                out += line;
+            }
+            out += "\n";
+        }
+        return out.empty() ? "no founder villages" : out;
+    }
     if (a.size() == 2 && a[0] == "win") { // BUG-9155 tests (host): an alliance with village <faction hex> as a native win
         if (!active() || !is_host()) return "Requires the Tribe host.";
         const uint32_t faction = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         void* village = nullptr;
         for (void* t : all_tribes()) if (F<uint32_t>(t, 0x30) == faction) village = t;
         uintptr_t get = H->sym("SporeCoop::cTribeUI_Get"), add = H->sym("SporeCoop::TribeStage_AddGoalProgress");
-        uintptr_t segment = H->sym("SporeCoop::Totem_AddSegment");
         uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
         uintptr_t apply = H->sym("Simulator::cRelationshipManager::ApplyRelationship");
         void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
         void* manager = relationship_manager();
         void* home = player_tribe();
         void* totem = home ? F<void*>(home, 0x19D0) : nullptr;
-        if (!village || !ui || !add || !segment || !calculate || !apply || !manager || !totem || g_order_roster.contains_faction(faction))
+        if (!village || !ui || !add || !calculate || !apply || !manager || !totem || g_order_roster.contains_faction(faction))
             return "No such NPC village, or the goal functions are missing.";
         const float allied = F<float>(manager, 0x1C);
         for (size_t s = 0; s < founder_seats(); ++s)
@@ -8640,18 +8722,18 @@ std::string debug(const std::vector<std::string>& a)
                 const float now_rel = thiscall<float>(calculate, manager, faction, f, 0);
                 (void)thiscall<float>(apply, manager, faction, f, 0x0530CF07u, allied + 1 - now_rel);
             }
+        // the queued win; its totem piece comes from the game itself (TribeGame_ModeChanged runs the reward queue,
+        // 0xCDAC90, which calls Totem_AddSegment). Until 2026-11-12 this command added a piece too: two per test win,
+        // which filled the test copy's totem past its 5 model slots (BUG-9158).
         thiscall<void>(add, ui, 2, village);
-        const float white[3] = {1, 1, 1};
-        thiscall<void>(segment, totem, 1, white);
         return "Allied with " + a[1] + " as a win. " + goal_history_line();
     }
     if (a.size() == 2 && a[0] == "wipe") { // BUG-9155 tests (host): the party wipe of seat N now, then the reload
         if (!active() || !is_host() || !founder_seats()) return "Requires the Tribe host with founder villages.";
         const std::string text = party_wipe(atoi(a[1].c_str()));
         if (C.notice) C.notice(text);
-        std::string error;
-        if (!world::checkpoint_reload(error)) return text + " (reload: " + error + ")";
-        return text;
+        wipe_refresh(H->time_seconds());
+        return text + (g_wipe_refresh_until ? " (the refresh waits for the save)" : "");
     }
     if ((a.size() == 1 || a.size() == 2) && a[0] == "camera") { // BUG-9153: `camera own`: look at the own village now
         std::string out = gamefixes::camera_status();

@@ -26,6 +26,17 @@ int main()
     l.add(-2);
     CHECK(l.owed == 0);
     CHECK(l.absorb(-1) == -1);                      // a spend is not a repayment
+    // Tribe's bar (1280x960, 2026-11-12): sections 233-422, 423-804, 808-1179 hold 1, 2 and 2 of 5 steps
+    const float sx1[3] = {233, 423, 808}, sx2[3] = {422, 804, 1179};
+    float x1 = 0, x2 = 0;
+    CHECK(step_slot(sx1, sx2, 3, 0, 5, x1, x2) && x1 == 233 && x2 == 422);
+    CHECK(step_slot(sx1, sx2, 3, 1, 5, x1, x2) && x1 == 423 && x2 > 613 && x2 < 614);
+    CHECK(step_slot(sx1, sx2, 3, 2, 5, x1, x2) && x1 > 613 && x1 < 614 && x2 == 804);
+    CHECK(step_slot(sx1, sx2, 3, 4, 5, x1, x2) && x2 == 1179);
+    CHECK(!step_slot(sx1, sx2, 3, 5, 5, x1, x2));  // past the last step
+    CHECK(!step_slot(sx1, sx2, 3, -1, 5, x1, x2));
+    const float gone1[3] = {233, 0, 808}, gone2[3] = {422, 0, 1179}; // a missing section is skipped
+    CHECK(step_slot(gone1, gone2, 3, 1, 5, x1, x2) && (x2 <= 422 || x1 >= 808)); // never in the gap
     if (!failures) printf("progress_debt_tests: all passed\n");
     return failures ? 1 : 0;
 }

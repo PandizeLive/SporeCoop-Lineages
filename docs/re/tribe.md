@@ -3738,3 +3738,19 @@ the camera stood over the guest's own village, level with the ground. `coop.trib
 * ✔ (live) On a guest (its village the player tribe, BUG-9153) a press on its villager's card selects it (sel 1). The
   small card above the villager cards (a red icon) selected nothing on the guest; what it does natively is not known.
 * BUG-9147: the knockout no longer needs a living partner villager when the party wipe is on (not seen live).
+
+## The totem's model slots, the reward queue and the progress bar (2026-11-12, feat/lineages-47)
+<a id="tribe-totem-model-slots"></a>
+
+* ✔ (disassembly 0xC8DDA0, runtime) Totem_AddSegment(totem, kind, colour): the model from the totem's factory (+0xD4,
+  vt 0xC, two keys per kind), assigned to slot <pieces> of the model vector **+0x108 / +0x10C / +0x110** (5 slots on
+  every totem seen) by the intrusive pointer assign 0x4792B0 (AddRef +0x40, Release of the old), **no bounds check**;
+  then the height (+0x80) grows by the model's box, +0x90 the radius, +0xA8 = 1, and kind / colour are appended
+  (+0x11C, +0x130). A 6th piece crashes in Graphics::Model::Release (BUG-9158; guarded by tribe.totem_full).
+* ✔ (disassembly 0xCDF162) TribeGame_ModeChanged runs the reward queue (0xCDAC90) when it comes back to the Tribe game:
+  a win queued by TribeStage_AddGoalProgress (0xCDB520) gets its totem piece there, not at once. A command that adds a
+  win must not add the piece too.
+* ✔ (runtime, 1280x960) The Tribe progress bar is the same window as Creature's (0x051B5478, 231-1202 x 931-959) with
+  three sections 0x051B54C0 (233-422), 0x051B54C1 (423-804), 0x051B54C2 (808-1179) for the 5 wins (1, 2 and 2 steps);
+  the fill window 0x0652A628 and the marker 0x051B5168 are missing there; the step icons 0x05594A01..04 sit in it.
+  `coop.tribe totems`: each founder village's pieces and model slots.
