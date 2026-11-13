@@ -69,6 +69,9 @@ void set_enabled(Win w, bool on);
 void set_flag(Win w, uint32_t flag, bool on);
 void set_ids(Win w, uint32_t control_id, uint32_t command_id);
 void set_font(Win w, uint32_t font_id);
+// a copied button's caption in the middle of the button: no caption offset, even borders (button_like keeps the
+// model's, made for a text beside an edge: a one-glyph caption sat right of the middle)
+void center_caption(Win w);
 void set_shade_color(Win w, uint32_t argb);
 void set_fill_color(Win w, uint32_t argb); // the window's own background (Window vt 0xAC; 0 alpha: none)
 uint32_t fill_color(Win w);                 // (vt 0xA4)

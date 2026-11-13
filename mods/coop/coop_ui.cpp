@@ -463,6 +463,18 @@ static bool clicks_locked()
 }
 
 static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, const std::string& t,
+                      std::function<void()> fn);
+// The arrows of every arrow button (the owner 2026-11-13: triangles, not "<" ">", "make sure this is consistent"):
+// U+25C4, U+25BA, U+25B2, U+25BC of the Co-op window's font, in the middle of the button (sui::center_caption).
+static const char kArrowLeft[] = "◄", kArrowRight[] = "►", kArrowUp[] = "▲", kArrowDown[] = "▼";
+static Win add_arrow_button(std::vector<Win>& page, const char* name, const Rect& r, const char* arrow, std::function<void()> fn)
+{
+    Win w = add_button(page, name, r, arrow, std::move(fn));
+    if (w) sui::center_caption(w);
+    return w;
+}
+
+static Win add_button(std::vector<Win>& page, const char* name, const Rect& r, const std::string& t,
                       std::function<void()> fn)
 {
     Win w = sui::button_like(D.root, D.like_button, r, t);
@@ -1229,11 +1241,11 @@ static void build_dialog()
         if (D.chat_lines[i]) { sui::set_font(D.chat_lines[i], D.font_button); g_small_font[D.chat_lines[i]] = true; }
     }
     std::vector<Win> arrows; // shown by refresh_lobby only when there is more to see
-    D.chat_up = add_button(arrows, "chatup", {722, 337, 756, 367}, "^", [] { g_chat_scroll++; g_dirty = true; });
-    D.chat_down = add_button(arrows, "chatdown", {722, 376, 756, 406}, "v", [] { g_chat_scroll--; g_dirty = true; });
+    D.chat_up = add_arrow_button(arrows, "chatup", {722, 337, 756, 367}, kArrowUp, [] { g_chat_scroll++; g_dirty = true; });
+    D.chat_down = add_arrow_button(arrows, "chatdown", {722, 376, 756, 406}, kArrowDown, [] { g_chat_scroll--; g_dirty = true; });
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 416, 560, 444}, "", kGold); // a row of its own under the chat box
-    D.creation_prev = add_button(L, "cprev", {570, 415, 640, 445}, "<", [] {
+    D.creation_prev = add_arrow_button(L, "cprev", {570, 415, 640, 445}, kArrowLeft, [] {
         // in Civ the row is the role, except for a late joiner without a nation (civ::late_prompt): their creature
         if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle && !(A.late_prompt && A.late_prompt()))
             A.civ_role_cycle(-1);
@@ -1252,12 +1264,12 @@ static void build_dialog()
         g_dirty = true;
     });
     // 3 or 4 players: ">" picks the next other player as the recipient (BUG-0075)
-    D.give_next = add_button(L, "givenext", {520, 415, 560, 445}, ">", [] {
+    D.give_next = add_arrow_button(L, "givenext", {520, 415, 560, 445}, kArrowRight, [] {
         if (A.give_cycle)
             A.give_cycle();
         g_dirty = true;
     });
-    D.creation_next = add_button(L, "cnext", {650, 415, 720, 445}, ">", [] {
+    D.creation_next = add_arrow_button(L, "cnext", {650, 415, 720, 445}, kArrowRight, [] {
         // in Civ the row is the role, except for a late joiner without a nation (civ::late_prompt): their creature
         if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle && !(A.late_prompt && A.late_prompt()))
             A.civ_role_cycle(1);
@@ -1355,12 +1367,12 @@ static void build_dialog()
         g_dirty = true;
     });
     // more rows than fit: pages
-    D.space_prev = add_button(S, "sprev", {500, 488, 570, 528}, "<", [] {
+    D.space_prev = add_arrow_button(S, "sprev", {500, 488, 570, 528}, kArrowLeft, [] {
         g_space_first = std::max(0, g_space_first - kSpaceRows);
         g_dirty = true;
     });
     D.space_pageno = add_label(S, {575, 494, 645, 522}, "", kDim, sui::kAlignCenter);
-    D.space_next = add_button(S, "snext", {650, 488, 720, 528}, ">", [] {
+    D.space_next = add_arrow_button(S, "snext", {650, 488, 720, 528}, kArrowRight, [] {
         g_space_first += kSpaceRows;
         g_dirty = true;
     });
@@ -2332,9 +2344,6 @@ void tick()
 static struct {
     Win box = nullptr, title = nullptr, name = nullptr, prev = nullptr, next = nullptr, give = nullptr;
     Win give_caption = nullptr, edge[4] = {};
-    // the arrows' own labels: a copied button draws its caption with the Co-op window button's offset (the "<" and ">"
-    // sat 5 px right of the pills' middle, the owner 2026-11-13), a label over an empty button is centred (as GIVE UP)
-    Win prev_caption = nullptr, next_caption = nullptr;
     bool failed = false;
 } g_dh;
 // the Co-op window's panel colour (its frame's content window [4 43 750 581], a filled window without a drawable) and
@@ -2420,10 +2429,10 @@ static bool dh_build()
     }
     g_dh.title = sui::label(main, {0, 0, 10, 10}, "SPECTATING", D.font_body, kWhite, sui::kAlignCenter);
     g_dh.name = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
-    g_dh.prev = button("", -1);
-    g_dh.next = button("", 1);
-    g_dh.prev_caption = sui::label(main, {0, 0, 10, 10}, "<", D.font_body, kWhite, sui::kAlignCenter);
-    g_dh.next_caption = sui::label(main, {0, 0, 10, 10}, ">", D.font_body, kWhite, sui::kAlignCenter);
+    g_dh.prev = button(kArrowLeft, -1);
+    g_dh.next = button(kArrowRight, 1);
+    for (Win a : {g_dh.prev, g_dh.next})
+        if (a) sui::center_caption(a); // (a copied button's caption sat right of the middle, the owner 2026-11-13)
     g_dh.give = button("", 0);
     if (g_dh.give) { // the Co-op window's red button: its gold button shaded, the caption a white label on top (as Leave)
         sui::set_shade_color(g_dh.give, kDangerButtonShade);
@@ -2435,7 +2444,7 @@ static bool dh_build()
         H->log(M, SK_WARN, "ui: downed screen parts missing (give %p box %p)", g_dh.give, g_dh.box);
     }
     for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
-                  g_dh.next, g_dh.give, g_dh.give_caption, g_dh.prev_caption, g_dh.next_caption})
+                  g_dh.next, g_dh.give, g_dh.give_caption})
         if (w) { sui::add_ref(w); sui::set_visible(w, false); }
     return g_dh.give != nullptr;
 }
@@ -2465,16 +2474,11 @@ static void dh_apply(void*)
     const float arrow_y = b.y2 - pad - arrow_h;
     // front first: bring_to_front puts the window brought first on top (seen 2026-11-12: the box hid its own arrows
     // and the red button its caption when they were brought forward in the other order)
-    for (Win c : {g_dh.give_caption, g_dh.prev_caption, g_dh.next_caption})
-        if (c) sui::set_flag(c, sui::kFlagIgnoreMouse, true);
-    const Rect next_r{b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h};
-    const Rect prev_r{b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h};
+    if (g_dh.give_caption) sui::set_flag(g_dh.give_caption, sui::kFlagIgnoreMouse, true);
     place(g_dh.give_caption, want.show, want.give);
-    place(g_dh.next_caption, box, next_r);
-    place(g_dh.prev_caption, box, prev_r);
     place(g_dh.give, want.show, want.give);
-    place(g_dh.next, box, next_r);
-    place(g_dh.prev, box, prev_r);
+    place(g_dh.next, box, {b.x2 - pad - arrow_w, arrow_y, b.x2 - pad, arrow_y + arrow_h});
+    place(g_dh.prev, box, {b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h});
     place(g_dh.name, box, {b.x1 + arrow_w + pad, arrow_y, b.x2 - arrow_w - pad, arrow_y + arrow_h});
     if (g_dh.name && box) sui::set_caption(g_dh.name, want.name);
     place(g_dh.title, box, {b.x1, b.y1 + pad, b.x2, arrow_y});
@@ -2512,13 +2516,10 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
         H->run_outside_frame([](void*) {
             g_dh_queued = false;
             Win main = sui::main_window();
-            if (!main || !g_dh_shown.show) return;
-            for (Win c : {g_dh.give_caption, g_dh_shown.box ? g_dh.prev_caption : nullptr,
-                          g_dh_shown.box ? g_dh.next_caption : nullptr})
-                if (c) {
-                    sui::bring_to_front(main, c);
-                    sui::set_flag(c, sui::kFlagAlwaysInFront, true);
-                }
+            if (main && g_dh.give_caption && g_dh_shown.show) {
+                sui::bring_to_front(main, g_dh.give_caption);
+                sui::set_flag(g_dh.give_caption, sui::kFlagAlwaysInFront, true);
+            }
         }, nullptr);
     }
     return g_dh.give != nullptr || show; // the first frame: the parts are being made
@@ -2527,7 +2528,7 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
 void shutdown()
 {
     for (Win w : {g_dh.box, g_dh.edge[0], g_dh.edge[1], g_dh.edge[2], g_dh.edge[3], g_dh.title, g_dh.name, g_dh.prev,
-                  g_dh.next, g_dh.give, g_dh.give_caption, g_dh.prev_caption, g_dh.next_caption}) // BUG-9156
+                  g_dh.next, g_dh.give, g_dh.give_caption}) // BUG-9156
         if (w) {
             sui::set_visible(w, false);
             if (Win p = sui::parent(w)) sui::remove_child(p, w);

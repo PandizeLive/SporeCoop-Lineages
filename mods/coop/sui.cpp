@@ -312,6 +312,15 @@ void set_label_color(Win w, uint32_t argb)
             vcall<void>(b, 0x4C / 4, i, argb);
 }
 
+void center_caption(Win w)
+{
+    void* b = as_button(w);
+    if (!b)
+        return;
+    vcall<void>(b, 0x54 / 4, 1.f, 1.f, 1.f, 1.f); // borders
+    vcall<void>(b, 0x5C / 4, 0.f, 0.f);           // caption offset
+}
+
 Win label(Win parent, const Rect& r, const std::string& text, uint32_t font_id, uint32_t argb, int align)
 {
     Win w = new_button();

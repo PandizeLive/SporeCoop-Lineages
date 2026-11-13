@@ -31,3 +31,5 @@ no-fail-run: layout, manual. Before: out/shots/fresh-box.png (TITAN: square, arr
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13 (later): the owner: "The arrows look to be too low still. Can we maybe use the triangles? Make sure this is consistent." Every arrow button now shows a triangle of the Co-op window's font (U+25C4, U+25BA, U+25B2, U+25BC: the font has them) in the middle of the button: coop_ui.cpp add_arrow_button and sui::center_caption (no caption offset, even borders) for the downed box's two, the Co-op window's creation / give / space arrows and the chat's up / down; the arrows' overlay labels of the first fix are gone again. Seen: the MSI (out/shots/downed-box-final-msi.png: rounded, centred), TITAN's downed box and Co-op window (out/shots/coopwin.png). Found, not fixed: the Co-op window's player list breaks "CreatureHost (host)" in two lines (the name column is 130 px).
+

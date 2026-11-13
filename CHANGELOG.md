@@ -32,8 +32,9 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
-- Downed screen: the arrows sit in the middle of their buttons and the box
-  grows with the partner's name (one line).
+- Every arrow button (the downed screen, the Co-op window) shows a triangle
+  in the middle of the button; the downed box grows with the partner's name
+  (one line).
 - Creature: the mate's card shows the pink mate face again: the game's player
   species is the creature the player plays, on every game (BUG-9177).
 - Creature: a guest can evolve through its own mate: the click on the mate
