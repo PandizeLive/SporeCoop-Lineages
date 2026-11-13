@@ -3328,4 +3328,8 @@ joined that herd when the host's world came. ✔ A nest herd made by CreateHerd 
 have several nest herds after rebuilt nests (old ones extinct, +0x190): choose by distance. Test tools: `coop.evolve
 migration` (state, last threshold, bar, round), `coop.homes extinct <seat>` (decision 8: a nest dies out and is made
 again), `coop.nest home` on a guest (its home nest, the host's home for it, joins and fails).
+✔ (runtime) Herd +0x128 is 1 on a nest herd whose first member the game made at once and 0 on one that got none in 90 s
+(on a small island in the water); a write of 1 is undone the next frame. ✔ Proxies on a guest are made adult
+(spawn_creature passes age 1) whatever the host's member is (a new nest's first member is a baby, hp 16 of 46, on the
+host). ✔ `coop.nest look x y z` moves the own creature next to the point (tests; it moved the host).
 

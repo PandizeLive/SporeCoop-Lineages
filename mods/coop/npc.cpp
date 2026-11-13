@@ -1350,6 +1350,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     }
 }
 
+// BUG-9169 (see own_family_tick)
+static bool g_own_family_fix = true;
+COOP_FIX("npc.own_family_species", "BUG-9169", g_own_family_fix,
+         "npc: on a guest with a creature of its own, its family's copies wear its species (the mate offer) and the host's family stays out of its nest");
 // BUG-9168: with a nest of its own per player and nests rebuilt after a migration, a species has several nest herds in a
 // world (old ones dead or empty). A proxy went into the cached or first nest herd of its species, so a player's new nest
 // stayed empty on that player's game and its claim waited for ever ("no members here yet", the MSI 2026-11-13). It now
@@ -1360,7 +1364,9 @@ COOP_FIX("npc.proxy_nearest_nest", "BUG-9168", g_nearest_nest_fix,
 static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
 {
     void* species_nest = species;
-    if (flags & net::NF_FAMILY)
+    // the host's family is this player's family only while it plays the host's species: with a creature of its own
+    // (its own nest, BUG-9135) the host's members went into this player's own nest herd (BUG-9169, the MSI 2026-11-13)
+    if ((flags & net::NF_FAMILY) && !(g_own_family_fix && creations::plays_own_creature()))
         if (void* h = game::avatar_herd())
             return h;
     // the nest of the species in this world (from the save): by the host's key. A creation of the
@@ -1897,6 +1903,40 @@ static void away_locals(double now)
            skipped);
 }
 
+// BUG-9169 (the owner, 2026-11-12: the nestmate showed the happy face, not the mate icon): a guest's own creature has
+// its own key here (its My Creations), the host registers the same creation under a key of the host's
+// (creations::player_key of this player), and the host's members of this player's nest are of that key. Their copies
+// here (proxies) were of the host's key: another species profile than the own creature's, and the game offers a mate
+// only of the creature's own species (BUG-9161: class 9). The copies of this player's own family now wear the own
+// creature's species profile (SetSpecies, as evolve::family_tick does for the game's own members). Off: the host's key.
+static uint32_t g_own_family_set;
+static void own_family_tick(double now)
+{
+    static double next = 0;
+    if (!g_own_family_fix || now < next || !C.sess || !game::in_creature_stage())
+        return;
+    next = now + 1.0;
+    void* av = game::avatar();
+    void* prof = av ? game::species_profile(av) : nullptr;
+    const creations::Key hk = creations::player_key(C.sess->my_id(), creations::kCreature);
+    if (!prof || !hk.instance || game::species_key(av).instance == hk.instance)
+        return;
+    const uint32_t lk = creations::local_species(hk).instance;
+    static const uintptr_t set_species = H->sym("Simulator::cCreatureAnimal::SetSpecies");
+    if (!set_species)
+        return;
+    for (auto& [id, px] : g_proxies) {
+        if (!px.c || (px.key.instance != hk.instance && px.key.instance != lk) || !game::object_alive(px.c) ||
+            game::is_dead(px.c) || game::destroy_pending(px.c) || game::species_profile(px.c) == prof)
+            continue;
+        const int age = *(int*)((uint8_t*)px.c + 0xB34);
+        skg::thiscall<bool>(set_species, px.c, prof, age, true);
+        if (g_own_family_set++ < 20)
+            H->log(M, SK_INFO, "npc: our own family's member #%u wears our creature's species %08X (the host's key %08X, BUG-9169)",
+                   id, game::species_key(av).instance, hk.instance);
+    }
+}
+
 static void tick_frame(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
@@ -1933,6 +1973,7 @@ static void tick_frame(double now)
         g_host_away = away;
         if (!away) {
             guest_tick(now);
+            own_family_tick(now); // BUG-9169
             resync_tick(now); // BUG-0487
             if (g_away_locals_fix && game::in_creature_stage())
                 away_snapshot(now);
@@ -2423,11 +2464,11 @@ std::string status()
             spawned += px.c != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u own_family=%u\n",
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies);
+                 g_proxy_nospecies, g_own_family_set);
     }
     return b + game::destroy_deferred_status() + "\n";
 }

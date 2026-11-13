@@ -4215,14 +4215,14 @@ std::string mates_report()
     c.out += line;
     game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
         auto& c = *static_cast<Ctx*>(ctx);
-        if (noun != 0x18EB45Eu || creature == g_local || game::is_puppet(creature) || !game::object_alive(creature) ||
-            game::herd_of(creature) != c.herd)
-            return true;
+        if (noun != 0x18EB45Eu || creature == g_local || !game::object_alive(creature) || game::herd_of(creature) != c.herd)
+            return true; // (copies of the host's members count: a guest's family, BUG-9169)
         const net::Vec3 p = game::position(creature);
         float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
         const bool on = H->world_to_screen(w, sc) != 0;
         char line[200];
-        snprintf(line, sizeof line, "  %p class %d hearts %d dead %d %.1f m screen %s%.0f %.0f species %p/%08X\n", creature,
+        snprintf(line, sizeof line, "  %p%s class %d hearts %d dead %d %.1f m screen %s%.0f %.0f species %p/%08X\n", creature,
+                 game::is_puppet(creature) ? " (copy)" : "",
                  skg::cdecl_call<int>(g_mate_classify, creature), g_get_creature_effect(creature, 0x9005E011u) ? 1 : 0,
                  (int)game::is_dead(creature), net::dist(c.me, p), on ? "" : "(behind) ", sc[0], sc[1],
                  game::species_profile(creature), game::species_key(creature).instance);

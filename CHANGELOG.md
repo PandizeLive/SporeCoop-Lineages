@@ -30,6 +30,8 @@
 - Creature: after a migration every player moves into their own new nest: its
   world waits for its first family member and a save of its own, and the guest's
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
+- Creature: a guest's own family wears the guest's own species (the mate offer),
+  and the host's family stays out of a guest's own nest (BUG-9169).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

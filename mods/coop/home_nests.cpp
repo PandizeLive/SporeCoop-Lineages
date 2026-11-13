@@ -123,6 +123,9 @@ static void* nest_herd_near(void* profile, const net::Vec3& at, float within, ne
     return f.herd;
 }
 
+static bool g_flat_site = true;
+COOP_FIX("creature.nest_site_flat", "BUG-9167", g_flat_site,
+         "creature: a player's new nest is put where the land around it is flat too (not a small island)");
 // decision 2: a flat spot 45-80 m from the host's home nest, at its height (within 6 m), 25 m from every other nest
 static bool site_near(const net::Vec3& home, net::Vec3& out)
 {
@@ -148,23 +151,40 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
             return true;
         },
         &nests);
-    for (float dist : {60.f, 50.f, 70.f, 45.f, 80.f})
-        for (int k = 0; k < 12; k++) {
-            const float a = (k * 30 + dist) * 0.0174533f;
-            net::Vec3 q{home.x + dist * (u.x * std::cos(a) + v.x * std::sin(a)), home.y + dist * (u.y * std::cos(a) + v.y * std::sin(a)),
-                        home.z + dist * (u.z * std::cos(a) + v.z * std::sin(a))};
-            const float g = game::ground_radius(q), len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
-            if (!std::isfinite(g) || std::fabs(g - h0) > 6 || len < 1)
-                continue;
-            q = {q.x * g / len, q.y * g / len, q.z * g / len};
-            bool clear = true;
-            for (const auto& o : nests)
-                clear &= net::dist(o, q) >= 25.f;
-            if (clear) {
-                out = q;
-                return true;
+    // BUG-9167: the land around the spot at the home's height too (rings of 10 and 20 m): a nest on a small island in
+    // the water (2026-11-13) got no member for minutes (the game found no land for its family)
+    auto flat_around = [&](const net::Vec3& c) {
+        for (float r : {10.f, 20.f})
+            for (int j = 0; j < 8; j++) {
+                const float b = j * 45 * 0.0174533f;
+                net::Vec3 p{c.x + r * (u.x * std::cos(b) + v.x * std::sin(b)), c.y + r * (u.y * std::cos(b) + v.y * std::sin(b)),
+                            c.z + r * (u.z * std::cos(b) + v.z * std::sin(b))};
+                const float g = game::ground_radius(p);
+                if (!std::isfinite(g) || std::fabs(g - h0) > 6)
+                    return false;
             }
-        }
+        return true;
+    };
+    for (int pass = g_flat_site ? 0 : 1; pass < 2; ++pass) // 0: flat land around it, 1: as before
+        for (float dist : {60.f, 50.f, 70.f, 45.f, 80.f})
+            for (int k = 0; k < 12; k++) {
+                const float a = (k * 30 + dist) * 0.0174533f;
+                net::Vec3 q{home.x + dist * (u.x * std::cos(a) + v.x * std::sin(a)), home.y + dist * (u.y * std::cos(a) + v.y * std::sin(a)),
+                            home.z + dist * (u.z * std::cos(a) + v.z * std::sin(a))};
+                const float g = game::ground_radius(q), len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+                if (!std::isfinite(g) || std::fabs(g - h0) > 6 || len < 1)
+                    continue;
+                q = {q.x * g / len, q.y * g / len, q.z * g / len};
+                bool clear = true;
+                for (const auto& o : nests)
+                    clear &= net::dist(o, q) >= 25.f;
+                if (clear && (pass == 1 || flat_around(q))) {
+                    if (pass == 1 && g_flat_site)
+                        H->log(M, SK_INFO, "home nests: no spot with flat land around it 45-80 m from the host's nest: one without");
+                    out = q;
+                    return true;
+                }
+            }
     return false;
 }
 
@@ -399,7 +419,7 @@ void on_world_change()
 
 std::string status()
 {
-    char b[220];
+    char b[360];
     snprintf(b, sizeof b, "home nests: fix=%d made=%u rebuilt=%u followed=%u (%u members) failed=%u ally_set=%u world_resent=%u last: %s\n",
              (int)g_fix, g_made, g_rebuilt, g_followed, g_follow_members, g_failed, g_ally_set, g_shares,
              g_last.empty() ? "-" : g_last.c_str());
@@ -420,8 +440,10 @@ std::string status()
             }
             continue;
         }
-        snprintf(b, sizeof b, "  seat %zu: species %08X nest (%.0f %.0f %.0f) %.0f m from the host's, members %d%s\n", i, g_nests[i].species,
-                 p.x, p.y, p.z, have_home ? net::dist(p, home) : -1.f, members_of(g_nests[i].herd),
+        void* hd = g_nests[i].herd;
+        snprintf(b, sizeof b, "  seat %zu: species %08X nest (%.0f %.0f %.0f) %.0f m from the host's, members %d (herd %p enabled %d respawn %d ms extinct %d)%s\n",
+                 i, g_nests[i].species, p.x, p.y, p.z, have_home ? net::dist(p, home) : -1.f, members_of(hd), hd,
+                 (int)skg::field<uint8_t>(hd, 0x218), skg::field<int32_t>(hd, 0x11C), (int)skg::field<uint8_t>(hd, 0x190),
                  g_share_due[i].since >= 0 ? ", its world goes out with its first member" : "");
         out += b;
     }

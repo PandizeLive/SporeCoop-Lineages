@@ -32,3 +32,10 @@ no-fail-run: manual. Before: 91 s and still 0 members (the 120 s respawn time), 
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: a later new nest got no member for 91 s (the world went out empty after the wait) even with 2 s respawn
+  time: it stood on a small patch of land in the water. Its herd's +0x128 stayed 0 (a herd that got its member at once had
+  1; written to 1 it was 0 again a frame later: the game computes it), and +0xFC differed (0 vs 0x000C0000). A predator
+  (species 06806931) sat on an earlier new nest and killed its baby members. New player nests now need flat land around
+  them (rings of 10 and 20 m within 6 m of the home's height; creature.nest_site_flat): the next one got its member in
+  4 s.
+
