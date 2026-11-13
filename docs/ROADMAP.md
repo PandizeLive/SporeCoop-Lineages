@@ -150,6 +150,19 @@ two-founder spots to change, in order:
 Test fixture needed first: a Space-ready Civ world with 3-4 founder nations (the four-founder Abber saves are not Space
 ready).
 
+Phase 6 survey of the Space code (2026-11-13, decision 3C A): no Space file uses identity or party; everything is
+memory only and keyed by network id (spacecoop.cpp, space_map.cpp rosters, space_contracts.cpp, space_finale.cpp,
+space_trade.cpp), by name (space_allies.cpp mirrors, space_rivalry.cpp relations and budgets) or by "the host is
+player 0" (squadron.cpp, space_ext.cpp transport). Done: the guests' own colonies per identity in a side file
+(BUG-9189). Enemies per system (1Z) design, not built: squadron.cpp today simulates and sends the NPC fleet on the host
+only, and a guest mirrors it only while it is where the host is (with_host); elsewhere each game runs its own natives,
+so two guests in one system without the host see different enemies. Plan: a leader per place (the host if there, else
+the lowest party seat there), the leader runs host_tick's snapshot; MSG_UFO_STATE gets the leader's id in front and the
+host relays a guest leader's snapshot to the players at that place (guests talk through the host only); hits
+(MSG_UFO_HIT) go to the host, which applies its own or forwards to the guest leader; mirrors keyed by (leader, hid);
+a hand-over when the leader leaves (the next leader keeps the ships its game already has). Estimate: several hours
+and a three-game test with two guests in a system without the host.
+
 ## Playthrough status, 2-4 players (2026-11-12, asked by the owner)
 
 | Stage | Playable now | Needed for a full playthrough |
@@ -234,8 +247,9 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 3A | The 2Z A check found a guest's native game over in Tribe (BUG-9183) and could not test the right-click orders (the test save worn out): A fix the guest's game over and test the orders on a fresh copy of the owner's Jiff save, then push, then Space; B push now, fix after; C Space now | A (owner 2026-11-13: "3AA"). Done 2026-11-13: the guest's game holds the event (BUG-9183, not reproducible on demand); the orders on a fresh copy: Party was refused by the host and is fixed with Hunt (BUG-9185); BUG-9184 found |
 | 3B | After the 3A A work (pushed 2026-11-13): A start Space (phase 6) with a Space-ready 3-4 founder save built first; B chase the host's own Tribe game over first (BUG-9184, waits for it to happen again with the new cinematic log); C the owner plays Tribe live first (hunt, gift, attack, raid by right-click from a guest) | delegated (owner 2026-11-13: "Solve everything that shows up with your own recommendations until we reach Space. I'll review your work when I'm able to."): Claude's pick: finish what is left before Space where a test can reach it (the Tribe right-clicks hunt / gift / attack / raid, the Civ late capital), keep BUG-9184 on its support log, then phase 6 (the Space-ready founder save first). Later picks on the way are logged here as 3C, 3D ... with "Claude's pick" |
 | 3C | Space is reached with four founders (2026-11-13). Next: A phase 6 steps 2-3 (Space keyed by identity and party, colonies and progress per identity in a side file, enemies run by whoever is in the system), checked on the new four-founder fixture; B the owner plays the four-founder launch first; C the release (Lineages 54) first | A (owner 2026-11-13: "3CA") |
+| 3D | Phase 6, enemies per system (1Z): the leader design above is a protocol change in the core fleet sync (several hours, a three-game test). A build it next as designed; B first the smaller identity keying of the allies and rivalry lists (names today); C stop phase 6 here and release Lineages 54 | open |
 
-Next free ID: 3D. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
+Next free ID: 3E. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
 
 Answers of 2026-11-12 (1X-2M), notes:
 * 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species
