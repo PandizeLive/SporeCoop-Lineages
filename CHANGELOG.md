@@ -32,6 +32,9 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Creature: a player's creature has one species id on every game, the same
+  after a rejoin; its family needs no conversion and "your species is
+  extinct" is gone (BUG-9180, BUG-9176).
 - Brighter buttons across the mod: our own gold and a real red (the game's
   were dim and grimy), lighter under the mouse (BUG-9179).
 - Every arrow button (the downed screen, the Co-op window) shows a triangle

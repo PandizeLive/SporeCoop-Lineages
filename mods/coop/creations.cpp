@@ -1555,9 +1555,25 @@ static std::vector<uint8_t> pack(const Bundle& b)
     return w.data;
 }
 
-static uint32_t shared_instance(uint8_t owner, uint32_t id)
+// the key a player's creation has on every game: 0x7C + a hash. Before BUG-9180 the hash took the owner's network id
+// as well (salted_instance): the key changed with every rejoin under another id (a new nest each session, BUG-9173),
+// and the owner itself played its own My Creations key, another species there (BUG-9169, BUG-9176). Now the hash is
+// the bundle's alone (the creation's own key and records), the same on every game and across rejoins (decision 2X A:
+// "needed for MMO work"); two players with the very same creation (the same file) share its species.
+// `coop.fix creations.one_key off`: the old key and the own key on the owner's game (0.7.8).
+static bool g_one_key = true;
+COOP_FIX("creations.one_key", "BUG-9180", g_one_key,
+         "creations: a player's creation has one key on every game, its own included, the same across rejoins");
+static uint32_t salted_instance(uint8_t owner, uint32_t id)
 {
     uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
+    return 0x7C000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
+}
+static uint32_t shared_instance(uint8_t owner, uint32_t id)
+{
+    if (!g_one_key)
+        return salted_instance(owner, id);
+    uint8_t seed[5] = {0xC1, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
     return 0x7C000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
 }
 
@@ -2752,6 +2768,12 @@ static Key own_key_here(Kind kind)
     uint8_t me = C.sess->my_id();
     Key k = mine(kind).key;
     auto host = g_applied.find({0, (uint8_t)kind});
+    // BUG-9180: a guest plays its creature under the key every game has for it (applied by share_own as everybody's)
+    if (g_one_key && kind == kCreature && me != 0 && k.instance) {
+        auto self = g_applied.find({me, (uint8_t)kind});
+        if (self != g_applied.end() && self->second.orig == k && !self->second.unusable && self->second.key.instance)
+            return self->second.key;
+    }
     if (me != 0 && host != g_applied.end() && host->second.orig == k)
         k = player_key(me, kind);
     // BUG-0278: an own creation under a key of the host's world (the own editor's "Save New" keeps
@@ -3802,8 +3824,9 @@ static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::
     // group kPartDescGroup, pack()): a custom creature had 2 + N records and every founder archive was refused
     // ("Invalid or mismatched guest creature data"; only premade creatures, 0 records, passed). Off: 2 at most.
     const unsigned max_records = g_founder_descs_fix ? 2u + 512u : 2u;
+    const uint32_t content = fnv(payload.data(), payload.size());
     if (!count || count > max_records || !unpack(payload, b) || !b.key.instance || !is_crt(b.key) ||
-        key != shared_instance(owner, fnv(payload.data(), payload.size()))) {
+        (key != shared_instance(owner, content) && key != salted_instance(owner, content))) { // (BUG-9180: older archives)
         err = "Invalid or mismatched guest creature data.";
         // BUG-9134: which check failed (the owner's Tribe founder was never made)
         Bundle d;
@@ -3900,7 +3923,7 @@ bool make_stand_in(uint8_t player, const Key& host, const std::string& planet, K
         if ((r.key.type == kBem || r.key.type == kMeta) && r.key.instance == host.instance && r.key.group == host.group)
             b.recs.push_back(r);
     const std::vector<uint8_t> payload = pack(b);
-    const uint32_t inst = shared_instance(player, fnv(payload.data(), payload.size()));
+    const uint32_t inst = salted_instance(player, fnv(payload.data(), payload.size())); // per joiner, not the host's creature's
     net::Writer w;
     w.u32(0x31414744); w.u32(inst); w.u8(player);
     w.raw(payload.data(), payload.size());

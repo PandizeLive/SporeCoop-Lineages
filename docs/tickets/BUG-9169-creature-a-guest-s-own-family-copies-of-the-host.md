@@ -32,3 +32,4 @@ no-fail-run: manual on the MSI (no Windows lab lane). Switch off: the MSI at its
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13: the species conversion removed with BUG-9180 (one key: the copies arrive with the own species); own_family_tick keeps the nest-herd join (BUG-9175).

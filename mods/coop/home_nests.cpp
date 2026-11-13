@@ -522,14 +522,6 @@ void host_tick(double now)
                 family_back(seat, herd); // (an offline player's nest is the AI's: it may die out, decision 8)
             continue;
         }
-        // BUG-9173: the nest noted for this seat on this planet: its species key changed since (one a tick)
-        if (g_follow && g_nests[seat].species != kNotedSpecies && party::player_of_seat((int)seat) != party::kNobody)
-            if (void* herd = noted_nest(seat, home, at)) {
-                g_nests[seat] = {herd, at, kNotedSpecies};
-                g_queued = true;
-                H->run_outside_frame(follow_species, (void*)(intptr_t)seat);
-                return;
-            }
         // BUG-9151: its nest of the species it played before is still here: that nest follows (one a tick)
         if (g_follow && g_nests[seat].species && g_nests[seat].species != species && nest_pos_of(g_nests[seat].herd, at) &&
             net::dist(at, home) < kNear && party::player_of_seat((int)seat) != party::kNobody) {
@@ -537,6 +529,15 @@ void host_tick(double now)
             H->run_outside_frame(follow_species, (void*)(intptr_t)seat);
             return;
         }
+        // BUG-9173: the nest noted for this seat on this planet: its species key changed since (one a tick; an old
+        // save's seat once: since BUG-9180 the key no longer changes with the network id)
+        if (g_follow && g_nests[seat].species != kNotedSpecies && party::player_of_seat((int)seat) != party::kNobody)
+            if (void* herd = noted_nest(seat, home, at)) {
+                g_nests[seat] = {herd, at, kNotedSpecies};
+                g_queued = true;
+                H->run_outside_frame(follow_species, (void*)(intptr_t)seat);
+                return;
+            }
         // none near the host's home: a new player, a migration (decision 3), an extinct nest (decision 8). Made only while
         // the seat's player is here: an offline player's nest is the AI's (it may die out) and is made again on return.
         if (party::player_of_seat((int)seat) == party::kNobody)

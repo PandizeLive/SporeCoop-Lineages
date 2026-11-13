@@ -2178,9 +2178,3 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   wiped-out village is no longer captured, so this only matters with `coop.fix tribe.party_wipe off` or an older save
   whose partner village was captured before. For tests the page comes back with `coop.fix ui.village_page on`.
   Ticket: BUG-9153.
-
-## Creature: a guest's goal card calls its own species extinct (BUG-9176)
-
-* What happens: "The <own species> species is extinct!" on a guest whose creature is its own.
-* Reproduce: a guest with its own creature at its own nest; the hunt goal of its own species' host key. Ticket: BUG-9176.
-

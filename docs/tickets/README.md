@@ -794,3 +794,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9177](BUG-9177-creature-the-mate-s-card-shows-the-friendly-face.md) | open | bug | creature | 2026-11-13 |  | Creature: the mate's card shows the friendly face, not the pink mate face (the game's player species is not the creature played) |
 | [BUG-9178](BUG-9178-ui-the-downed-box-arrows-off-centre-a-long-name.md) | open | bug | creature | 2026-11-13 |  | UI: the downed box: arrows off-centre, a long name on two lines, square corners with an older package |
 | [BUG-9179](BUG-9179-ui-the-gold-and-red-buttons-look-dim-and-grimy.md) | open | bug | all | 2026-11-13 |  | UI: the gold and red buttons look dim and grimy |
+| [BUG-9180](BUG-9180-creature-a-player-s-creation-has-two-species-key.md) | open | bug | creature | 2026-11-13 |  | Creature: a player's creation has two species keys (its own and the shared one, which also changes with the network id) |

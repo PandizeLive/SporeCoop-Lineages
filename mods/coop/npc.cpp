@@ -1355,7 +1355,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
 // BUG-9169 (see own_family_tick)
 static bool g_own_family_fix = true;
 COOP_FIX("npc.own_family_species", "BUG-9169", g_own_family_fix,
-         "npc: on a guest with a creature of its own, its family's copies wear its species (the mate offer) and the host's family stays out of its nest");
+         "npc: on a guest with a creature of its own, its family's copies live in its own nest and the host's family stays out of it");
 // BUG-9168: with a nest of its own per player and nests rebuilt after a migration, a species has several nest herds in a
 // world (old ones dead or empty). A proxy went into the cached or first nest herd of its species, so a player's new nest
 // stayed empty on that player's game and its claim waited for ever ("no members here yet", the MSI 2026-11-13). It now
@@ -1905,51 +1905,34 @@ static void away_locals(double now)
            skipped);
 }
 
-// BUG-9169 (the owner, 2026-11-12: the nestmate showed the happy face, not the mate icon): a guest's own creature has
-// its own key here (its My Creations), the host registers the same creation under a key of the host's
-// (creations::player_key of this player), and the host's members of this player's nest are of that key. Their copies
-// here (proxies) were of the host's key: another species profile than the own creature's, and the game offers a mate
-// only of the creature's own species (BUG-9161: class 9). The copies of this player's own family now wear the own
-// creature's species profile (SetSpecies, as evolve::family_tick does for the game's own members). Off: the host's key.
-static uint32_t g_own_family_set, g_own_family_homed;
+// A guest's own family: the copies of the host's members of this player's nest (the host's key of its creation, which
+// is this game's key of it too since BUG-9180) live in this player's own nest herd, the home the host told us. A copy
+// went into the nest herd of its key in this game's copy of the world; after the host gave the nest another key (an
+// evolution, a nest taken back: BUG-9151, BUG-9173) no nest herd here had that key, the copy stood at our nest in a
+// herd of its own and was never our mate (BUG-9175, the MSI 2026-11-13); and before the avatar joined its own nest
+// its herd was the host's (TITAN). BUG-9169 converted the copies to the own creature's species every second while a
+// guest played its creation under another key: removed with BUG-9180 (one key; right after a load it turned the
+// copies into the host's species while the avatar still wore it).
+static uint32_t g_own_family_homed;
 static void own_family_tick(double now)
 {
     static double next = 0;
     if (!g_own_family_fix || now < next || !C.sess || !game::in_creature_stage())
         return;
     next = now + 1.0;
-    void* av = game::avatar();
-    void* prof = av ? game::species_profile(av) : nullptr;
     const creations::Key hk = creations::player_key(C.sess->my_id(), creations::kCreature);
-    if (!prof || !hk.instance || game::species_key(av).instance == hk.instance)
+    static const uintptr_t set_herd = H->sym("SporeCoop::Creature_SetHerd");
+    void* home = nest::home_herd();
+    if (!hk.instance || !set_herd || !home)
         return;
     const uint32_t lk = creations::local_species(hk).instance;
-    static const uintptr_t set_species = H->sym("Simulator::cCreatureAnimal::SetSpecies");
-    if (!set_species)
-        return;
-    // BUG-9175: and they live in our own nest herd. A copy went into the nest herd of its key in this game's copy of the
-    // world; after the host gave our nest another key (an evolution, a nest taken back: BUG-9151, BUG-9173) no nest
-    // herd here has that key, the copy stood at our nest in a herd of its own and was never our mate (the MSI 2026-11-13).
-    static const uintptr_t set_herd = H->sym("SporeCoop::Creature_SetHerd");
-    // (the home the host told us, not the avatar's herd: before the avatar joined its own nest that was the host's
-    // nest, the copies went there and our own nest stayed empty: "no members here yet", never joined; TITAN 2026-11-13)
-    void* home = nest::home_herd();
     for (auto& [id, px] : g_proxies) {
         if (!px.c || (px.key.instance != hk.instance && px.key.instance != lk) || !game::object_alive(px.c) ||
-            game::is_dead(px.c) || game::destroy_pending(px.c))
+            game::is_dead(px.c) || game::destroy_pending(px.c) || game::herd_of(px.c) == home)
             continue;
-        if (game::species_profile(px.c) != prof) {
-            const int age = *(int*)((uint8_t*)px.c + 0xB34);
-            skg::thiscall<bool>(set_species, px.c, prof, age, true);
-            if (g_own_family_set++ < 20)
-                H->log(M, SK_INFO, "npc: our own family's member #%u wears our creature's species %08X (the host's key %08X, BUG-9169)",
-                       id, game::species_key(av).instance, hk.instance);
-        }
-        if (set_herd && home && game::herd_of(px.c) != home) {
-            skg::thiscall<void>(set_herd, px.c, home);
-            if (g_own_family_homed++ < 20)
-                H->log(M, SK_INFO, "npc: our own family's member #%u joins our own nest herd %p (BUG-9175)", id, home);
-        }
+        skg::thiscall<void>(set_herd, px.c, home);
+        if (g_own_family_homed++ < 20)
+            H->log(M, SK_INFO, "npc: our own family's member #%u joins our own nest herd %p (BUG-9175)", id, home);
     }
 }
 
@@ -2484,7 +2467,7 @@ std::string status()
                  (unsigned)g_proxies.size(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
-                 g_proxy_nospecies, g_own_family_set);
+                 g_proxy_nospecies, g_own_family_homed);
     }
     return b + game::destroy_deferred_status() + "\n";
 }
