@@ -3276,3 +3276,12 @@ BUG-9160, BUG-9161. Steam / GOG 2024 (3010a413), runtime on TITAN and the MSI.
   <hex>` and `coop.evolve calls <address>` (the game's code searched in memory: the exe on disk is encrypted).
 * Test pitfalls: a QA click on TITAN reaches the game only with its window in front (SetForegroundWindow first); an idle
   creature starves; a creature that died respawns as a hatchling that stayed age 0 for minutes (a save made then keeps it).
+
+## Personal DNA, the party's bar (2026-11-13, feat/lineages-47)
+<a id="creature-personal-dna"></a>
+
+BUG-9162. ✔ (runtime) `game::dna_sync_raw(budget, earned)`: AddEvolutionPoints for the bar's difference (it adds to both),
+then SetEvolutionPoints for the budget: `dna_sync_raw(dna(), bar + d)` moves only the bar, `dna_sync_raw(dna() + d, bar)`
+only the budget. `call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:N` goes through the mod's hook (on_dna)
+like a game reward. The cocoon's shell is sized by the creature's bounding radius / 0.9 (a radius 1.24 creature fitted at
+scale 1, a 1.40 one with a long neck did not; 1.67 fitted at 1.86).

@@ -776,3 +776,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9159](BUG-9159-tribe-a-joiner-without-a-creature-goes-into-the.md) | open | feature | tribe | 2026-11-12 |  | Tribe: a joiner without a creature goes into the creature editor first; the village follows their save (decision 2M) |
 | [BUG-9160](BUG-9160-creature-personal-evolving-with-the-game-s-own-c.md) | open | feature | creature | 2026-11-12 |  | Creature: personal evolving with the game's own cocoon (decisions 2D, 2E) |
 | [BUG-9161](BUG-9161-creature-after-a-mating-the-egg-scene-never-ends.md) | open | bug | creature | 2026-11-13 |  | Creature: after a mating the egg scene never ends; the editor opens only on Escape (the family wears an older species) |
+| [BUG-9162](BUG-9162-creature-personal-dna-each-player-spends-their-o.md) | open | feature | creature | 2026-11-13 |  | Creature: personal DNA: each player spends their own DNA; the progress bar stays the party's (decision 2F) |

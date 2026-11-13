@@ -72,6 +72,7 @@
 #include "busy.h"
 #include "social.h"
 #include "world.h"
+#include "net/validate.h"
 #include "net/discovery.h"
 #include "net/fixes.h"
 #include "net/give_target.h"
@@ -197,6 +198,16 @@ uint32_t g_dna_own = 0; // tests: gains kept in the guest's own world (row 2)
 // party's total there (never below 0). Off: only gains go to the host (0.7.3.6).
 bool g_dna_spend_fix = true;
 COOP_FIX("core.dna_spend", "BUG-0466", g_dna_spend_fix, "core: the DNA a guest spends in its own editor leaves the party's total and is not given back");
+// BUG-9162 (owner decision 2F, "Everyone gets their own DNA."): in Creature each player's spendable DNA (the editor's
+// budget, the HUD's number) is their own: their own gains, their kills (a guest's kill is paid on the host's game, which
+// sends it on: MSG_DNA_OWN), their own editor's spending. The progress bar (cPlayer +0x10F0) stays the party's: every
+// gain still reaches the host, which adds it to the bar only, and sends the bar as before. Off: one shared pool (0.7.8).
+static bool g_personal_dna = true;
+COOP_FIX("creature.personal_dna", "BUG-9162", g_personal_dna,
+         "creature: every player spends their own DNA (the progress bar stays the party's)");
+static uint32_t g_dna_own_sent, g_dna_own_got;
+extern uint32_t g_mode;
+static bool personal_dna() { return g_personal_dna && g_mode == modes::kCreature && g_sess.connected(); }
 static float g_dna_seen = 0;           // guest: the game's DNA after the last sample / host total / own gain
 static bool g_dna_seen_ok = false;
 static uint32_t g_dna_seen_epoch = 0;  // the Creature stage epoch of g_dna_seen (a load starts a new one)
@@ -352,12 +363,34 @@ bool on_dna(float& delta, bool activity_reward)
             if (delta <= 0)
                 return false; // all of it went to the debt: no DNA, the bar stays
         }
-        if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature)
-            dna_host_gain(dna_ledger::g_credit.gain(delta, H->time_seconds()), game::dna());
+        if (g_sess.role() == net::Role::Host && delta != 0 && g_mode == modes::kCreature) {
+            const auto part = dna_ledger::g_credit.gain(delta, H->time_seconds());
+            dna_host_gain(part, game::dna());
+            if (personal_dna() && delta > 0 && part.cause == dna_ledger::Cause::Hunt && part.player != g_sess.my_id() &&
+                net::is_player(g_sess, part.player)) {
+                // BUG-9162: a guest's kill: the party's bar here, the DNA to that guest
+                game::dna_sync_raw(game::dna(), game::evolution_bar() + delta);
+                net::Writer w;
+                w.f32(delta);
+                g_sess.send_reliable_to(part.player, net::MSG_DNA_OWN, w);
+                g_dna_own_sent++;
+                return false;
+            }
+        }
         return true;
     }
     if (g_host_away) { // core.away_dna off: the old order (a goal card's reward went to the host)
         g_solo_dna += delta;
+        return true;
+    }
+    if (personal_dna()) { // BUG-9162: its own DNA here; the host adds it to the party's bar only
+        if (delta > 0) {
+            net::Writer w;
+            w.f32(campaign_scaled ? delta : dna_pace_gain(delta));
+            g_sess.send_reliable_to(0, net::MSG_DNA_ADD, w);
+            g_dna_fwd++;
+        }
+        g_dna_seen += delta; // not a spend (BUG-0466's sampling)
         return true;
     }
     net::Writer w;
@@ -1132,6 +1165,7 @@ static void dna_spend_resync()
 static void dna_spend_tick(double now)
 {
     static double last_send = -100;
+    if (personal_dna()) { g_dna_spend = 0; return; } // BUG-9162: a spend is the player's own
     dna_spend_sample();
     if (g_dna_spend > -0.5f)
         return;
@@ -4716,6 +4750,14 @@ void setup_callbacks()
                 g_place_dropped++;
                 return;
             }
+            if (personal_dna() && game::avatar()) { // BUG-9162: the party's bar; the DNA here is this player's own
+                if (progress.valid(g_world))
+                    game::dna_sync_raw(game::dna(), progress.earned);
+                g_dna_seen = game::dna();
+                g_dna_seen_ok = true;
+                g_dna_rx++;
+                return;
+            }
             if (dna_route::host_total(false, g_host_away, game::avatar() != nullptr) == dna_route::Total::Apply) {
                 dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
                 if (g_dna_spend_fix)
@@ -4733,14 +4775,29 @@ void setup_callbacks()
             }
             return;
         }
+        if (type == net::MSG_DNA_OWN && from == 0 && g_sess.role() == net::Role::Client) { // BUG-9162: our kill's DNA
+            const float d = r.f32();
+            if (r.ok() && d > 0 && d < 10000 && personal_dna() && game::avatar()) {
+                game::dna_sync_raw(game::dna() + d, game::evolution_bar());
+                g_dna_seen += d;
+                g_dna_own_got++;
+                feed("+" + std::to_string((int)d) + " DNA from your hunt");
+            }
+            return;
+        }
         if (type == net::MSG_DNA_ADD && g_sess.role() == net::Role::Host) {
             float d = r.f32();
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
+            if (r.ok() && personal_dna() && d < 0)
+                return; // BUG-9162: a guest's own spend is its own
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 float left = progress_debt::absorb(d); // BUG-9119: a progress debt is repaid first
                 if (left > 0) {
                     dna_host_gain({dna_ledger::Cause::Earned, from, left}, game::dna());
-                    game::dna_add_raw(left);
+                    if (personal_dna())
+                        game::dna_sync_raw(game::dna(), game::evolution_bar() + left); // BUG-9162: the bar only
+                    else
+                        game::dna_add_raw(left);
                 }
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA" +
                      (left < d ? " (repays the progress debt)" : ""));
@@ -7038,8 +7095,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                const bool on = r.puppet && H->world_to_screen(w, sc);
                                uint32_t anim = 0;
                                if (r.puppet) game::drawn_state(r.puppet, nullptr, &anim);
-                               snprintf(b, sizeof b, "%u '%s' puppet %p mode %08X cocoon %d fx %d anim %08X held %d at (%.1f %.1f %.1f) screen %s%.0f %.0f\n",
-                                        id, r.name.c_str(), r.puppet, r.buf.empty() ? 0u : r.buf.latest().mode, r.cocoon.state,
+                               snprintf(b, sizeof b, "%u '%s' puppet %p radius %.2f mode %08X cocoon %d fx %d anim %08X held %d at (%.1f %.1f %.1f) screen %s%.0f %.0f\n",
+                                        id, r.name.c_str(), r.puppet, r.puppet ? game::bounding_radius(r.puppet) : 0.f,
+                                        r.buf.empty() ? 0u : r.buf.latest().mode, r.cocoon.state,
                                         r.cocoon.fx && game::effect_active(r.cocoon.fx) ? 1 : 0, anim,
                                         r.puppet ? (int)game::pose_held(r.puppet) : 0, p.x, p.y, p.z, on ? "" : "(off) ", sc[0], sc[1]);
                                out += b;

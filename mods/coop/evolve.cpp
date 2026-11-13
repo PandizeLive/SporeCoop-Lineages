@@ -1,6 +1,7 @@
 #include "evolve.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -86,9 +87,14 @@ static void* effect_at_pos(const net::Vec3& at, uint32_t id, float scale, float 
             m[rows ? i * 3 + j : j * 3 + i] = axes[i][j];
     return game::create_world_effect(id, xf);
 }
+// sized to the creature (2026-11-13: at scale 1 a creature of bounding radius 1.24 fitted in the shell, one of 1.40
+// with a long neck stuck its head out): the creature's radius / kShellFits, never below 0.8
+constexpr float kShellFits = 0.9f;
 static void* effect_at(void* c, uint32_t id)
 {
-    return effect_at_pos(game::position(c), id, g_fx_scale, g_fx_up, g_fx_rows);
+    const float r = game::bounding_radius(c);
+    const float size = std::isfinite(r) && r > 0 ? std::clamp(r / kShellFits, 0.8f, 4.f) : 1.f;
+    return effect_at_pos(game::position(c), id, g_fx_scale * size, g_fx_up, g_fx_rows);
 }
 static void end_sac(Cocoon& c)
 {

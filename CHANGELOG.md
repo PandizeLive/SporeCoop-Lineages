@@ -15,6 +15,8 @@
   design (BUG-9160).
 - Creature: after a mating the egg scene no longer hangs; the editor opens
   (BUG-9161).
+- Creature: every player has their own DNA to spend; the progress bar stays the
+  party's (BUG-9162).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

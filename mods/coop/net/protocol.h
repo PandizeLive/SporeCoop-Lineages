@@ -106,6 +106,7 @@ enum MsgType : uint8_t {
     MSG_CAMPAIGN_RULES = 65, // reliable host snapshot scoped to campaign name hash and stage
     MSG_IDENTITY = 83, // reliable guest -> host (BUG-9135): u64 the player's persistent identity (identity.h)
     MSG_TRIBE_LATE = 84, // reliable host -> guest (BUG-9159): u8 kind (1: make your creature in the editor now), u32 world
+    MSG_DNA_OWN = 85, // reliable host -> guest (BUG-9162): f32 DNA of that guest's own (its kill paid on the host's game)
     MSG_DRAMA = 82, // reliable host -> guests (BUG-9131): u8 Drama Manager event kind the host started (meteor, rain)
     MSG_PROGRESS_DEBT = 81, // reliable host -> guests (BUG-9119): u32 stage mode, u32 world, f32 the party's progress debt
     MSG_TRIBE_COMBAT = 80, // reliable host snapshot: world, count, {member id, scaled native max HP}
