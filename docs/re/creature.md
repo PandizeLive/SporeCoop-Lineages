@@ -3295,3 +3295,16 @@ F6A4B1E3 started while the editor opened and stayed over it without its buttons,
 `call SporeCoop::cCinematicManager_EndCinematic thiscall <Simulator::cCinematicManager::Get()>`) but did not start a
 migration (0 -> 0 at 601 / 1000).
 
+## A joiner's own creature and own DNA across reloads (2026-11-13, feat/lineages-47)
+<a id="creature-join-editor-first"></a>
+
+BUG-9164, BUG-9165. ✔ (runtime) `Editors::EditorRequest::Submit` returned false for the creature stage's own
+evolution request although the evolution editor opened (a guest 12 s after joining); in an earlier run from
+`coop.evolve migrate` it returned true. Treat only "no request built" as a failure. ✔ (runtime) a new home nest for a
+guest's own species (home_nests) makes the host send its world again; the guest loads it (Creature -> Galaxy menu ->
+Loading -> Creature, about 6 s on TITAN) and its avatar is the host save's species until the creations code puts its
+own back (3 s later). The load also sets the guest's spendable DNA from the host's save (the host's budget):
+game::stage_epoch(kCreature) changes with that load and not with an editor visit, which tells a reload from an own
+editor's spend. A fresh profile shows the game's online account box over the stage (Close, then OK; "Don't prompt me
+again" keeps it away).
+

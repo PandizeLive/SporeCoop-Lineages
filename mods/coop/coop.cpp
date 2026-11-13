@@ -1162,6 +1162,54 @@ static void dna_spend_resync()
         g_dna_seen = game::dna();
 }
 
+// BUG-9165: a guest's own DNA (BUG-9162) lives in its game's player; every load of the host's world (a share at a
+// stage change, a new home nest, a rejoin) brings the host's budget from the host's save. The guest keeps its own: the
+// last value seen in this world (and SporeCoop\worlds.ini [dna], for the next session) is put back once the avatar
+// stands in a newly loaded copy of the same world (game::stage_epoch(kCreature) changed; an editor visit keeps the
+// epoch, so a spend in the own editor stays spent). The bar is the host's (MSG_DNA) and is kept. Off: the host's budget.
+static bool g_keep_own_dna = true;
+COOP_FIX("creature.keep_own_dna", "BUG-9165", g_keep_own_dna,
+         "creature: a guest's own DNA is put back after the host's world is loaded again (the save holds the host's)");
+unsigned game_busy();
+bool mode_switch_pending();
+static float g_own_dna = -1;
+static uint32_t g_own_dna_world, g_own_dna_epoch, g_own_dna_restores;
+static double g_own_dna_written_at = -100;
+static float g_own_dna_written = -1;
+static void own_dna_tick(double now)
+{
+    if (!g_keep_own_dna || !personal_dna() || g_sess.role() != net::Role::Client || !g_world || !game::avatar() ||
+        game_busy() || mode_switch_pending())
+        return;
+    const uint32_t epoch = game::stage_epoch(modes::kCreature);
+    if (g_own_dna_world != g_world) { // first sight of this world: the note of an earlier session, if any
+        g_own_dna = -1;
+        const std::string note = creations::world_note("dna", g_world);
+        if (!note.empty())
+            g_own_dna = (float)atof(note.c_str());
+        g_own_dna_world = g_world;
+        g_own_dna_epoch = 0; // a loaded world: put the note back
+        g_own_dna_written = g_own_dna;
+    }
+    if (epoch != g_own_dna_epoch) {
+        if (g_own_dna >= 0 && std::fabs(game::dna() - g_own_dna) > 0.5f) {
+            LOG("dna: own DNA %.0f put back after a load of the world (the save had %.0f, BUG-9165)", g_own_dna, game::dna());
+            game::dna_sync_raw(g_own_dna, game::evolution_bar());
+            g_dna_seen = g_own_dna;
+            ++g_own_dna_restores;
+        }
+        g_own_dna_epoch = epoch;
+    }
+    g_own_dna = game::dna();
+    if (std::fabs(g_own_dna - g_own_dna_written) > 0.5f && now - g_own_dna_written_at > 5) {
+        char b[32];
+        snprintf(b, sizeof b, "%.0f", g_own_dna);
+        creations::world_note_set("dna", g_world, b);
+        g_own_dna_written = g_own_dna;
+        g_own_dna_written_at = now;
+    }
+}
+
 static void dna_spend_tick(double now)
 {
     static double last_send = -100;
@@ -2370,6 +2418,39 @@ static void send_migrate(uint8_t by, int to /* -1: every guest */, uint8_t skip)
     for (auto& p : g_sess.players())
         if (p.id != g_sess.my_id() && p.id != skip) g_sess.send_reliable_to(p.id, net::MSG_MIGRATE, w);
 }
+// ---- BUG-9164 (owner decision 4 in Creature, as Tribe's 2M): everyone plays a creature of their own ----
+// A guest in Creature that plays the world's (the host's) species, no creature of its own, gets its own evolution editor
+// 12 s after its creature appeared (once per world): what it saves becomes its own creature (creations.cpp adopts the new
+// creation; its own nest follows, home_nests), so the host's evolutions no longer change it (the owner, 2026-11-12: "became
+// the new creature instead of their own"). Leaving the editor without a change keeps the shared species. Off: as before.
+static bool g_join_editor = true;
+COOP_FIX("creature.join_editor_first", "BUG-9164", g_join_editor,
+         "creature: a guest without a creature of their own gets their own editor after joining; what they save is theirs");
+static double g_join_since = -1;
+static uint32_t g_join_done_world, g_join_editors;
+static void join_editor_tick(double now)
+{
+    if (!g_join_editor || g_sess.role() != net::Role::Client || !g_sess.connected() || g_mode != modes::kCreature ||
+        !g_local || !g_world) {
+        g_join_since = -1;
+        return;
+    }
+    if (g_join_since < 0) g_join_since = now;
+    if (g_join_done_world == g_world || now - g_join_since < 12) return;
+    if (game_busy() || mode_switch_pending() || creature_rescue::down() || game::is_dead(g_local)) return;
+    g_join_done_world = g_world;
+    if (creations::plays_own_creature()) return;
+    H->run_outside_frame([](void*) {
+        const int r = submit_evolution_request();
+        LOG("join: own editor for a creature of our own -> %d (BUG-9164)", r);
+        if (r < 0) return; // 0: Submit said false, the editor opened all the same (2026-11-13)
+        ++g_join_editors;
+        feed("Make a creature of your own: what you save is your creature for this game (Done without a change keeps the "
+             "shared one).");
+        notice(g_name + " is making a creature of their own", -1);
+    }, nullptr);
+}
+
 static void migration_tick(double now)
 {
     if (!g_migrate_together || !g_sess.connected() || g_mode != modes::kCreature) {
@@ -3640,12 +3721,14 @@ void on_frame(void*, int, void*)
     share_wait_tick();
     host_away_tick(now);
     dna_spend_tick(now); // BUG-0466
+    own_dna_tick(now);   // BUG-9165
     dna_notices_tick(now);
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
     evolve::own_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9160: out of the own cocoon
     evolve::egg_tick(game::mode_id(), now);                             // BUG-9161: an egg scene that never ends
     evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
     migration_tick(now); // BUG-9163: the party migrates together
+    join_editor_tick(now); // BUG-9164: a creature of one's own
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
     party::tick(now);                           // roadmap 0b

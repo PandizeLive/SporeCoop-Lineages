@@ -72,6 +72,10 @@ bool make_stand_in(uint8_t player, const Key& host, const std::string& planet, K
 // BUG-9135 roadmap phase 4 (guest): this player plays a creature of their own My Creations (what share_own sends with
 // its records), not the host's species, one of the host's creations or "the world's own"
 bool plays_own_creature();
+// SporeCoop\worlds.ini [section] <world crc> = text: small per-world notes of this player (BUG-9165: its own DNA).
+// "" when none; an empty value removes the note.
+std::string world_note(const char* section, uint32_t world);
+void world_note_set(const char* section, uint32_t world, const std::string& value);
 // BUG-9135 roadmap phase 4 (guest, tribe.late_create_editor): the creature editor opened from Tribe for a new creature;
 // back in this Tribe world, the newest own creation it saved becomes this player's creature (as after a Creature
 // editor). cancel: the request did not reach the game.

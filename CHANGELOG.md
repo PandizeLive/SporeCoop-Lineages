@@ -19,6 +19,10 @@
   party's (BUG-9162).
 - Creature: when anyone's species starts migrating, everyone is warned and gets
   their editor 10 s later, and the party migrates together (BUG-9163).
+- Creature: a player who joins without a creature of their own gets their own
+  editor first; what they save is their creature, with its own nest (BUG-9164).
+- Creature: a guest keeps their own DNA when the host's world is loaded again
+  (BUG-9165).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

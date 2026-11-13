@@ -179,6 +179,28 @@ static void world_record_set(int k, uint32_t world, uint32_t inst)
     g_world_records++;
     H->log(M, SK_INFO, "creations: own %s %08X recorded for world %08X (BUG-0345)", kInfo[k].name, inst, world);
 }
+std::string world_note(const char* section, uint32_t world)
+{
+    if (!world || !section || !find_paths())
+        return {};
+    wchar_t key[16], buf[64] = {};
+    swprintf(key, 16, L"%08X", world);
+    GetPrivateProfileStringW(wide(section).c_str(), key, L"", buf, 64, (g_dir + L"\\worlds.ini").c_str());
+    std::string out;
+    for (const wchar_t* p = buf; *p; ++p)
+        out += (char)(*p < 128 ? *p : '?');
+    return out;
+}
+void world_note_set(const char* section, uint32_t world, const std::string& value)
+{
+    if (!world || !section || !find_paths())
+        return;
+    wchar_t key[16];
+    swprintf(key, 16, L"%08X", world);
+    const std::wstring v(value.begin(), value.end());
+    WritePrivateProfileStringW(wide(section).c_str(), key, value.empty() ? nullptr : v.c_str(),
+                               (g_dir + L"\\worlds.ini").c_str());
+}
 // BUG-0508 (world.evolve_in_place): a guest that plays the host world's species (no creation of its
 // own, no choice) takes the host's new creature in place after the host's editor, as the reloaded
 // world gave it before: `g_follow` is the host's new creation, valid in the stage world it came in
