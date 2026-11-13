@@ -893,6 +893,12 @@ static void* cinematic_mgr()
     return get ? skg::cdecl_call<void*>(get) : nullptr;
 }
 
+uint32_t cinematic_id()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    return cm && *(uint32_t*)(cm + kCineState) ? *(uint32_t*)(cm + kCineId) : 0;
+}
+
 // ends the running cinematic when it is the menu intro (or any, with any=true); true if it did
 static bool end_menu_intro(bool any, const char* where)
 {

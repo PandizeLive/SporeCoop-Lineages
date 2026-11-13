@@ -174,8 +174,8 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2A | Space: where Space progress is saved | A |
 | 2B | Space: how difficulty scales | A; owner asked whether parties need a friend list and whether to switch from slots now (see 2O) |
 | 2C | Space: the Galactic Core ending | A |
-| 2D | Creature: the "cocoon" | the native cocoon (owner: NPC species wrap into a cocoon and come out as a new species; Claude was wrong that the game has none) |
-| 2E | Creature: how evolving starts | owner's rule: native mating call; the nearest mate answers, else one is spawned; the player clicks the mate to start |
+| 2D | Creature: the "cocoon" | the native cocoon (owner: NPC species wrap into a cocoon and come out as a new species; Claude was wrong that the game has none); built 2026-11-13 (BUG-9160: the game's own cocoon animations and effects, live) |
+| 2E | Creature: how evolving starts | owner's rule: native mating call; the nearest mate answers, else one is spawned; the player clicks the mate to start; built 2026-11-13 except "else one is spawned" (BUG-9160, BUG-9161: no vote, the egg scene replaced by the cocoon) |
 | 2F | Creature: DNA when two players evolve at once | B, personal DNA (owner: "Everyone gets their own DNA.") |
 | 2G | Creature: who moves the party's nest | owner's rule: anyone starting the native migration warns every player in the world, 10 s later all go into the editor for final touches (downed or dead players too, cleaned up) and migrate together |
 | 2H | Space: what ends Civ for a party | A |

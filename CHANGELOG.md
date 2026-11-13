@@ -9,6 +9,12 @@
   Leave-style button as wide as the panel).
 - Creature: a crash when a player who joined dead confirmed the death message
   is fixed (BUG-9157).
+- Creature: everyone evolves on their own (no vote): after the mating call
+  the creature goes into the game's own cocoon, the editor opens, and the
+  others see it in the cocoon at the nest until it comes out with the new
+  design (BUG-9160).
+- Creature: after a mating the egg scene no longer hangs; the editor opens
+  (BUG-9161).
 - Tribe: a player who joins without a creature of their own goes straight
   into the creature editor; their village is founded with their creature when
   they save it, behind a "Founding your village" loading screen (BUG-9159).

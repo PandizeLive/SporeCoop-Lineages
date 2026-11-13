@@ -3248,3 +3248,31 @@ BUG-9157. cCreatureAnimal_BaseMaxHitPoints 0xC04170 (vt 0x7C): Adventure: LevelH
 species: LevelHealth(mpAvatar) + species +0x56C; others: herd +0x1674 -> +0x154 when > 0, else tuning +0xE84 -> +0x340,
 else LevelHealth(0) + species (+0xB20) +0x56C with **no null check** (0xC04252). ✔ (live) A guest that joined dead and
 confirmed the death caption faulted there twice (edi = 0, a herd update in the stack). Guarded in creature_hp.cpp.
+
+## The game's cocoon and the egg scene after a mating (2026-11-13, feat/lineages-47)
+<a id="creature-cocoon"></a>
+<a id="creature-egg-scene"></a>
+
+BUG-9160, BUG-9161. Steam / GOG 2024 (3010a413), runtime on TITAN and the MSI.
+
+* ✔ The cocoon is data (ids FNV-1 of the lower-case names): animations (type EE17C6AD) gen_evolve_cocoon 9C26F705 (curl
+  in), gen_evolve_cocoon_hold 4E0D3CBF, gen_evolve_emerge D4F48A35 (event crg_cocoon_hatch); effects crg_cocoon_create
+  59A93586 (a woven grey shell around the creature: full 0.2 s after it is made, gone at 2.0 s), crg_cocoon_hold 6F02369D (a
+  teal glow), crg_cocoon_hatch D033D3AC (a burst). The world object cr_cocoon_collision (group 02E9C426 of the planet
+  objects, inst 69793182, model key 0E3BD617) exists; the effects need no object. No code constant references these ids.
+  A world effect's transform: +4 position, +0x10 scale, +0x14 3x3 (rows = local axes); its up must be the planet's up at
+  the position (with the world's z the effects lay on their side).
+* ✔ The egg scene after a mating is cinematic CRG_LaidEgg B6A1DBE1. It ends only through the creature game's key handler
+  0xE45760 (thiscall(this+4, msg, event*) ret 8): event type 1 with key 0x1B (Escape) or 0x54 (T) and [event+0x14] == 0 ->
+  0xE37920 (the only writer of this+0x371 = 1, starts a 500 ms timer at this+0x350); when the timer ran out the handler
+  (0xE45DCE) clears the flag, calls 0xE44200(0) and posts 0x4471C60 (0xE45E0F) and 0x445F729. 0x4471C60 builds the
+  evolution request (0xD42E50). Event type 6 with [event+0x18] == 1000 is a separate branch (+0x270, +0x268).
+* ✔ In co-op the scene never ended by itself (minutes; the MSI alone in a session and with a guest, TITAN). The own creature
+  wore the player's own species while the nest family and the herd (+0xA4) kept an older one; only the nestmate of the own
+  species was offered as mate (SporeCoop::CreatureClickAction 0xD30830 returns 9 for it, 7 for the others). Setting the
+  herd's +0xA4 to the own species made no member a mate (all 7); the members' species (SetSpecies) can change.
+* Tests and RE tools: `coop.evolve mates` (the own herd: class, hearts, species, screen spot; the native mating step's
+  state), `coop.evolve partners` (each partner's puppet, cocoon, screen spot), `coop.evolve fx <name>`, `coop.evolve find
+  <hex>` and `coop.evolve calls <address>` (the game's code searched in memory: the exe on disk is encrypted).
+* Test pitfalls: a QA click on TITAN reaches the game only with its window in front (SetForegroundWindow first); an idle
+  creature starves; a creature that died respawns as a hatchling that stayed age 0 for minutes (a save made then keeps it).

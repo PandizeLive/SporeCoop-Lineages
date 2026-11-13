@@ -98,6 +98,8 @@ bool menu_intro_playing();
 // a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor
 // opened meanwhile came up without its interface (coop.cpp own editor)
 bool cinematic_playing();
+// the id of the cinematic that plays (FNV-1 of its name, cCinematicManager +0x148), 0: none
+uint32_t cinematic_id();
 // ends the cinematic that plays (EndCinematic: stop, release the input lock, post its end message);
 // outside the frame. True if one played (BUG-0404: a cinematic left playing in an editor keeps it
 // without its buttons)

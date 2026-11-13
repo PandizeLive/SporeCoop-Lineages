@@ -774,3 +774,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9157](BUG-9157-crash-on-respawn-base-max-hit-points-read-a-null.md) | open | crash | creature | 2026-11-12 |  | Crash on respawn: base max hit points read a null species (C04252) |
 | [BUG-9158](BUG-9158-tribe-a-totem-piece-past-the-totem-s-five-model.md) | open | crash | tribe | 2026-11-12 |  | Tribe: a totem piece past the totem's five model slots crashes in Model::Release |
 | [BUG-9159](BUG-9159-tribe-a-joiner-without-a-creature-goes-into-the.md) | open | feature | tribe | 2026-11-12 |  | Tribe: a joiner without a creature goes into the creature editor first; the village follows their save (decision 2M) |
+| [BUG-9160](BUG-9160-creature-personal-evolving-with-the-game-s-own-c.md) | open | feature | creature | 2026-11-12 |  | Creature: personal evolving with the game's own cocoon (decisions 2D, 2E) |
+| [BUG-9161](BUG-9161-creature-after-a-mating-the-egg-scene-never-ends.md) | open | bug | creature | 2026-11-13 |  | Creature: after a mating the egg scene never ends; the editor opens only on Escape (the family wears an older species) |

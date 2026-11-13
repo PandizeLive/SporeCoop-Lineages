@@ -40,6 +40,7 @@
 #include "shared.h"
 #include "sui.h"
 #include "teamplay.h"
+#include "evolve.h"
 #include "tribe.h"
 #include "tribe_late.h"
 #include "drama.h"
@@ -126,6 +127,7 @@ struct Remote {
     // BUG-9141: this partner's knockout as seen here (Creature / Adventure revive ring): since when its state says
     // downed, and since when this player stands within reach of it (-1: not)
     double down_since = -1, near_since = -1;
+    evolve::Cocoon cocoon; // BUG-9160: this partner's cocoon while it is in an editor of its own
     uint64_t world_sent = 0; // host: (mode << 32 | save crc) last sent to this guest
     double other_mode_since = -1; // host: since when the guest plays another mode
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
@@ -477,6 +479,7 @@ bool creature_puppet(const modes::Adapter* a)
 
 void despawn(Remote& r)
 {
+    evolve::drop(r.cocoon, true); // BUG-9160: its sac goes with the puppet
     if (r.puppet && r.puppet_adapter) {
         if (creature_puppet(r.puppet_adapter) && !game::creature_listed(r.puppet)) {
             (g_frame_fix ? g_despawns_dropped : g_despawns_unlisted)++;
@@ -844,6 +847,14 @@ void drive_puppet(Remote& r, double now)
     if (!r.buf.sample(now, s))
         return;
     silent_tick(r, now);
+    // BUG-9160 (owner decision 2D): a partner in an editor of its own stays where it stood, in the game's cocoon
+    if (evolve::cocoon_on() && g_mode == modes::kCreature && g_adapter && g_local && r.puppet &&
+        r.puppet_adapter == g_adapter && r.puppet_world == g_world && s.world == g_world && r.buf.age(now) < 5.0 &&
+        (s.mode == modes::kEdit || s.mode == modes::kEditor) && !(s.flags & net::PF_DEAD)) {
+        if (g_sess.role() == net::Role::Host) views::note(r.id, game::position(r.puppet), g_mode, now);
+        evolve::puppet_editing(r.id, r.puppet, r.cocoon, now);
+        return;
+    }
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s)) && now >= g_puppet_hide_until;
@@ -891,6 +902,10 @@ void drive_puppet(Remote& r, double now)
                         trace::hex(creations::player_key(r.id, creations::kCell).instance).c_str());
     }
     track_lift(s);
+    if (r.cocoon.state) { // BUG-9160: back from its editor: out of the cocoon once its new body is there
+        evolve::puppet_back(r.id, r.puppet, r.cocoon, now);
+        if (r.cocoon.state) return; // still in the cocoon where it stood
+    }
     modes::g_drive_extrap = r.buf.last_extrap; // BUG-0388 diagnostics (coop.fleet track)
     if (!g_puppet_hold)
         g_adapter->drive(r.puppet, s, r.drv, now);
@@ -2031,14 +2046,16 @@ bool SK_CDECL h_Submit(void* req)
         cellsync::dna_note(g_vote_bypass ? "at the editor request (after the vote)" : "at the editor request");
     if (!g_vote_bypass && req && stage_mode(mode) && !personal_cell_edit(req, mode) &&
         g_sess.connected() && g_sess.players().size() > 1) {
-        if (g_sess.role() == net::Role::Host) {
+        // BUG-9160 (owner decision 2D): in Creature everyone evolves on their own, the host too (no vote)
+        const bool personal = mode == modes::kCreature && evolve::personal_editor();
+        if (g_sess.role() == net::Role::Host && !personal) {
             if (!g_vote.active)
                 start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
                                     modes::mode_name(mode) + ")");
             return false; // runs when the vote is over
         }
         notice(g_name + (design_stage(mode) ? " edits a design" : " evolves its own creature"), -1);
-        set_ready(true);
+        if (g_sess.role() != net::Role::Host) set_ready(true);
     }
     if (!g_vote_bypass && req && creations::avatar_swap_settling(H->time_seconds())) {
         hold_submit(req); // BUG-0318: after the new body is built (submit_tick)
@@ -3477,6 +3494,9 @@ void on_frame(void*, int, void*)
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
+    evolve::own_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9160: out of the own cocoon
+    evolve::egg_tick(game::mode_id(), now);                             // BUG-9161: an egg scene that never ends
+    evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
     party::tick(now);                           // roadmap 0b
@@ -3797,8 +3817,24 @@ static float mate_response(void* creature)
 static bool (*g_native_mate_step)(void*, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uint32_t*);
 static bool (SK_THISCALL* g_mate_position_reached)(void*);
 
+// tests (BUG-9161): the last call of the native mating step for the own creature: its state words, when, whether
+// each of the pair reached its spot, and the mate
+static uint32_t g_mstep_state[4];
+static double g_mstep_at = -1;
+static int g_mstep_reached[2] = {-1, -1};
+static void* g_mstep_mate;
+static uint32_t g_mstep_calls;
 static bool mate_step(void* avatar, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5, uint32_t* state)
 {
+    if (avatar == g_local && state && skg::readable(state, 16)) {
+        memcpy(g_mstep_state, state, 16);
+        g_mstep_at = H->time_seconds();
+        ++g_mstep_calls;
+        g_mstep_mate = g_get_animal_target ? g_get_animal_target(avatar) : nullptr;
+        g_mstep_reached[0] = g_mate_position_reached ? (int)g_mate_position_reached((uint8_t*)avatar + 0xC0) : -1;
+        g_mstep_reached[1] = g_mstep_mate && game::object_alive(g_mstep_mate) && g_mate_position_reached
+                                 ? (int)g_mate_position_reached((uint8_t*)g_mstep_mate + 0xC0) : -1;
+    }
     if (avatar == g_local && g_sess.connected()) {
         static double retry_at = 0;
         static unsigned retries = 0;
@@ -3884,6 +3920,51 @@ void mate_hearts_tick(double now)
         return true;
     }, &local);
     restored.swap(local.still_eligible);
+}
+
+// tests (BUG-9160, the mating call): the own herd's members, the game's mate class (9: may answer the call), the hearts,
+// the distance and where each is on screen (to click it)
+std::string mates_report()
+{
+    if (!g_local || !g_mate_classify || !g_get_creature_effect) return "no own creature here\n";
+    struct Ctx {
+        void* herd;
+        net::Vec3 me;
+        std::string out;
+    } c{game::herd_of(g_local), game::position(g_local), {}};
+    void* nest = c.herd ? game::herd_nest(c.herd) : nullptr;
+    net::Vec3 np{};
+    const bool has_nest = nest && game::object_position(nest, np);
+    char line[200];
+    snprintf(line, sizeof line, "herd %p nest %p%s (%.1f m, at %.1f %.1f %.1f) action %08X target %p\n", c.herd, nest,
+             has_nest ? "" : " (none)", has_nest ? net::dist(np, c.me) : -1.f, np.x, np.y, np.z,
+             skg::field<void*>(g_local, 0xB4C) ? skg::field<uint32_t>(skg::field<void*>(g_local, 0xB4C), 0x1D8) : 0u,
+             g_get_animal_target(g_local));
+    c.out = line;
+    snprintf(line, sizeof line, "mate step: calls %u, last %.1f s ago, state %u %u %u %u, reached avatar %d mate %d (%p)\n",
+             g_mstep_calls, g_mstep_at < 0 ? -1.0 : H->time_seconds() - g_mstep_at, g_mstep_state[0], g_mstep_state[1],
+             g_mstep_state[2], g_mstep_state[3], g_mstep_reached[0], g_mstep_reached[1], g_mstep_mate);
+    c.out += line;
+    snprintf(line, sizeof line, "own species %p/%08X, herd species %p\n", game::species_profile(g_local),
+             game::species_key(g_local).instance, c.herd ? game::herd_species(c.herd) : nullptr);
+    c.out += line;
+    game::for_each_object([](void* creature, uint32_t noun, void* ctx) {
+        auto& c = *static_cast<Ctx*>(ctx);
+        if (noun != 0x18EB45Eu || creature == g_local || game::is_puppet(creature) || !game::object_alive(creature) ||
+            game::herd_of(creature) != c.herd)
+            return true;
+        const net::Vec3 p = game::position(creature);
+        float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
+        const bool on = H->world_to_screen(w, sc) != 0;
+        char line[200];
+        snprintf(line, sizeof line, "  %p class %d hearts %d dead %d %.1f m screen %s%.0f %.0f species %p/%08X\n", creature,
+                 skg::cdecl_call<int>(g_mate_classify, creature), g_get_creature_effect(creature, 0x9005E011u) ? 1 : 0,
+                 (int)game::is_dead(creature), net::dist(c.me, p), on ? "" : "(behind) ", sc[0], sc[1],
+                 game::species_profile(creature), game::species_key(creature).instance);
+        c.out += line;
+        return true;
+    }, &c);
+    return c.out;
 }
 
 // ---- BUG-9156: spectating while downed (owner decision 1W: "Tab works, but also a left and right arrow next to the
@@ -6940,6 +7021,36 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
     creature_rescue::init(H, &g_sess, notice);
+    evolve::init(H, M); // BUG-9160
+    H->command_add(M, "coop.evolve", "coop.evolve [mates | anim <hex> [hold] | release | fx <name>.. | fxset <scale> <up> <rows>] - personal evolving and the cocoon (BUG-9160; the rest: tests)",
+                   [](void*, int argc, const char* const* argv, SkOut* o) {
+                       std::string out;
+                       if (argc > 1 && !strcmp(argv[1], "mates")) { // tests: the own herd and its mates on screen
+                           out = mates_report();
+                           H->out_printf(o, "%s", out.c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "partners")) { // tests: each partner's puppet, cocoon and screen spot
+                           for (auto& [id, r] : g_remotes) {
+                               char b[260];
+                               net::Vec3 p = r.puppet ? game::position(r.puppet) : net::Vec3{};
+                               float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
+                               const bool on = r.puppet && H->world_to_screen(w, sc);
+                               uint32_t anim = 0;
+                               if (r.puppet) game::drawn_state(r.puppet, nullptr, &anim);
+                               snprintf(b, sizeof b, "%u '%s' puppet %p mode %08X cocoon %d fx %d anim %08X held %d at (%.1f %.1f %.1f) screen %s%.0f %.0f\n",
+                                        id, r.name.c_str(), r.puppet, r.buf.empty() ? 0u : r.buf.latest().mode, r.cocoon.state,
+                                        r.cocoon.fx && game::effect_active(r.cocoon.fx) ? 1 : 0, anim,
+                                        r.puppet ? (int)game::pose_held(r.puppet) : 0, p.x, p.y, p.z, on ? "" : "(off) ", sc[0], sc[1]);
+                               out += b;
+                           }
+                           H->out_printf(o, "%s", out.empty() ? "no partners\n" : out.c_str());
+                           return 0;
+                       }
+                       int r = evolve::command(argc, argv, out);
+                       H->out_printf(o, "%s", out.c_str());
+                       return r;
+                   }, nullptr, SK_CMD_MAIN_THREAD);
     progress_debt::init(H, &g_sess, notice); // BUG-9119
     H->command_add(M, "coop.debt", "coop.debt [add <n> | clear] - the party's progress debt (BUG-9119): what is owed, the bar; add / clear: tests (host)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
