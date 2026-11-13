@@ -1672,3 +1672,14 @@ BUG-0519, the players' half of docs/re/cell.md#cell-world-scale.
   after the held request's Submit, queued behind its posts as the game does (lab 20261104-210201: spent stays 0).
 * ? the Creature request posts the same message after Submit (0xD455FD, +8 = GetEvolutionPoints): a held Creature
   evolution may lose its budget the same way (not checked, BUG-0581).
+
+## Spectating while knocked out (2026-11-13, feat/lineages-47)
+<a id="cell-spectate"></a>
+
+BUG-9171. ✔ (runtime) Writing a partner puppet's pool index (its first field) to cCellUI +0xE0 makes the game's own
+camera follow that cell (`coop.pool cam` follow=, the drawn point at the partner 28 m away); 0 there gives the avatar
+back (snapped with +0x48/+0x54/+0x60). ✔ Right after a rejoin +0xE0 held 0x88010000 for a moment (the game's own
+follow, a hatch). ✔ The cells near the camera came only once the host used the partner's position as the knocked-out
+guest's view centre; farther than about 20 m from the own avatar the game draws every cell blurred (a render rule
+around the avatar, not found).
+

@@ -339,7 +339,9 @@ struct Ko {
     double refreshed = 0; // the last MSG_CELL_KO of its owner (KO_OUT comes every 0.25 s)
     bool expired = false; // ended here by ko_expire, not by its owner (BUG-0238: no effect replay)
     uint32_t fx = 0;      // death effects played on its puppet (tests)
+    uint8_t watching = 0xFF; // BUG-9171: the partner this knocked-out player spectates (0xFF: none; older games send none)
 };
+static int g_spec_id = -1; // BUG-9171: the partner the own knocked-out cell watches (spectate_tick)
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
 
 // the nearest partner; `helper`: one who can help: rescue (a lethal hit becomes a knockout), revive,
@@ -402,6 +404,7 @@ static void send_ko(uint8_t state, float left, float hold)
     w.u8(state);
     w.u8((uint8_t)std::max(0.f, std::min(left * 10.f, 255.f)));
     w.u8((uint8_t)std::max(0.f, std::min(hold * 255.f, 255.f)));
+    w.u8(state == KO_OUT && g_spec_id >= 0 ? (uint8_t)g_spec_id : 0xFF); // BUG-9171: whom it watches (older games ignore it)
     if (C.sess->role() == net::Role::Host)
         C.sess->broadcast_reliable(net::MSG_CELL_KO, w);
     else
@@ -514,6 +517,74 @@ static std::string cell_debt()
     if (debt <= 0)
         return {};
     return ". Progress debt: " + std::to_string((int)debt) + " (new food refills it first)";
+}
+
+// BUG-9171 (owner decision 1W in Cell: a downed player watches a partner, "Tab works"): while the own cell is knocked
+// out the game's camera follows a partner's cell through its own follow field (cCellUI +0xE0, the pool index of a cell
+// followed instead of the avatar: the cinematics use it, docs/re/cell.md#cell-camera); the nearest standing partner
+// first, Tab for the next one; "SPECTATING <name>" over the knockout ring. Up again (revived, respawned, gave up): the
+// field back to 0 and the camera on the own cell. Not while the game's own cinematic holds the field.
+static bool g_spectate = true;
+COOP_FIX("cell.spectate", "BUG-9171", g_spectate,
+         "cell: a knocked-out cell's camera follows a partner (SPECTATING <name>, Tab for the next one)");
+static uint32_t g_spec_idx, g_spec_switches, g_spec_sets;
+static bool g_spec_tab;
+static std::string g_spec_name;
+static void spectate_off(uint8_t* a)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (g_spec_idx && ui && skg::readable(ui + 0xE0, 4) && F<uint32_t>(ui, 0xE0) == g_spec_idx) {
+        F<uint32_t>(ui, 0xE0) = 0;
+        if (a)
+            camera_snap(pos_of(a));
+    }
+    g_spec_idx = 0;
+    g_spec_id = -1;
+    g_spec_name.clear();
+}
+static void spectate_tick(uint8_t* a)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!g_spectate || !g_downed || !ui || !skg::readable(ui + 0xE0, 4) || !C.puppets) {
+        spectate_off(a);
+        return;
+    }
+    const uint32_t held = F<uint32_t>(ui, 0xE0);
+    if (held && held != g_spec_idx) // the game's own follow (a cinematic): leave it alone
+        return;
+    struct Cand { int id; std::string name; uint32_t idx; float dist; };
+    std::vector<Cand> c;
+    const net::Vec3 me = pos_of(a);
+    for (auto& p : C.puppets()) {
+        auto ko = g_ko.find(p.id);
+        if (!p.cell || (ko != g_ko.end() && ko->second.state == KO_OUT))
+            continue;
+        const uint32_t idx = *(uint32_t*)p.cell; // a cell's first field is its pool index
+        if (modes::cell_at(idx) != (uint8_t*)p.cell)
+            continue;
+        c.push_back({p.id, p.name, idx, net::dist(me, pos_of((uint8_t*)p.cell))});
+    }
+    if (c.empty()) {
+        spectate_off(a);
+        return;
+    }
+    std::sort(c.begin(), c.end(), [](const Cand& x, const Cand& y) { return x.id < y.id; });
+    auto at = std::find_if(c.begin(), c.end(), [](const Cand& x) { return x.id == g_spec_id; });
+    if (at == c.end()) // the nearest standing partner first
+        at = std::min_element(c.begin(), c.end(), [](const Cand& x, const Cand& y) { return x.dist < y.dist; });
+    HWND gw = H->game_window ? (HWND)H->game_window() : nullptr;
+    const bool tab = gw && GetForegroundWindow() == gw && (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
+    if (tab && !g_spec_tab && c.size() > 1) {
+        at = std::next(at) == c.end() ? c.begin() : std::next(at);
+        ++g_spec_switches;
+    }
+    g_spec_tab = tab;
+    if (at->idx != g_spec_idx)
+        ++g_spec_sets;
+    g_spec_id = at->id;
+    g_spec_name = at->name;
+    g_spec_idx = at->idx;
+    F<uint32_t>(ui, 0xE0) = at->idx;
 }
 
 static void downed_tick(uint8_t* a, double now, double dt)
@@ -2207,6 +2278,17 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
         size_t n = views::partners(modes::kCell, now, pc, views::kMaxCentres - 1);
         for (size_t i = 0; i < n; i++)
             g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
+        // BUG-9171: a knocked-out guest watches a partner: its cells come from around that partner
+        if (g_spectate)
+            for (size_t i = 0; i < n; i++) {
+                auto ko = g_ko.find(pc[i].player);
+                if (ko == g_ko.end() || ko->second.state != KO_OUT || ko->second.watching == 0xFF) continue;
+                const uint8_t w = ko->second.watching;
+                const views::Centre* wc = w == (C.sess ? C.sess->my_id() : 0) ? nullptr : g_views.find(w);
+                const net::Vec3 at = wc ? wc->pos : net::Vec3{hb.cx(), hb.cy(), 0.f};
+                if (wc || w == (C.sess ? C.sess->my_id() : 0))
+                    g_views.add(pc[i].player, at);
+            }
     }
     g_view_boxes.clear();
     for (auto& v : g_views.list()) {
@@ -3477,8 +3559,11 @@ static void symbiosis_tick(double now)
     }
     if (g_downed) {
         downed_tick(a, now, dt);
+        spectate_tick(a); // BUG-9171 (after: a revive or a respawn ends it at once)
         return;
     }
+    if (g_spec_idx)
+        spectate_off(a); // BUG-9171: up again
     if (g_invuln_until > 0 && now > g_invuln_until) {
         F<uint8_t>(a, kInvuln) = 0;
         g_invuln_until = 0;
@@ -3898,15 +3983,18 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (g_kodrop_until > 0 && H->time_seconds() < g_kodrop_until)
             return; // tests: a refresh that comes late (coop.pool kodrop)
         uint8_t id = r.u8(), state = r.u8(), left = r.u8(), hold = r.u8();
+        const uint8_t watching = r.ok() && r.left() ? r.u8() : 0xFF; // BUG-9171 (newer games)
         if (!r.ok() || (is_host() && id != from))
             return; // a guest tells only about its own cell
         if (is_host() && from != 0) { // relay to the other guests
             net::Writer w;
-            w.u8(id); w.u8(state); w.u8(left); w.u8(hold);
+            w.u8(id); w.u8(state); w.u8(left); w.u8(hold); w.u8(watching);
             C.sess->broadcast_reliable(net::MSG_CELL_KO, w, from);
         }
-        if (id != C.sess->my_id())
+        if (id != C.sess->my_id()) {
             on_ko(id, state, left / 10.f, hold / 255.f);
+            g_ko[id].watching = state == KO_OUT ? watching : 0xFF;
+        }
         return;
     }
     if (!cell)
@@ -4228,6 +4316,14 @@ void draw_overlay()
     if (g_downed)
         draw_ko(avatar(), "", (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
                 sw, sh);
+    if (g_downed && g_spec_idx && !g_spec_name.empty() && sw > 0) { // BUG-9171
+        const std::string t = "SPECTATING " + g_spec_name;
+        const std::string h = "Tab: next partner";
+        const int y = (int)(sh * 0.70f);
+        H->overlay_text(sw / 2 - (int)t.size() * 4 + 1, y + 1, 0xFF000000, t.c_str());
+        H->overlay_text(sw / 2 - (int)t.size() * 4, y, 0xFFFFFFFFu, t.c_str());
+        H->overlay_text(sw / 2 - (int)h.size() * 4, y + 20, 0xFFC8C8C8u, h.c_str());
+    }
     if (!C.puppets)
         return;
     for (auto& p : C.puppets()) {
@@ -4544,6 +4640,14 @@ std::string debug(const std::vector<std::string>& a)
                 done++;
             }
         return "zapped " + std::to_string(done);
+    }
+    if (!a.empty() && a[0] == "spectate") { // BUG-9171 (tests): what a knocked-out cell watches
+        uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+        char b[200];
+        snprintf(b, sizeof b, "spectate fix=%d downed=%d partner=%d '%s' idx=%08X camera_follow=%08X sets=%u switches=%u\n",
+                 (int)g_spectate, (int)g_downed, g_spec_id, g_spec_name.c_str(), g_spec_idx,
+                 ui && skg::readable(ui + 0xE0, 4) ? F<uint32_t>(ui, 0xE0) : 0u, g_spec_sets, g_spec_switches);
+        return b;
     }
     if (!a.empty() && a[0] == "mirrormap") { // guest: host index -> local pool index of every live mirror
         std::string o;

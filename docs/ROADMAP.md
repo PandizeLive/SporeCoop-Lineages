@@ -136,7 +136,7 @@ ready).
 
 | Stage | Playable now | Needed for a full playthrough |
 |---|---|---|
-| Cell | together, revive ring, respawns | spectating while downed (not built there) |
+| Cell | together, revive ring, respawns, spectating while knocked out (BUG-9171, 2026-11-13) | the Creature-style downed box with < > and GIVE UP in Cell (Tab and G work) |
 | Creature | own nest and pack per player, best-friend partners, nests migrate together, revive ring (60 s), debt bar, downed pose and spectating (BUG-9156), personal evolving: own editor through the mating call, the game's cocoon, personal DNA, migration together (BUG-9160..9163, 2026-11-13), a joiner's own editor first and its DNA kept across reloads (BUG-9164, BUG-9165), a partner's nest follows its evolution (BUG-9151), a real migration across PCs with every player moving into their own new nest (BUG-9163, BUG-9166..9168) | a mate spawned when none answers (2E) |
 | Tribe | own village per player played with the game's own controls, hut menu and planner (BUG-9152, BUG-9153), camera starts at home, food share and gifts (BUG-9154), party wipe (BUG-9155), late join with a stand-in village (BUG-9150), revive ring, no native game over while the party plays on (BUG-9147, 2026-11-13) | each right-click action confirmed live |
 | Tribe -> Civ | four founders graduate, one capital each (phase 5) | - |
@@ -183,7 +183,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1T | The "Give To" button | B, removed (BUG-9148) |
 | 1U | Party wipe: when everyone is down, the newest won village becomes a rival again, the top totem piece and one progress step are lost with a red marker, unlocks and DNA kept, a 10% food debt when nothing was won; Civ: the newest captured city goes back | A; changed by the owner 2026-11-12: it applies when any one player's whole village is wiped out (not rescued in time), and the loss hits the whole party ("a players whole tribe causes the loss of progression for both players, encouraging rescues"); built in Tribe 2026-11-12 (BUG-9155, live by test command); Civ the same (owner 2026-11-12: one player wiped out, i.e. their last city lost, costs the party its newest captured city, no all-players requirement), built 2026-11-12 (live on the MSI by test commands); the red marker in Tribe built and live 2026-11-12 (the lost step's slot red on the bar until won back) |
 | 1V | Downed: the creature plays its native dying pose while downed | A; built in Creature / Adventure 2026-11-12 (BUG-9156, live) |
-| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows; built in Creature / Adventure 2026-11-12 (BUG-9156, live); Cell, Tribe, Space not yet |
+| 1W | Downed: spectate the nearest partner, "SPECTATING <name>", Tab and left / right arrows next to the name | A, with the arrows; built in Creature / Adventure 2026-11-12 (BUG-9156, live); Cell 2026-11-13 (BUG-9171: the camera, SPECTATING, Tab); Tribe, Space not yet |
 | 1X | Space: what a player owns | A (owner: "A party will always progress together and share.") |
 | 1Y | Space: what phase 6 builds now | A; owner asked how an empire works for a planet that solo players leave (see 2N) |
 | 1Z | Space: who runs the enemies in a star system | A |

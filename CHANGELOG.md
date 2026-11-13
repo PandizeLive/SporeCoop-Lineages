@@ -32,6 +32,8 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Cell: a knocked-out cell watches a partner (SPECTATING <name>, Tab for the
+  next one) until it is up again (BUG-9171).
 - Civ: a late joiner without a creature of their own goes into the creature
   editor first; a loading screen shows while their capital is founded
   (BUG-9170).
