@@ -97,14 +97,32 @@ static void* effect_at_pos(const net::Vec3& at, uint32_t id, float scale, float 
     return game::create_world_effect(id, xf);
 }
 // sized to the creature (2026-11-13: at scale 1 a creature of bounding radius 1.24 fitted in the shell, one of 1.40
-// with a long neck stuck its head out; later the owner: "still visible through the cocoon"): the creature's radius /
-// kShellFits, never below 1.0
-constexpr float kShellFits = 0.7f;
-static void* effect_at(void* c, uint32_t id)
+// with a long neck stuck its head out): the creature's radius / kShellFits, never below 0.8. `radius`: the size it had
+// before it was shrunk inside (0: its own now)
+constexpr float kShellFits = 0.9f;
+static void* effect_at(void* c, uint32_t id, float radius = 0)
 {
-    const float r = game::bounding_radius(c);
-    const float size = std::isfinite(r) && r > 0 ? std::clamp(r / kShellFits, 1.0f, 5.f) : 1.f;
+    const float r = radius > 0 ? radius : game::bounding_radius(c);
+    const float size = std::isfinite(r) && r > 0 ? std::clamp(r / kShellFits, 0.8f, 4.f) : 1.f;
     return effect_at_pos(game::position(c), id, g_fx_scale * size, g_fx_up, g_fx_rows);
+}
+
+// BUG-9181 (the owner, 2026-11-13: "I think growing the cocoon isn't the way. Maybe shrink the creature till they're
+// really small? Then grow them back to their stored size when coming out"): inside its cocoon a creature is
+// kShrunk of its size, so no neck, tail or wing shows through the shell; it gets its stored size back as it comes out
+constexpr float kShrunk = 0.12f;
+static void shrink(void* c, Cocoon& cc)
+{
+    if (!cc.size) {
+        cc.size = game::scale(c);
+        if (!(cc.size > 0) || !std::isfinite(cc.size)) cc.size = 1.f;
+    }
+    if (std::fabs(game::scale(c) - cc.size * kShrunk) > 0.001f) game::set_scale(c, cc.size * kShrunk); // (kept: a sync may reset it)
+}
+static void grow_back(void* c, Cocoon& cc)
+{
+    if (cc.size > 0 && c && game::object_alive(c)) game::set_scale(c, cc.size);
+    cc.size = 0;
 }
 static void end_sac(Cocoon& c)
 {
@@ -123,13 +141,15 @@ void drop(Cocoon& c, bool keep_state)
 // the cocoon on puppet `puppet` (again: a new body is a new puppet): the pose held, inside, its sac around it
 static void wrap(void* puppet, Cocoon& c, double now, bool fresh)
 {
+    if (!c.radius) c.radius = game::bounding_radius(puppet);
     game::hold_pose(puppet, true);
     game::play_animation(puppet, fresh ? kCocoonEnter : kCocoonHold, -1, true);
     end_sac(c);
-    if (void* fx = effect_at(puppet, kFxCreate)) game::release_world_effect(fx); // the woven shell, ~2 s, ends by itself
+    if (void* fx = effect_at(puppet, kFxCreate, c.radius)) game::release_world_effect(fx); // the woven shell, ~2 s, ends by itself
     c.shell_at = now;
     if (!fresh) {
-        c.fx = effect_at(puppet, kFxHold);
+        shrink(puppet, c); // inside now
+        c.fx = effect_at(puppet, kFxHold, c.radius);
         c.fx_at = now;
     }
     c.puppet = puppet;
@@ -139,16 +159,17 @@ static void wrap(void* puppet, Cocoon& c, double now, bool fresh)
 // visible to MSI, even after a minute")
 static void keep(void* puppet, Cocoon& c, double now)
 {
-    if (c.puppet != puppet) { wrap(puppet, c, now, false); return; }
+    if (c.puppet != puppet) { c.size = 0; c.radius = 0; wrap(puppet, c, now, false); return; } // (a new body: its own size)
     // the woven shell lasts ~2 s (runtime 2026-11-13: full 0.2 s after it was made, gone at 2.0 s): the next one
     // before it fades, so the cocoon stays closed while the partner edits
     if (now - c.shell_at >= kShellEvery) {
-        if (void* fx = effect_at(puppet, kFxCreate)) game::release_world_effect(fx);
+        if (void* fx = effect_at(puppet, kFxCreate, c.radius)) game::release_world_effect(fx);
         c.shell_at = now;
     }
+    shrink(puppet, c);
     if ((!c.fx || !game::effect_active(c.fx)) && now - c.fx_at >= kSacAgain) {
         end_sac(c);
-        c.fx = effect_at(puppet, kFxHold);
+        c.fx = effect_at(puppet, kFxHold, c.radius);
         c.fx_at = now;
     }
     uint32_t anim = 0;
@@ -192,7 +213,7 @@ void puppet_back(uint8_t player, void* puppet, Cocoon& c, double now)
 {
     if (!c.state) return;
     if (!puppet || !g_cocoon) {
-        if (puppet) game::hold_pose(puppet, false);
+        if (puppet) { game::hold_pose(puppet, false); grow_back(puppet, c); }
         drop(c);
         return;
     }
@@ -208,6 +229,7 @@ void puppet_back(uint8_t player, void* puppet, Cocoon& c, double now)
         keep(puppet, c, now);
         return;
     }
+    grow_back(c.puppet && game::object_alive(c.puppet) ? c.puppet : puppet, c);
     drop(c);
     game::hold_pose(puppet, false); // (BUG-9181: no emerge: the partner hatches from its egg on its own game)
     ++g_emerges;
@@ -285,11 +307,12 @@ static void family_out(uint8_t who)
     auto it = g_family_cocoons.find(who);
     if (it == g_family_cocoons.end()) return;
     for (auto& w : it->second) {
-        drop(w.cc);
+        drop(w.cc, true);
         if (!wrapped_alive(w)) continue;
+        grow_back(w.c, w.cc);
         game::hold_pose(w.c, false);
         game::play_animation(w.c, kEmerge, -1, true);
-        if (void* fx = effect_at(w.c, kFxHatch)) game::release_world_effect(fx);
+        if (void* fx = effect_at(w.c, kFxHatch, w.cc.radius)) game::release_world_effect(fx);
         ++g_family_out;
     }
     g_family_cocoons.erase(it);

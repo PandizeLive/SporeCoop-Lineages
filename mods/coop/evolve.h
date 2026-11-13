@@ -31,6 +31,8 @@ struct Cocoon {
     double shell_at = 0;  // when the woven shell (crg_cocoon_create, ~2 s each) was laid last
     void* puppet = nullptr; // the puppet the cocoon was put on (a new body is a new puppet: it goes in too)
     uint32_t key = 0;     // the partner's creature here when it went in (a new one: the new design came)
+    float size = 0;       // BUG-9181: its scale before the cocoon (restored when it comes out; 0: not shrunk)
+    float radius = 0;     // its bounding radius then: the shell keeps the size of the creature it holds
 };
 
 void init(const SkHost* host, SkMod* mod);
