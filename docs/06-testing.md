@@ -5332,7 +5332,9 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * The QA games on TITAN read the game's data packages from the installed game (the registry's DataDir: the Steam
   install's Data\SporeCoop.package), not from the QA copy's Data folder: a new image in build/SporeCoop.package is not
   there until the installed package is updated (the downed box drew its square fallback, 2026-11-13; the log line "ui:
-  downed box background" says so). The MSI gets the package with `msi.ps1 deploy`.
+  downed box background" says so). The MSI gets the package with `msi.ps1 deploy`. Updating the installed
+  package needs the owner's OK and every QA game closed (they hold the file open); the old one goes to
+  out/owner-install-backup/ (never a second .package in the game's Data folder: the game loads it).
 * Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m
   out there.
 
