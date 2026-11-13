@@ -27,7 +27,8 @@ switch ($Action) {
         & $strip -o "$tmp\coop.dll" "$root\build\coop.dll"; & $strip -o "$tmp\sporekit.dll" "$root\build\sporekit.dll"
         Copy-Item "$root\data\symbols\overrides_dc04aee5.sym" $tmp -Force
         ssh -o BatchMode=yes msi 'New-Item -ItemType Directory -Force C:\temp\sporecoop-msi-in | Out-Null'
-        scp -o BatchMode=yes "$tmp\coop.dll" "$tmp\sporekit.dll" "$tmp\overrides_dc04aee5.sym" msi:C:/temp/sporecoop-msi-in/
+        Copy-Item "$root\build\SporeCoop.package" $tmp -Force   # the UI images (a new one draws its fallback without it)
+        scp -o BatchMode=yes "$tmp\coop.dll" "$tmp\sporekit.dll" "$tmp\overrides_dc04aee5.sym" "$tmp\SporeCoop.package" msi:C:/temp/sporecoop-msi-in/
         Invoke-Msi 'deploy' @"
 `$d = '$game'
 if (Get-Process SporeApp -ErrorAction SilentlyContinue) { throw 'Spore is running on the MSI: stop it first (msi.ps1 stop)' }
@@ -36,6 +37,7 @@ if (-not (Test-Path "`$b\coop.dll")) { New-Item -ItemType Directory -Force `$b |
 Copy-Item C:\temp\sporecoop-msi-in\sporekit.dll "`$d\sporekit.dll" -Force
 Copy-Item C:\temp\sporecoop-msi-in\coop.dll "`$d\mods\coop.dll" -Force
 Copy-Item C:\temp\sporecoop-msi-in\overrides_dc04aee5.sym "`$d\mods\sporekit\symbols\overrides_dc04aee5.sym" -Force
+Copy-Item C:\temp\sporecoop-msi-in\SporeCoop.package (Join-Path (Split-Path `$d) 'Data\SporeCoop.package') -Force
 'deployed: ' + (Get-Item "`$d\mods\coop.dll").Length + ' bytes'
 "@
     }
