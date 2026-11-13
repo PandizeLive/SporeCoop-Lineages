@@ -230,9 +230,10 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2W | Copy the package with the brighter buttons (BUG-9179) into the owner's Steam Spore install too: A yes; B no (TITAN keeps the game's look until the next install) | A (owner 2026-11-13: "2WA") |
 | 2X | 1b, how far (2026-11-13): A one key per player creation on every game, the owner's own game included, made from the owner's persistent identity (removes BUG-9169's copy conversion, BUG-9173's nest note after one migration, BUG-9176); B keys only stable across rejoins (the owner's own game keeps its own key: BUG-9169 and BUG-9176 stay); C Space first, 1b later | A (owner 2026-11-13: "2XA - I feel this is needed for MMO work.") |
 | 2Y | The ring of old player nests round the host's nest (left by the old keys: one more nest per rejoin): A the host removes, once per save, the nests the mod made for players that belong to no seat any more; B leave them | A (owner 2026-11-13: "2YA") |
-| 2Z | Next after the evolving fixes (2026-11-13): A a short check of Tribe and Civ with the new species keys (founder seats, stand-ins, the right-click orders), then the push (2R B), then Space (phase 6); B Space now; C the push now, then Space | asked 2026-11-13 |
+| 2Z | Next after the evolving fixes (2026-11-13): A a short check of Tribe and Civ with the new species keys (founder seats, stand-ins, the right-click orders), then the push (2R B), then Space (phase 6); B Space now; C the push now, then Space | A (owner 2026-11-13: "2ZA") |
+| 3A | The 2Z A check found a guest's native game over in Tribe (BUG-9183) and could not test the right-click orders (the test save worn out): A fix the guest's game over and test the orders on a fresh copy of the owner's Jiff save, then push, then Space; B push now, fix after; C Space now | asked 2026-11-13 |
 
-Next free ID: 3A. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
+Next free ID: 3B. (Owner 2026-11-13: "Make sure you check the instructions given and provide better formatting, especially with decisions." Every question gets an ID, also a yes / no one; A is the recommendation, marked; this line is updated with each new ID.)
 
 Answers of 2026-11-12 (1X-2M), notes:
 * 2D: the game has a cocoon. NPC creatures in the Creature stage wrap into a cocoon and come out as a new species

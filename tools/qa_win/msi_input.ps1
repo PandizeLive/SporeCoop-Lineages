@@ -1,14 +1,15 @@
 # Real mouse input on the MSI test PC's desktop (the console's move / click is a virtual cursor that lasts 5 s and does
 # not reach the game's own hover over a background window: every creature rated class 0, 2026-11-13).
-#   tools/qa_win/msi_input.ps1 -X 556 -Y 428 [-Click] [-Instance 1]
+#   tools/qa_win/msi_input.ps1 -X 556 -Y 428 [-Click | -RightClick] [-Instance 1]
 # X / Y are client coordinates of the test game's window. The game window is brought to the front first, the pointer
 # moves there in a few steps (the game reads a move into the world), then an optional left click. Runs as a one-shot
 # scheduled task in the logged-on session (an SSH shell has no desktop), like msi.ps1 start. The MSI only: on this PC
 # use tools/qa_win/hover.ps1 and the owner's OK.
-param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y, [switch]$Click, [int]$Instance = 1)
+param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y, [switch]$Click, [switch]$RightClick, [int]$Instance = 1)
 $ErrorActionPreference = 'Stop'
 $port = 47799 + $Instance
-$clickLine = if ($Click) { '[MsiIn]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 90; [MsiIn]::mouse_event(4,0,0,0,[UIntPtr]::Zero)' } else { '' }
+$clickLine = if ($Click) { '[MsiIn]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 90; [MsiIn]::mouse_event(4,0,0,0,[UIntPtr]::Zero)' }
+             elseif ($RightClick) { '[MsiIn]::mouse_event(8,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 90; [MsiIn]::mouse_event(0x10,0,0,0,[UIntPtr]::Zero)' } else { '' }
 $inner = @"
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
 using System; using System.Drawing; using System.Runtime.InteropServices;
