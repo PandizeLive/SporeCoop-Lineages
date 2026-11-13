@@ -83,5 +83,14 @@ void set_fake_model(uint32_t idx, uint32_t inst);
 int dna_for_food(int food); // BUG-9119: the game's DNAForFood (-1 outside Cell / unknown)
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
 bool give_up(); // BUG-9118: a knocked-out own cell gives up (respawns at once); false when not down
+// BUG-9171: the own cell's knockout for the shared downed box (coop.cpp draw_downed_hud): down now, the partner watched
+// ("" none), a step to the previous / next partner (-1 / 1), the ring's seconds left and revive share, and whether that
+// box is shown (then the cell's own ring and SPECTATING line are not drawn)
+bool own_down();
+std::string spectated();
+void spectate_step(int dir);
+float own_left();
+float own_revive();
+void set_box_shown(bool shown);
 
 } // namespace cellsync

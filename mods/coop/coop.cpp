@@ -4304,6 +4304,11 @@ static uint32_t g_spec_switches;
 static int g_spec_step; // a native < > or GIVE UP press (coop_ui::set_downed_hud), consumed by spectate_tick
 static void on_downed_button(int code)
 {
+    if (g_mode == modes::kCell) { // BUG-9171: the Cell knockout in the same box
+        if (code == 0) cellsync::give_up();
+        else cellsync::spectate_step(code);
+        return;
+    }
     if (code == 0) creature_rescue::give_up_now();
     else g_spec_step = code;
 }
@@ -4408,11 +4413,13 @@ static void draw_downed_hud(int sw, int sh)
     const float w = std::max(220.f, sw * 0.17f), gap = 8.f;
     const float btn_h = 36.f; // the Co-op window's button height
     const float btn_y1 = ring_y - ring_r - 3.f - gap, btn_y0 = btn_y1 - btn_h; // the ring's dark disc: radius + 3
-    const bool box = spectating() && g_spec_id != 0xFF;
+    const bool cell = g_mode == modes::kCell; // BUG-9171
+    const std::string cell_name = cell ? cellsync::spectated() : std::string();
+    const bool box = cell ? !cell_name.empty() : spectating() && g_spec_id != 0xFF;
     const float box_h = 74.f; // 10 + the title row 24 + the arrow row 30 + 10 (coop_ui dh_apply)
     const sui::Rect give{cx - w / 2, btn_y0, cx + w / 2, btn_y1};
     const sui::Rect box_area{cx - w / 2, btn_y0 - gap - box_h, cx + w / 2, btn_y0 - gap};
-    const std::string name = box ? g_sess.name_of(g_spec_id) : std::string();
+    const std::string name = !box ? std::string() : cell ? cell_name : g_sess.name_of(g_spec_id);
     // the Co-op window's own look (owner 2026-11-12: "ensure consistency"); drawn by the mod only without it
     const bool native = coop_ui::set_downed_hud(true, box, name, give, box_area, on_downed_button);
     if (!native) {
@@ -4436,14 +4443,18 @@ static void draw_downed_hud(int sw, int sh)
         g_spec_btn[2][2] = (int)give.x2; g_spec_btn[2][3] = (int)give.y2;
     }
     if (ring_timer::enabled())
-        ring_timer::draw(H, cx, ring_y, ring_r, creature_rescue::own_left(), creature_rescue::own_revive(), H->time_seconds());
+        ring_timer::draw(H, cx, ring_y, ring_r, cell ? cellsync::own_left() : creature_rescue::own_left(),
+                         cell ? cellsync::own_revive() : creature_rescue::own_revive(), H->time_seconds());
 }
 
 void on_overlay(void*, int, void*)
 {
     static bool s_downed_parts;
-    const bool downed_now = g_spectate_fix && creature_rescue::down() && (g_mode == modes::kCreature || g_mode == modes::kScenario);
+    const bool cell_down = g_spectate_fix && g_mode == modes::kCell && cellsync::own_down(); // BUG-9171
+    const bool downed_now = (g_spectate_fix && creature_rescue::down() && (g_mode == modes::kCreature || g_mode == modes::kScenario)) ||
+                            cell_down;
     if (s_downed_parts && !downed_now) coop_ui::set_downed_hud(false, false, "", {}, {}, nullptr); // BUG-9156: up again
+    if (!cell_down) cellsync::set_box_shown(false);
     s_downed_parts = downed_now;
     if (build_id() == 0xDC04AEE5u) editor_depth::draw(); // BUG-9103
     coop_ui::draw_tooltip(); // BUG-9107
@@ -4505,6 +4516,12 @@ void on_overlay(void*, int, void*)
             H->overlay_text(x + 1, y + 1, 0xFF000000, line.c_str());
             H->overlay_text(x, y, own ? 0xFFFF6060 : 0xFFFFD040, line.c_str());
         }
+    }
+    if (cell_down && labels && sw > 0) { // BUG-9171: the Cell knockout in the Creature's downed box (1W: < > and GIVE UP)
+        draw_downed_hud(sw, sh);
+        cellsync::set_box_shown(true);
+    } else if (cell_down) {
+        cellsync::set_box_shown(false);
     }
     if (labels) {
         draw_marks();

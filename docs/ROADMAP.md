@@ -136,7 +136,7 @@ ready).
 
 | Stage | Playable now | Needed for a full playthrough |
 |---|---|---|
-| Cell | together, revive ring, respawns, spectating while knocked out (BUG-9171, 2026-11-13) | the Creature-style downed box with < > and GIVE UP in Cell (Tab and G work) |
+| Cell | together, revive ring, respawns, spectating while knocked out in the Creature-style downed box (BUG-9171, 2026-11-13) | an arrow press seen switching partners live |
 | Creature | own nest and pack per player, best-friend partners, nests migrate together, revive ring (60 s), debt bar, downed pose and spectating (BUG-9156), personal evolving: own editor through the mating call, the game's cocoon, personal DNA, migration together (BUG-9160..9163, 2026-11-13), a joiner's own editor first and its DNA kept across reloads (BUG-9164, BUG-9165), a partner's nest follows its evolution (BUG-9151), a real migration across PCs with every player moving into their own new nest (BUG-9163, BUG-9166..9168) | a mate spawned when none answers (2E) |
 | Tribe | own village per player played with the game's own controls, hut menu and planner (BUG-9152, BUG-9153), camera starts at home, food share and gifts (BUG-9154), party wipe (BUG-9155), late join with a stand-in village (BUG-9150), revive ring, no native game over while the party plays on (BUG-9147, 2026-11-13) | each right-click action confirmed live |
 | Tribe -> Civ | four founders graduate, one capital each (phase 5) | - |

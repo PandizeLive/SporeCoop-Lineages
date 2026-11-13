@@ -2485,6 +2485,21 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
         g_dh_queued = true;
         H->run_outside_frame(dh_apply, nullptr); // UI changes: outside Present
     }
+    // BUG-9171: in Cell the red button came over its "GIVE UP" caption after it was placed (the stage's own UI reorders
+    // the main window's children): the caption is put in front again twice a second while the screen is up
+    static double s_front_at = 0;
+    if (show && want == g_dh_shown && g_dh.give_caption && !g_dh_queued && H->time_seconds() - s_front_at > 0.5) {
+        s_front_at = H->time_seconds();
+        g_dh_queued = true;
+        H->run_outside_frame([](void*) {
+            g_dh_queued = false;
+            Win main = sui::main_window();
+            if (main && g_dh.give_caption && g_dh_shown.show) {
+                sui::bring_to_front(main, g_dh.give_caption);
+                sui::set_flag(g_dh.give_caption, sui::kFlagAlwaysInFront, true);
+            }
+        }, nullptr);
+    }
     return g_dh.give != nullptr || show; // the first frame: the parts are being made
 }
 

@@ -528,7 +528,8 @@ static bool g_spectate = true;
 COOP_FIX("cell.spectate", "BUG-9171", g_spectate,
          "cell: a knocked-out cell's camera follows a partner (SPECTATING <name>, Tab for the next one)");
 static uint32_t g_spec_idx, g_spec_switches, g_spec_sets;
-static bool g_spec_tab;
+static bool g_spec_tab, g_box_shown;
+static int g_spec_step; // a < > press of the downed box (coop.cpp), used by spectate_tick
 static std::string g_spec_name;
 static void spectate_off(uint8_t* a)
 {
@@ -574,8 +575,13 @@ static void spectate_tick(uint8_t* a)
         at = std::min_element(c.begin(), c.end(), [](const Cand& x, const Cand& y) { return x.dist < y.dist; });
     HWND gw = H->game_window ? (HWND)H->game_window() : nullptr;
     const bool tab = gw && GetForegroundWindow() == gw && (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
-    if (tab && !g_spec_tab && c.size() > 1) {
-        at = std::next(at) == c.end() ? c.begin() : std::next(at);
+    int step = g_spec_step;
+    g_spec_step = 0;
+    if (tab && !g_spec_tab)
+        step = 1;
+    if (step && c.size() > 1) {
+        const int n = (int)c.size(), i = (int)(at - c.begin());
+        at = c.begin() + (((i + step) % n + n) % n);
         ++g_spec_switches;
     }
     g_spec_tab = tab;
@@ -4313,10 +4319,10 @@ void draw_overlay()
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     double now = H->time_seconds();
-    if (g_downed)
+    if (g_downed && !g_box_shown) // BUG-9171: with the downed box its ring is at the bottom
         draw_ko(avatar(), "", (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
                 sw, sh);
-    if (g_downed && g_spec_idx && !g_spec_name.empty() && sw > 0) { // BUG-9171
+    if (g_downed && g_spec_idx && !g_spec_name.empty() && sw > 0 && !g_box_shown) { // BUG-9171
         const std::string t = "SPECTATING " + g_spec_name;
         const std::string h = "Tab: next partner";
         const int y = (int)(sh * 0.70f);
@@ -5919,6 +5925,16 @@ bool give_up()
     g_give_up_now = true;
     return true;
 }
+
+bool own_down() { return g_downed && in_cell(); }
+std::string spectated() { return g_downed && g_spec_idx ? g_spec_name : std::string(); }
+void spectate_step(int dir) { g_spec_step = dir; }
+float own_left()
+{
+    return g_downed ? (float)std::max(0.0, down_time() - (H->time_seconds() - g_down_since)) : 0.f;
+}
+float own_revive() { return g_downed ? (float)std::min(1.0, g_hold / kReviveHold) : 0.f; }
+void set_box_shown(bool shown) { g_box_shown = shown; }
 
 bool food_total(int& food)
 {

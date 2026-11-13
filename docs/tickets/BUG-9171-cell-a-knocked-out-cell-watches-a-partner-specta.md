@@ -35,5 +35,13 @@ host) it watched the nearest standing partner, the TITAN guest ("partner=1 'Cell
 SPECTATING CellGuest on its screen); the scene there was drawn blurred on the MSI at 7 m too. Tab cannot be tested from
 the QA console (`key` posts messages; the spectate reads the key's real state).
 
+Downed box (2026-11-13, later): the Cell knockout now uses Creature's downed box (coop.cpp draw_downed_hud: the red
+edge, "SPECTATING < name >", GIVE UP, the ring at the bottom; cellsync own_down / spectated / spectate_step / own_left /
+own_revive / set_box_shown; the cell's own ring and SPECTATING line are not drawn while the box is up). Live on TITAN
+with the MSI in the session: the box watching MSIGuest, then CellHost when the MSI's cell was knocked out too (only
+standing partners are watched). The red button's "GIVE UP" caption was hidden under the button in Cell; it is now put
+in front twice a second while the screen is up (coop_ui set_downed_hud): seen with its caption after that. Not seen:
+an arrow press switching partners (only one standing partner at the time).
+
 ## History
 - 2026-11-13: opened.
