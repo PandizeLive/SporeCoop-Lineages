@@ -206,6 +206,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2Q | What comes after the overnight work (2026-11-13): A the owner's live checks first (mate icon, Tribe right-clicks, a guest joining without a creature), then Claude builds a Space-ready four-founder save and starts phase 6; B straight to phase 6; C the small leftovers first (2E's spawned mate, a rejoin loading the world twice) | B, straight to phase 6 (owner 2026-11-13; also asked Claude to run the live checks it can itself) |
 | 2R | Push feat/lineages-47 (the overnight commits) to the fork: A now; B after the live checks; C not yet | B, after the live checks |
 | 2S | The stalled guest mating (BUG-9175): A fix it before Space; B Space first | A (owner 2026-11-13: "This plus the stall needs to be fixed. Investigate if we're over engineering and if it'd be easier to redo anything with what you know now. Let's actively prevent spaghetti coding.") |
+| 2T | After the guest mating fix (2026-11-13): A one species key per player creature first (roadmap 1b widened: removes the two-key patches and BUG-9176), then Space; B Space now (2Q B), 1b later; C the owner's live check of the mating first | asked 2026-11-13 |
 
 Next free ID: 2Q.
 
