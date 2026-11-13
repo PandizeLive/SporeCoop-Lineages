@@ -1639,8 +1639,17 @@ COOP_FIX("tribe.late_create_editor", "BUG-9135", g_late_create_editor,
          "tribe: a partner without a creature of their own can make a new one in the creature editor");
 unsigned game_busy();
 bool mode_switch_pending();
+// BUG-9170 (decision 1P / 14, Civ: "1A: the creature editor first"): a Civ late joiner without a creature of their own
+// (civ::late_prompt 1: no nation, no own creature; the host founds no capital for it, LateWhy::NoOwnCreature) goes into
+// the creature editor 15 s after the world, as in Tribe; what it saves is its creature (creations adopts it in Civ too)
+// and the host founds its capital, behind the loading screen (civ::late_prompt 2). Off: the Co-op window's choice only.
+static bool g_civ_editor_first = true;
+COOP_FIX("civ.late_editor_first", "BUG-9170", g_civ_editor_first,
+         "civ: a late joiner without a creature of their own goes into the creature editor first; their capital follows");
 static bool late_create_offered()
 {
+    if (g_late_create_editor && g_sess.role() == net::Role::Client && g_mode == modes::kCiv && g_civ_editor_first)
+        return civ::late_prompt() == 1;
     return g_late_create_editor && g_sess.role() == net::Role::Client && g_mode == modes::kTribe &&
            (tribe::late_prompt() != 0 || tribe::late_needs_creature()); // BUG-9159: before the window's prompt too
 }
@@ -1669,9 +1678,11 @@ static std::string open_new_creature_editor()
         return "The creature editor could not be opened.";
     }
     LOG("late joiner: the creature editor for a new creature was requested (tribe.late_create_editor)");
-    tribe::late_editor_opened(); // BUG-9159: the host holds the stand-in while they make it
+    if (g_mode == modes::kTribe)
+        tribe::late_editor_opened(); // BUG-9159: the host holds the stand-in while they make it
     notice(g_name + " is making a creature of their own in the editor", -1);
-    return "Make your creature, save it, then leave the editor: it becomes your creature for this game.";
+    return g_mode == modes::kCiv ? "Make your creature, save it, then leave the editor: your nation's capital follows."
+                                 : "Make your creature, save it, then leave the editor: it becomes your creature for this game.";
 }
 
 // the simulator's mode switcher has a switch pending (+0x28: a load, the quit to the menu, an editor)
@@ -2449,6 +2460,8 @@ static void join_editor_tick(double now)
     }
     if (g_join_since < 0) g_join_since = now;
     if (g_join_done_world == g_world || now - g_join_since < 12) return;
+    uint32_t got = 0, total = 0; // not while the host's world is on its way (BUG-9170's lesson)
+    if (world::progress(got, total) || world::load_queued()) { g_join_since = now; return; }
     if (game_busy() || mode_switch_pending() || creature_rescue::down() || game::is_dead(g_local)) return;
     g_join_done_world = g_world;
     if (creations::plays_own_creature()) return;
@@ -2460,6 +2473,48 @@ static void join_editor_tick(double now)
         feed("Make a creature of your own: what you save is your creature for this game (Done without a change keeps the "
              "shared one).");
         notice(g_name + " is making a creature of their own", -1);
+    }, nullptr);
+}
+
+// BUG-9170: the Civ late joiner's editor (tried every 3 s, 10 times a world, while the game is busy)
+static uint32_t g_civ_editor_world, g_civ_editor_opened_world, g_civ_editors;
+static int g_civ_editor_tries;
+static double g_civ_editor_at = -1e9;
+static void civ_editor_first_tick(double now)
+{
+    // not before the host's world is here: right after the join the guest was still in its own copy (the same world
+    // name) and the editor opened before the host's world came (2026-11-13); 15 s connected, no transfer, no load
+    static double s_connected_at = -1;
+    if (!g_sess.connected()) s_connected_at = -1;
+    else if (s_connected_at < 0) s_connected_at = now;
+    uint32_t got = 0, total = 0;
+    if (s_connected_at < 0 || now - s_connected_at < 15 || world::progress(got, total) || world::load_queued()) return;
+    if (!g_civ_editor_first || g_mode != modes::kCiv || g_sess.role() != net::Role::Client || !g_sess.connected()) return;
+    if (g_civ_editor_world != g_world) {
+        g_civ_editor_world = g_world;
+        g_civ_editor_tries = 0;
+    }
+    if (g_civ_editor_opened_world == g_world || g_civ_editor_tries >= 10 || now - g_civ_editor_at < 3) return;
+    static double s_said = -100; // support log: why not (every 20 s while it waits, 10 times)
+    static int s_says = 0;
+    if ((civ::late_prompt() != 1 || game_busy() || mode_switch_pending()) && now - s_said > 20 && s_says < 10) {
+        s_said = now;
+        ++s_says;
+        LOG("civ: editor first waits: late_prompt=%d own_creature=%d busy=%u switch=%d (BUG-9170)", civ::late_prompt(),
+            (int)creations::plays_own_creature(), game_busy(), (int)mode_switch_pending());
+    }
+    if (civ::late_prompt() != 1 || game_busy() || mode_switch_pending()) return;
+    g_civ_editor_at = now;
+    ++g_civ_editor_tries;
+    H->run_outside_frame([](void*) {
+        if (!late_create_offered()) return;
+        const std::string said = open_new_creature_editor();
+        if (game::mode_id() == modes::kEditor || said.rfind("Make your creature", 0) == 0) {
+            g_civ_editor_opened_world = g_world;
+            ++g_civ_editors;
+        }
+        LOG("civ: a late joiner without a creature of their own: %s (BUG-9170)", said.c_str());
+        feed(said);
     }, nullptr);
 }
 
@@ -3762,6 +3817,7 @@ void on_frame(void*, int, void*)
     evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
     migration_tick(now); // BUG-9163: the party migrates together
     join_editor_tick(now); // BUG-9164: a creature of one's own
+    civ_editor_first_tick(now); // BUG-9170
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
     party::tick(now);                           // roadmap 0b
@@ -4402,8 +4458,10 @@ void on_overlay(void*, int, void*)
     // village: the frame blurred, a ring and short steps until it is there (90 s at most)
     {
         static double s_since = -1;
-        const bool waiting = g_mode == modes::kTribe && sw > 0 && tribe::late_prompt() == 2 /* VillageComing */ &&
-                             !coop_ui::is_open() && !g_menu_up;
+        const bool civ_wait = g_mode == modes::kCiv && g_civ_editor_first && civ::late_prompt() == 2 &&
+                              g_civ_editor_opened_world == g_world; // BUG-9170: its capital is on its way
+        const bool waiting = ((g_mode == modes::kTribe && tribe::late_prompt() == 2 /* VillageComing */) || civ_wait) &&
+                             sw > 0 && !coop_ui::is_open() && !g_menu_up;
         const double now = H->time_seconds();
         if (!waiting) s_since = -1;
         else if (s_since < 0) s_since = now;
@@ -4414,7 +4472,7 @@ void on_overlay(void*, int, void*)
             const std::string host = g_sess.name_of(0);
             const std::string steps[4] = {"Catching up to " + host + "...", "Matching tools...", "Buildings are rising...",
                                           "Final touches..."};
-            const char* title = "Founding your village";
+            const char* title = civ_wait ? "Founding your capital" : "Founding your village";
             bold((int)(cx - text_width(title) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title);
             const std::string& step = steps[tribe_late::loading_step(p)];
             H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());

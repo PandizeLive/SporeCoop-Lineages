@@ -3147,7 +3147,9 @@ static bool adopt_after_editor(double now)
     }
     bool tribal = g_tribal_outfit_world && g_tribal_outfit_world == modes::current_world() && m == modes::kTribe;
     // BUG-9135 roadmap phase 4: back in Tribe from a late joiner's new-creature editor (tribe.late_create_editor)
-    const bool late = !tribal && g_new_creature_world && g_new_creature_world == modes::current_world() && m == modes::kTribe;
+    // BUG-9170: and back in Civ from a Civ late joiner's new-creature editor
+    const bool late = !tribal && g_new_creature_world && g_new_creature_world == modes::current_world() &&
+                      (m == modes::kTribe || m == modes::kCiv);
     if ((g_prev_mode == modes::kEdit || g_prev_mode == modes::kEditor) && (m == modes::kCreature || m == modes::kCell || tribal || late)) {
         g_adopt_until = now + 30;
         g_adopt_kind = m == modes::kCell ? kCell : kCreature;
@@ -3158,7 +3160,7 @@ static bool adopt_after_editor(double now)
         if (tribal && g_adopt_until) { tribe::finish_own_outfit(false); g_tribal_outfit_world = 0; }
         if (late && g_adopt_until) {
             g_new_creature_world = 0;
-            tribe::late_editor_done(false); // BUG-9159: the stand-in now
+            if (m == modes::kTribe) tribe::late_editor_done(false); // BUG-9159: the stand-in now
             if (C.feed) C.feed("No new creature was saved. Choose your own creature in the Co-op window (F9).");
         }
         return false;
@@ -3194,8 +3196,9 @@ static bool adopt_after_editor(double now)
         g_adopt_until = 0;
         if (late) {
             g_new_creature_world = 0;
-            tribe::late_editor_done(true); // BUG-9159: the village waits for this creature
-            if (C.feed) C.feed("Your new creature is your creature for this game. Your village follows in a few seconds.");
+            if (m == modes::kTribe) tribe::late_editor_done(true); // BUG-9159: the village waits for this creature
+            if (C.feed) C.feed(m == modes::kCiv ? "Your new creature is your creature for this game. Your capital follows shortly."
+                                                : "Your new creature is your creature for this game. Your village follows in a few seconds.");
         }
         if (tribal && !journal_tribal_choice()) {
             tribe::finish_own_outfit(false);

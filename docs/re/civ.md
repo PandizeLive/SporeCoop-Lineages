@@ -2087,3 +2087,15 @@ BUG-9155, switch `civ.party_wipe`.
   captured (UpdateCaptureDecay drops dead civs). A capture can therefore not be given back to it; the city goes to the
   would-be captor instead.
 * ? The native game over of the player civ (the host's last city) is still not known; the refusal happens before it.
+
+## A Civ late joiner's creature editor first (2026-11-13, feat/lineages-47)
+<a id="civ-late-editor-first"></a>
+
+BUG-9170. ✔ (runtime) The creature editor (EditorRequest CreatureEditorExtraLarge, no creation) opens from Civ as from
+Tribe and returns to Civ; the saved creature is adopted there. A host world that arrives while the guest is in that
+editor is loaded after it ("loaded when you leave the editor"), which reloads the guest's Civ world: the editor waits for
+the host's world now. ✔ A Civ save with four founder nations takes no late joiner: late_status NoPartySeat ("has no
+party seat yet") for a new identity; the four-seat test saves (Abber on TITAN and the MSI) cannot show the capital
+founded for a joiner. ✔ Right after joining, a guest still in its own copy of a world of the same name had
+civ::late_prompt 1 at once (its 15 s since the world had run).
+

@@ -124,7 +124,7 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
 | Creature | own nest and pack per player, best-friend partners, nests migrate together, revive ring (60 s), debt bar, downed pose and spectating (BUG-9156), personal evolving: own editor through the mating call, the game's cocoon, personal DNA, migration together (BUG-9160..9163, 2026-11-13), a joiner's own editor first and its DNA kept across reloads (BUG-9164, BUG-9165), a partner's nest follows its evolution (BUG-9151), a real migration across PCs with every player moving into their own new nest (BUG-9163, BUG-9166..9168) | a mate spawned when none answers (2E) |
 | Tribe | own village per player played with the game's own controls, hut menu and planner (BUG-9152, BUG-9153), camera starts at home, food share and gifts (BUG-9154), party wipe (BUG-9155), late join with a stand-in village (BUG-9150), revive ring, no native game over while the party plays on (BUG-9147, 2026-11-13) | each right-click action confirmed live |
 | Tribe -> Civ | four founders graduate, one capital each (phase 5) | - |
-| Civ | own capital and nation per player, late capitals caught up, the party wipe (BUG-9155) | the late joiner's loading screen (1P), the editor first for a joiner without a creature |
+| Civ | own capital and nation per player, late capitals caught up, the party wipe (BUG-9155), a late joiner's editor first and loading screen (BUG-9170) | the capital founded for a late joiner seen live (needs a Civ save with a free founder seat) |
 | Space | the party shares one empire (today's co-op) | phase 6: own empires (1X), the shared protected homeworld (2N, checked first), launching together (2J), progress per player (2A), enemies run by whoever is there (1Z), difficulty per party (2B), the Galactic Core per party (2C) |
 | Adventures | playable | adventure creatures run by the host (BUG-9114, phase 7) |
 | Everywhere | 4 player slots, identities, rejoin keeps the seat | publish Lineages 54 (1A; nothing pushed yet), a rejoin loads the world twice |
@@ -160,7 +160,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1M | Switch retirement in small tested batches | A |
 | 1N | The live Civ test may click in the test host's window (12) | A |
 | 1O | The host can add player slots in the middle of a stage (13) | A |
-| 1P | A late joiner without a creature: a stand-in village at once, else the editor first with a loading screen (14) | B in Tribe (built, BUG-9150); A in Civ (the loading screen, not built yet) |
+| 1P | A late joiner without a creature: a stand-in village at once, else the editor first with a loading screen (14) | B in Tribe (built, BUG-9150); A in Civ (built 2026-11-13, BUG-9170: the editor first and the loading screen live; the capital itself needs a save with a free seat) |
 | 1Q | "Player Slots", an Apply button, no Send World button (15) | owner's request, built |
 | 1R | The Tribe -> Civ graduation test by scripted native raids | A (done, phase 5 live) |
 | 1S | A save loaded with fewer slots than players connected gets more slots | A (built, BUG-9143) |

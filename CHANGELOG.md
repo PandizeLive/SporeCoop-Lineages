@@ -32,6 +32,9 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Civ: a late joiner without a creature of their own goes into the creature
+  editor first; a loading screen shows while their capital is founded
+  (BUG-9170).
 - Tribe: no more native game over while the party plays on: a host alone keeps
   playing while a partner's village lives; when every founder village is down
   the party wipe applies and a villager returns to each empty village
