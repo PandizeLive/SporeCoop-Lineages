@@ -396,6 +396,12 @@ COOP_FIX("tribe.performance", "BUG-9035", g_performance_fix,
 static bool g_gift_orders = true;
 COOP_FIX("tribe.gift_orders", "BUG-9033", g_gift_orders,
          "tribe: relay validated guest food gifts through native citizen AI");
+// BUG-9185: the host checks a guest's order against a list of the game's own orders; Hunt (10, an animal) and Party
+// (12, the fire pit) were not on it, so a guest's right-click on an animal or its fire pit did nothing (the MSI
+// 2026-11-13: "rejected=1" for action 12). Off: both refused as before.
+static bool g_hunt_party_orders = true;
+COOP_FIX("tribe.hunt_party_orders", "BUG-9185", g_hunt_party_orders,
+         "tribe: guest villagers can hunt an animal and party at the fire pit by right-click");
 static bool g_heal_orders = true;
 static bool g_eat_orders = true;
 COOP_FIX("tribe.eat_orders", "BUG-9032", g_eat_orders,
@@ -3174,7 +3180,10 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
     const bool eat = g_eat_orders && kind == CMD_ACTION && action == 0 && tgt.kind == 2 && tgt.noun == 0x629BAFE;
     const bool gift = g_gift_orders && kind == CMD_ACTION && action == 9 && tgt.kind == 2 && tgt.noun == kTribeNoun;
     const bool perform = g_performance_fix && kind == CMD_ACTION && action == 26 && tgt.kind == 1;
-    if (village_orders && ((kind != CMD_WALK && !gather && !attack && !raid && !equip && !heal && !eat && !gift && !perform) || !commander || !std::isfinite(pos.x) ||
+    const bool hunt = g_hunt_party_orders && kind == CMD_ACTION && action == 10 && tgt.kind == 2 && tgt.noun == 0x18EB45E;
+    const bool party = g_hunt_party_orders && kind == CMD_ACTION && action == 12 && tgt.kind == 2 && tgt.noun == 0x18C8F0C;
+    if (village_orders && ((kind != CMD_WALK && !gather && !attack && !raid && !equip && !heal && !eat && !gift && !perform &&
+                            !hunt && !party) || !commander || !std::isfinite(pos.x) ||
                            !std::isfinite(pos.y) || !std::isfinite(pos.z))) {
         g_cmds_rejected++;
         return;
@@ -3228,6 +3237,15 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
         return;
     }
     if (village_orders && eat && (!target || !game::object_alive(target) || game::noun_id(target) != 0x629BAFE)) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && party && (!target || !game::object_alive(target) || game::noun_id(target) != 0x18C8F0C)) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && hunt && (!target || !game::object_alive(target) || is_citizen(target) ||
+                                   game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))) { // an animal, alive
         g_cmds_rejected++;
         return;
     }

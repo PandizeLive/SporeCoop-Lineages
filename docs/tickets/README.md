@@ -799,3 +799,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9182](BUG-9182-creature-a-ring-of-old-player-nests-round-the-ho.md) | open | bug | creature | 2026-11-13 |  | Creature: a ring of old player nests round the host's nest (one per rejoin under the old keys) |
 | [BUG-9183](BUG-9183-tribe-a-guest-whose-own-village-is-wiped-out-see.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: a guest whose own village is wiped out sees the game's own game-over screen |
 | [BUG-9184](BUG-9184-tribe-the-host-s-game-showed-the-population-game.md) | open | bug | tribe | 2026-11-13 |  | Tribe: the host's game showed the population game over with no population event through the hold |
+| [BUG-9185](BUG-9185-tribe-the-host-refuses-a-guest-s-hunt-and-party.md) | fixed | bug | tribe | 2026-11-13 | unreleased | Tribe: the host refuses a guest's Hunt and Party right-click orders |

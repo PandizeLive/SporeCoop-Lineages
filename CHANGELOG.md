@@ -4,6 +4,8 @@
 
 - Tribe: a guest whose own village is wiped out no longer gets the game's own
   game-over screen while the party plays on; the host decides (BUG-9183).
+- Tribe: a guest's villagers hunt an animal and party at their fire pit by
+  right-click; the host refused both before (BUG-9185).
 - Creature / Adventure: the downed screen as the owner drew it: a SPECTATING
   box with the partner's name and arrows, a GIVE UP button and the revive ring
   at the bottom of the screen (BUG-9156). The box, arrows and button use the

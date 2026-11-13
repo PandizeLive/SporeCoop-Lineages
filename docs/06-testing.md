@@ -5341,4 +5341,10 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   (`mem.write <avatar>+0xBBC 0000C842`, hunger 100) in long test sessions.
 * Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m
   out there.
-
+* Tribe right-clicks from the MSI guest (2026-11-13): select the own villager with a real left-click
+  (`msi_input.ps1 -Click`) about 12 px above the point `coop.targets objs` gives (the model, not its ground origin);
+  a rejoin drops the native selection even when `coop.tribe` still shows sel=1. Animals at the screen edge under trees
+  at night were never hit (each right-click became a walk); the host's hut under its name tag and arrow took no order.
+  `coop.tribe` on the guest ("tribe last order") and on the host ("cmds_done", "rejected", "last order: from=")
+  show what each click became. A fresh copy of the owner's Jiff save: profile DuoQAJiffFresh (seat 1 bound to the MSI
+  with `coop.tribe bind_founder 1 2`).
