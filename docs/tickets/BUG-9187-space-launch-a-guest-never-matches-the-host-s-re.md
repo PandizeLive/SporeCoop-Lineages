@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 28a8b539
 tests: tools/qa_win (manual, TITAN host + 2 TITAN guests + the MSI, 2026-11-13)
 signature:
 docs:
