@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Civ: the same party rule as in Tribe. When a player is about to lose their
+  last city to another nation, they keep it, and the party gives up its newest
+  captured city instead (with no captured city yet, every party nation loses
+  10% of its money) (BUG-9155).
 - Creature / Adventure: a downed creature lies in the game's own death pose
   until it is revived, and its player watches a partner meanwhile: SPECTATING
   and their name under the revive ring, Tab or the arrow buttons to switch, a

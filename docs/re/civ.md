@@ -2074,3 +2074,16 @@ BUG-9135 roadmap phase 5, the [civ-multi-founders](#civ-multi-founders) rules in
   same (local_seat 2 and 1) at once, the MSI after its world share a minute later (local_seat 3). 0 faults on all four.
   The partner capitals sit where the game's next free sites are (not near the former villages: "its former village is
   gone"; the site choice is still open above).
+
+## The party wipe in Civ: a founder's last city kept, the newest capture given back (2026-11-12, feat/lineages-47)
+<a id="civ-party-wipe"></a>
+
+BUG-9155, switch `civ.party_wipe`.
+* ✔ (live) Refusing cCity::ChangeOwner (not calling the original) for a founder's last city keeps the city with its
+  nation on host and guests; the capture's flags +0x2E0..+0x2E6 (set by Capture before ChangeOwner) are cleared.
+* ✔ (live) Giving a city back: ChangeOwner(city, pol, 0, 0) then City_SetPartsOwner(city, nation) outside the game's
+  ChangeOwner (the host's tick); the guest's game followed (city 1 000021CC on both).
+* ✔ (live) A nation that loses its only city is gone at once: CivByPol(000021CD) returned null right after its city was
+  captured (UpdateCaptureDecay drops dead civs). A capture can therefore not be given back to it; the city goes to the
+  would-be captor instead.
+* ? The native game over of the player civ (the host's last city) is still not known; the refusal happens before it.

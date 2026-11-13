@@ -1976,9 +1976,46 @@ static void* SK_THISCALL h_SpawnVehicle(void* city, int purpose, int loco, uint3
 static void caption_arm(); // BUG-0224 (below)
 using ChangeOwner_t = int(SK_THISCALL*)(void*, uint32_t, int, int);
 static ChangeOwner_t o_ChangeOwner;
+
+// ---- BUG-9155 (Civ): the party wipe (owner decision 1U as changed 2026-11-12: "This should be similar to tribe ...
+// Just one player wipe") ----
+// A founder nation about to lose its last city to a nation outside the party keeps it (the change of owner is not
+// made); the whole party pays instead: its newest captured city goes back to the nation it was taken from (or, when
+// that nation is gone, to the one that would have taken the last city); with no capture yet every founder nation loses
+// 10% of its money. The party's captures are recorded as they happen (h_ChangeOwner). The settling runs in the host's
+// tick (not inside the game's ChangeOwner); the guests follow the owners as for any capture. `coop.fix civ.party_wipe off`.
+static bool g_civ_party_wipe = true;
+COOP_FIX("civ.party_wipe", "BUG-9155", g_civ_party_wipe,
+         "civ: a founder nation keeps its last city; the party loses its newest captured city (or 10% money) instead");
+struct PartyCapture { void* city; uint32_t serial, from, by; int kind; };
+static std::vector<PartyCapture> g_party_captures; // oldest first
+struct CivWipe { uint32_t founder, captor; };
+static std::vector<CivWipe> g_civ_wipes_due;
+static bool g_wipe_applying;
+static uint32_t g_wipe_test_outsider; // tests (coop.civ test_outsider): this founder nation counts as outside the party
+static bool party_nation(uint32_t faction) { return faction != g_wipe_test_outsider && g_founder_nations.contains_faction(faction); }
+static uint32_t g_civ_wipes, g_civ_last_cities_kept;
+static std::string g_civ_last_wipe;
+static size_t founder_city_count(uint32_t faction)
+{
+    size_t n = 0;
+    for (void* c : all_cities()) n += pol_of(c) == faction;
+    return n;
+}
+
 static int SK_THISCALL h_ChangeOwner(void* city, uint32_t faction, int quiet, int specialty)
 {
     uint32_t old_faction = pol_of(city);
+    if (g_civ_party_wipe && !g_wipe_applying && is_host() && active() && old_faction != faction &&
+        party_nation(old_faction) && !party_nation(faction) && founder_city_count(old_faction) <= 1) {
+        // BUG-9155: the last city of a founder nation stays its own; the party pays in the next tick
+        ++g_civ_last_cities_kept;
+        for (int flag = 0x2E0; flag <= 0x2E6; ++flag) F<uint8_t>(city, flag) = 0; // the capture's flags (Capture sets them)
+        g_civ_wipes_due.push_back({old_faction, faction});
+        return 0;
+    }
+    if (party_nation(old_faction) && !party_nation(faction)) // lost: no longer the party's
+        std::erase_if(g_party_captures, [city](const PartyCapture& p) { return p.city == city; });
     bool team = g_team_progress && active() && g_founder_nations.contains_faction(faction);
     void* country = team ? thiscall<void*>(a_CivByPol, nm(), faction) : nullptr;
     void* previous = g_capture_founder;
@@ -1988,18 +2025,65 @@ static int SK_THISCALL h_ChangeOwner(void* city, uint32_t faction, int quiet, in
     int result = o_ChangeOwner(city, faction, quiet, specialty);
     g_capture_founder = previous;
     game::swap_close(mark);
-    if (team && is_host() && old_faction != faction && pol_of(city) == faction &&
-        !g_founder_nations.contains_faction(old_faction)) {
+    if (team && is_host() && old_faction != faction && pol_of(city) == faction && !party_nation(old_faction)) {
         // Native history/goals are emitted by ChangeOwner's player branch.
         // The home nation's capture counters are the campaign totals used at
         // spaceflight; the partner's raw counters remain its individual record.
         int kind = F<int>(city, 0x29C);
         if (country != player_civ() && kind >= 0 && kind < 3)
             ++F<int>(player_civ(), 0x4C0 + 4 * kind);
+        if (!g_wipe_applying) { // BUG-9155: the party's captures, newest last
+            std::erase_if(g_party_captures, [city](const PartyCapture& p) { return p.city == city; });
+            g_party_captures.push_back({city, game::object_serial(city), old_faction, faction,
+                                        country != player_civ() ? kind : -1});
+            if (g_party_captures.size() > 64) g_party_captures.erase(g_party_captures.begin());
+        }
         g_campaign_share_at = H->time_seconds() + 2;
         world::request_autosave();
     }
     return result;
+}
+
+static std::string civ_party_wipe(const CivWipe& w)
+{
+    const int seat = g_founder_nations.seat_of_faction(w.founder);
+    const uint8_t player = founder_owner(w.founder);
+    const std::string who = player < 0xFE ? C.sess->name_of(player) + "'s nation" : "A party nation";
+    std::string lost;
+    const auto cities = all_cities();
+    while (!g_party_captures.empty()) {
+        PartyCapture p = g_party_captures.back();
+        g_party_captures.pop_back();
+        if (std::find(cities.begin(), cities.end(), p.city) == cities.end() || game::object_serial(p.city) != p.serial ||
+            !g_founder_nations.contains_faction(pol_of(p.city)))
+            continue; // gone, or no longer the party's
+        uint32_t to = thiscall<void*>(a_CivByPol, nm(), p.from) ? p.from : w.captor;
+        void* nation = thiscall<void*>(a_CivByPol, nm(), to);
+        if (!nation) continue;
+        g_wipe_applying = true;
+        thiscall<int>(a_ChangeOwner, p.city, to, 0, 0);
+        g_wipe_applying = false;
+        if (uintptr_t parts = H->sym("SporeCoop::City_SetPartsOwner")) thiscall<void>(parts, p.city, nation);
+        if (p.kind >= 0 && p.kind < 3 && F<int>(player_civ(), 0x4C0 + 4 * p.kind) > 0) --F<int>(player_civ(), 0x4C0 + 4 * p.kind);
+        char id[16];
+        snprintf(id, sizeof id, "%08X", to);
+        lost = "the party's newest captured city went back to nation " + std::string(id);
+        break;
+    }
+    if (lost.empty()) {
+        for (size_t s = 0; s < g_founder_nations.seats(); ++s) {
+            void* nation = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[s].faction);
+            if (nation && skg::readable((uint8_t*)nation + 0x98, 4) && F<float>(nation, 0x98) > 0)
+                F<float>(nation, 0x98) = F<float>(nation, 0x98) * 0.9f;
+        }
+        lost = "no captured city to lose yet: every party nation lost 10% of its money";
+    }
+    ++g_civ_wipes;
+    g_civ_last_wipe = who + " would have lost its last city: it keeps it, and " + lost + ".";
+    H->log(M, SK_INFO, "civ: party wipe, seat %d: %s (BUG-9155)", seat, g_civ_last_wipe.c_str());
+    g_campaign_share_at = H->time_seconds() + 2;
+    world::request_autosave();
+    return g_civ_last_wipe;
 }
 using Capture_t = int(SK_THISCALL*)(void*, uint32_t, int, int, int, int);
 static Capture_t o_Capture;
@@ -4617,6 +4701,11 @@ static void host_send_building_hp(size_t ci, void* city, double now)
 static void host_tick(double now)
 {
     if (g_health_save_depth) return; // Never broadcast the temporary native save values.
+    if (!g_civ_wipes_due.empty() && !planner_city()) { // BUG-9155
+        auto due = std::move(g_civ_wipes_due);
+        g_civ_wipes_due.clear();
+        for (const auto& w : due) if (C.notice) C.notice(civ_party_wipe(w));
+    }
     if (!g_held_builds.empty() && !planner_city()) {
         auto held = std::move(g_held_builds);
         g_held_builds.clear();
@@ -6065,6 +6154,8 @@ void on_session_end()
 // old id and a player owner, even an NPC nation's one) and the guest the old host-city table.
 void on_world_change()
 {
+    g_party_captures.clear(); // BUG-9155: the old world's cities
+    g_civ_wipes_due.clear();
     if (!g_fix_world)
         return;
     // the vehicle / building editors have no co-op adapter either (coop.cpp sees "no local" as a
@@ -6761,6 +6852,29 @@ std::string debug(const std::vector<std::string>& a)
         g_alarm_at.erase(city);
         h_OnAttacked(city, 0, 0x0BADF00D);
         return "alarm raised";
+    }
+    if (a.size() == 3 && a[0] == "npc_capture" && is_host()) { // npc_capture <city> <pol hex>: a nation takes it (tests, BUG-9155)
+        size_t ci = (size_t)atoi(a[1].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        const uint32_t pol = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        if (!city || !thiscall<void*>(a_CivByPol, nm(), pol)) return "no such city / nation";
+        int r = h_Capture(city, pol, 0, 0, 0, 0);
+        return "npc capture -> " + std::to_string(r) + " owner now " + std::to_string(pol_of(city));
+    }
+    if (a.size() == 2 && a[0] == "test_outsider" && is_host()) { // tests (BUG-9155): a founder nation as an outsider, 0: none
+        g_wipe_test_outsider = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        return "test outsider " + a[1];
+    }
+    if (a.size() == 1 && a[0] == "wipes") { // BUG-9155
+        std::string out = "party wipes: " + std::to_string(g_civ_wipes) + " last cities kept: " + std::to_string(g_civ_last_cities_kept) +
+                          " captures recorded: " + std::to_string(g_party_captures.size());
+        for (const auto& p : g_party_captures) {
+            char line[80];
+            snprintf(line, sizeof line, "\n  city %p from %08X by %08X", p.city, p.from, p.by);
+            out += line;
+        }
+        if (!g_civ_last_wipe.empty()) out += "\nlast: " + g_civ_last_wipe;
+        return out;
     }
     if (a.size() >= 2 && a[0] == "capture" && is_host()) { // capture <city>: the player civ takes it (tests, BUG-0187)
         size_t ci = (size_t)atoi(a[1].c_str());

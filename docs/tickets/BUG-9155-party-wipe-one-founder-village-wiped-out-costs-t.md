@@ -30,5 +30,20 @@ tribe.party_wipe (on). At the end of a founder's window without a revive (or a g
 ## Verification
 no-fail-run (feature, manual two-PC run). 2026-11-12, TITAN host + MSI guest on a fresh copy of the owner's Tribe save: `coop.tribe win 000021DA` gave 1 win (allied 000021DA, progress 1.0 / 5.0); `coop.tribe wipe 1`: "MSI's village was wiped out: its newest ally (000021DA) is a rival again, a totem piece and a step of progress are lost.", then 0 wins, progress 0.0 / 5.0, relation 000021DA to both founder villages -5.0, the world reloaded, 0 faults. Not seen live: the wipe from a real rescue window, the 10% food branch, a conquest as the newest win, the red progress-debt marker (progress_debt has no Tribe bar yet), 3-4 players.
 
+## Civ (2026-11-12)
+Owner: "This should be similar to tribe. I don't think it's a party wipe requirement anymore right? Just one player
+wipe?" Switch civ.party_wipe (on). h_ChangeOwner: a founder nation about to lose its last city to a nation outside the
+party keeps it (the change is not made, the capture's flags +0x2E0..+0x2E6 cleared); the host's tick then gives the
+party's newest captured city back to the nation it was taken from (to the would-be captor when that nation is gone,
+with City_SetPartsOwner and the team capture counter lowered), or takes 10% of every founder nation's money with no
+capture yet. The party's captures are recorded as they happen (not kept across a reload). Tests: `coop.civ
+test_outsider <pol>` (a founder nation counts as outside the party, tests only), `coop.civ npc_capture <city> <pol>`,
+`coop.civ wipes`. Live 2026-11-12, two games on the MSI on a copy of Abber.spo (four founder nations, no other
+nation): with 21CD as the outsider the host captured city 1 (recorded "from 000021CD"); 21CD then had no city and its
+nation was gone (CivByPol null); with 21CC as the outsider, its capture of the guest's only city 3 was refused (city 3
+stayed 000021CB, "MSI's nation would have lost its last city: it keeps it, and the party's newest captured city went
+back to nation 000021CC"), city 1 became 000021CC on both games, 0 faults. Not seen: a real NPC siege, the money
+branch, the host's own last city (the native Civ game over is not known).
+
 ## History
 - 2026-11-12: opened.
