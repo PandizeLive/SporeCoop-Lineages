@@ -796,6 +796,29 @@ static bool party_valid(const Party& v)
     return true;
 }
 
+bool read_side(const std::string& key, const wchar_t* suffix, std::vector<uint8_t>& out, size_t max_bytes)
+{
+    auto path = path_for(key, suffix);
+    if (path.empty()) return false;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    LARGE_INTEGER size{};
+    bool ok = GetFileSizeEx(f, &size) && size.QuadPart >= 0 && (uint64_t)size.QuadPart <= max_bytes;
+    if (ok) {
+        out.resize(size_t(size.QuadPart));
+        DWORD got = 0;
+        ok = out.empty() || (ReadFile(f, out.data(), DWORD(out.size()), &got, nullptr) && got == out.size());
+    }
+    CloseHandle(f);
+    return ok;
+}
+
+bool write_side(const std::string& key, const wchar_t* suffix, const std::vector<uint8_t>& data)
+{
+    auto path = path_for(key, suffix);
+    return !path.empty() && publish(path, data, true);
+}
+
 bool read_party(const std::string& key, Party& out)
 {
     auto path = path_for(key, L".duoparty");

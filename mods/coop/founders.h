@@ -285,6 +285,10 @@ struct Party {
     bool operator==(const Party&) const = default;
 };
 bool read_party(const std::string& planet_file, Party& out);
+// BUG-9189: a mod side file next to the planet's save (planet_file + suffix, never inside the game's save), written
+// whole through a temporary file. read: false = none, unreadable or larger than max_bytes.
+bool read_side(const std::string& planet_file, const wchar_t* suffix, std::vector<uint8_t>& out, size_t max_bytes);
+bool write_side(const std::string& planet_file, const wchar_t* suffix, const std::vector<uint8_t>& data);
 // a party may only grow, and a seat's identity is learnt once: the same rule as the founder rosters
 bool record_party(const std::string& planet_file, const Party& value, std::string& err);
 
