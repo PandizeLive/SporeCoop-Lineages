@@ -12,6 +12,8 @@ void draw(const SkHost* host, float x, float y, float radius, float left, float 
 
 // BUG-9156: a red edge round the screen (only during SK_EV_OVERLAY), strength 0..1
 void vignette(const SkHost* host, int sw, int sh, float strength);
+// BUG-9156: a rounded panel (the spectating box, the give-up button); border 0: none
+void panel(const SkHost* host, float x0, float y0, float x1, float y1, float radius, uint32_t fill, uint32_t border);
 // BUG-9156: a filled arrow pointing left or right, centred at (x, y), `size` its half height
 void arrow(const SkHost* host, float x, float y, float size, bool left, uint32_t argb);
 

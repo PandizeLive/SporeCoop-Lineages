@@ -326,10 +326,12 @@ float own_revive()
     if (!down() || own_near_since < 0) return 0.f;
     return (float)std::clamp((H->time_seconds() - own_near_since) / hold, 0.0, 1.0);
 }
+static bool g_hud_has_give_up; // BUG-9156: the downed screen's GIVE UP button says it
+void set_give_up_button(bool shown) { g_hud_has_give_up = shown; }
 std::string ui_line()
 {
     if (!ring_timer::enabled()) return status();
-    return down() ? "Hold G to give up" : std::string();
+    return down() && !g_hud_has_give_up ? "Hold G to give up" : std::string();
 }
 
 std::string status()

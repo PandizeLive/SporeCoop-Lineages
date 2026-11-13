@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Creature / Adventure: the downed screen as the owner drew it: a SPECTATING
+  box with the partner's name and arrows, a GIVE UP button and the revive ring
+  at the bottom of the screen (BUG-9156).
+- Creature: a crash when a player who joined dead confirmed the death message
+  is fixed (BUG-9157).
+- Tribe: a player's last villager is knocked out even when no partner
+  villager is alive, so the host's game no longer ends; nobody reviving it
+  leads to the party wipe instead (BUG-9147).
 - Civ: the same party rule as in Tribe. When a player is about to lose their
   last city to another nation, they keep it, and the party gives up its newest
   captured city instead (with no captured city yet, every party nation loses

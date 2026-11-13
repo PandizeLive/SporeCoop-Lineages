@@ -3728,3 +3728,13 @@ camera, the target (the host's village on a guest's game) and the orientation (4
 After the first swap of a world, the guest's camera looks at its own village with that orientation turned by the
 rotation from the old target's up to the new one's (LookAt + SimCamera_Update, instant). ✔ (live, MSI) after a join
 the camera stood over the guest's own village, level with the ground. `coop.tribe camera [own]` shows / repeats it.
+
+## The party wipe from a real revive window; the guest's member cards (2026-11-12, feat/lineages-47)
+<a id="tribe-wipe-live-cards"></a>
+
+* ✔ (live, two games on the MSI, Jiff copy) The host's chief, knocked out by a rival village with the guest's chief
+  alive, was not revived in its window: "Host's village was wiped out: no win to lose yet: every village lost 10% of
+  its food" (host 14.31 -> 12.31, guest 497.56 -> 447.56: ceil of 10% each), the world reloaded, 0 faults.
+* ✔ (live) On a guest (its village the player tribe, BUG-9153) a press on its villager's card selects it (sel 1). The
+  small card above the villager cards (a red icon) selected nothing on the guest; what it does natively is not known.
+* BUG-9147: the knockout no longer needs a living partner villager when the party wipe is on (not seen live).

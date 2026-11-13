@@ -3240,3 +3240,11 @@ BUG-9156, switches `creature.downed_pose`, `creature.spectate`.
   ✔ (live, two games on the MSI) the host's creature 95 m away at the screen centre on solid ground; when the window
   ended the camera was back on the own creature (the death caption); 0 faults on both games.
 * ? No native red / low-health vignette is known; a red screen edge is drawn by the mod (ring_timer::vignette).
+
+## A creature without a species in the base max health (2026-11-12, feat/lineages-47)
+<a id="creature-max-hp-null-species"></a>
+
+BUG-9157. cCreatureAnimal_BaseMaxHitPoints 0xC04170 (vt 0x7C): Adventure: LevelHealth + species +0x56C; the player
+species: LevelHealth(mpAvatar) + species +0x56C; others: herd +0x1674 -> +0x154 when > 0, else tuning +0xE84 -> +0x340,
+else LevelHealth(0) + species (+0xB20) +0x56C with **no null check** (0xC04252). ✔ (live) A guest that joined dead and
+confirmed the death caption faulted there twice (edi = 0, a herd update in the stack). Guarded in creature_hp.cpp.

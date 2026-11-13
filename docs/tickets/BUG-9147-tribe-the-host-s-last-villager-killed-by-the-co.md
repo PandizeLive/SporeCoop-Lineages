@@ -9,12 +9,13 @@ source: found in QA 2026-11-12 (four-player Jiff test copy)
 role: host
 versions: 0.7.8-lineages54-dev
 fixed_in:
-branch:
+branch: feat/lineages-47
 commits:
 tests:
 signature:
 docs:
 related: BUG-9135 BUG-0172
+switch: tribe.party_wipe
 ---
 
 ## Report

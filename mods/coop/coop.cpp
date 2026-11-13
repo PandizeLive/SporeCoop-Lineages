@@ -3893,7 +3893,7 @@ COOP_FIX("creature.spectate", "BUG-9156", g_spectate_fix,
 static uint8_t g_spec_id = 0xFF;
 static uint32_t g_spec_clicks;
 static bool g_spec_tab;
-static int g_spec_btn[2][4]; // the < and > buttons on screen: x0, y0, x1, y1
+static int g_spec_btn[3][4]; // the < and > buttons and GIVE UP on screen: x0, y0, x1, y1
 static uint32_t g_spec_switches;
 
 static bool spectating()
@@ -3924,7 +3924,18 @@ static void spectate_tick()
 {
     if (!spectating()) { g_spec_id = 0xFF; return; }
     auto targets = spec_targets();
-    if (targets.empty()) { g_spec_id = 0xFF; return; }
+    if (targets.empty()) { // no partner to watch: only GIVE UP is there
+        g_spec_id = 0xFF;
+        mouse::install(H->game_window());
+        if (mouse::clicks() != g_spec_clicks) {
+            g_spec_clicks = mouse::clicks();
+            int x, y;
+            mouse::last_click(x, y);
+            if (x >= g_spec_btn[2][0] && x <= g_spec_btn[2][2] && y >= g_spec_btn[2][1] && y <= g_spec_btn[2][3])
+                creature_rescue::give_up_now();
+        }
+        return;
+    }
     // the order of the switch is the players' order, not the distance (stable while they move)
     std::vector<uint8_t> ids;
     for (const auto& t : targets) ids.push_back(t.id);
@@ -3941,9 +3952,11 @@ static void spectate_tick()
         g_spec_clicks = mouse::clicks();
         int x, y;
         mouse::last_click(x, y);
-        for (int b = 0; b < 2; ++b)
-            if (x >= g_spec_btn[b][0] && x <= g_spec_btn[b][2] && y >= g_spec_btn[b][1] && y <= g_spec_btn[b][3])
-                step = b == 0 ? -1 : 1;
+        for (int b = 0; b < 3; ++b)
+            if (x >= g_spec_btn[b][0] && x <= g_spec_btn[b][2] && y >= g_spec_btn[b][1] && y <= g_spec_btn[b][3]) {
+                if (b == 2) creature_rescue::give_up_now(); // GIVE UP (holding G still works)
+                else step = b == 0 ? -1 : 1;
+            }
     }
     if (step && ids.size() > 1) {
         const int n = (int)ids.size();
@@ -3963,23 +3976,49 @@ static void* spectate_target()
     return it->second.puppet;
 }
 
-static void draw_spectate(int sw, int sh, int y)
+// the owner's mock-up (2026-11-12): over the ability bar, a dark box "SPECTATING" with "< name >", a red GIVE UP button
+// under it and the revive ring under that, the red screen edge round it all
+static void bold(int x, int y, uint32_t color, const char* text)
 {
-    if (!spectating() || g_spec_id == 0xFF) { std::memset(g_spec_btn, 0, sizeof g_spec_btn); return; }
+    H->overlay_text(x + 1, y + 1, 0xFF000000, text);
+    H->overlay_text(x, y, color, text);
+    H->overlay_text(x + 1, y, color, text);
+}
+static void draw_downed_hud(int sw, int sh)
+{
+    std::memset(g_spec_btn, 0, sizeof g_spec_btn);
     ring_timer::vignette(H, sw, sh, 0.85f);
-    const std::string name = "SPECTATING " + g_sess.name_of(g_spec_id);
-    const int w = text_width(name), x = sw / 2 - w / 2;
-    H->overlay_text(x + 1, y + 1, 0xFF000000, name.c_str());
-    H->overlay_text(x, y, 0xFFFFFFFF, name.c_str());
-    const int bw = 22, bh = 20, gap = 10;
-    const int lx = x - gap - bw, rx = x + w + gap;
-    const int bx[2] = {lx, rx};
-    for (int b = 0; b < 2; ++b) { // the previous / next buttons: filled arrows (the overlay font draws no angle brackets)
-        g_spec_btn[b][0] = bx[b] - 4; g_spec_btn[b][1] = y - 6; g_spec_btn[b][2] = bx[b] + bw + 4; g_spec_btn[b][3] = y + bh;
-        ring_timer::arrow(H, bx[b] + bw / 2.f, y + 7.f, 9.f, b == 0, 0xFFFFD040);
+    const float cx = sw / 2.f;
+    const float ring_r = std::max(18.f, sh * 0.036f);
+    const float ring_y = sh * 0.815f;
+    const float btn_h = std::max(22.f, sh * 0.036f), btn_w = std::max(140.f, sw * 0.135f);
+    const float btn_y1 = ring_y - ring_r - 8.f, btn_y0 = btn_y1 - btn_h;
+    float top = btn_y0;
+    if (spectating() && g_spec_id != 0xFF) {
+        const float box_h = std::max(46.f, sh * 0.062f), box_w = std::max(btn_w, sw * 0.135f);
+        const float y0 = btn_y0 - 6.f - box_h, y1 = btn_y0 - 6.f;
+        ring_timer::panel(H, cx - box_w / 2, y0, cx + box_w / 2, y1, 7.f, 0xE0141820u, 0xFFB8BCC4u);
+        const char* title = "SPECTATING";
+        bold((int)(cx - text_width(title) / 2.f), (int)(y0 + 6), 0xFFFFFFFFu, title);
+        const std::string name = g_sess.name_of(g_spec_id);
+        const float ny = y0 + box_h * 0.62f;
+        H->overlay_text((int)(cx - text_width(name) / 2.f), (int)(ny - 6), 0xFFD8DCE0u, name.c_str());
+        const float ax[2] = {cx - box_w / 2 + 16.f, cx + box_w / 2 - 16.f};
+        for (int b = 0; b < 2; ++b) {
+            ring_timer::arrow(H, ax[b], ny, 7.f, b == 0, 0xFFFFD040u);
+            g_spec_btn[b][0] = (int)(ax[b] - 14); g_spec_btn[b][1] = (int)(ny - 14);
+            g_spec_btn[b][2] = (int)(ax[b] + 14); g_spec_btn[b][3] = (int)(ny + 14);
+        }
+        top = y0;
     }
-    const std::string hint = "Tab: next partner";
-    H->overlay_text(sw / 2 - text_width(hint) / 2, y + 18, 0xFFC0C0C0, hint.c_str());
+    (void)top;
+    ring_timer::panel(H, cx - btn_w / 2, btn_y0, cx + btn_w / 2, btn_y1, btn_h / 2, 0xF0B01E1Eu, 0xFF3A0808u);
+    const char* give = "GIVE UP";
+    bold((int)(cx - text_width(give) / 2.f), (int)(btn_y0 + btn_h / 2 - 7), 0xFFFFFFFFu, give);
+    g_spec_btn[2][0] = (int)(cx - btn_w / 2); g_spec_btn[2][1] = (int)btn_y0;
+    g_spec_btn[2][2] = (int)(cx + btn_w / 2); g_spec_btn[2][3] = (int)btn_y1;
+    if (ring_timer::enabled())
+        ring_timer::draw(H, cx, ring_y, ring_r, creature_rescue::own_left(), creature_rescue::own_revive(), H->time_seconds());
 }
 
 void on_overlay(void*, int, void*)
@@ -4003,19 +4042,21 @@ void on_overlay(void*, int, void*)
         const std::string line = creature_rescue::ui_line(); // BUG-9141: with the ring only "Hold G to give up"
         // BUG-9141: this downed player's own ring, large in the middle under the top bar, its hint under it
         int line_y = (int)(sh * 0.16f);
-        if (ring_timer::enabled() && creature_rescue::down()) {
+        const bool downed_hud = g_spectate_fix && creature_rescue::down(); // BUG-9156: the owner's layout at the bottom
+        creature_rescue::set_give_up_button(downed_hud);
+        if (downed_hud) draw_downed_hud(sw, sh);
+        else if (ring_timer::enabled() && creature_rescue::down()) {
             const float r = ring_timer::radius_for(sh) * 1.4f;
             ring_timer::draw(H, sw / 2.f, sh * 0.16f + r, r, creature_rescue::own_left(), creature_rescue::own_revive(),
                              H->time_seconds());
             line_y = (int)(sh * 0.16f + 2.f * r + 10.f);
         }
-        if (!line.empty()) {
+        if (!line.empty() && !downed_hud) {
             const bool own = creature_rescue::down();
             const int x = sw / 2 - text_width(line) / 2, y = line_y;
             H->overlay_text(x + 1, y + 1, 0xFF000000, line.c_str());
             H->overlay_text(x, y, own ? 0xFFFF6060 : 0xFFFFD040, line.c_str());
         }
-        draw_spectate(sw, sh, line_y + 24); // BUG-9156
     }
     if (labels) {
         draw_marks();

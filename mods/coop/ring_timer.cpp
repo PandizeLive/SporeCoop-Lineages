@@ -2,6 +2,7 @@
 
 #include <d3d9.h>
 #include <cmath>
+#include <vector>
 #include <algorithm>
 #include "fixes.h"
 
@@ -68,6 +69,51 @@ void vignette(const SkHost* host, int sw, int sh, float strength)
     quad(0, h, edge, band, h - band, clear, w - band, h - band, clear, w, h, edge); // bottom
     quad(0, 0, edge, band, band, clear, band, h - band, clear, 0, h, edge);         // left
     quad(w, 0, edge, w, h, edge, w - band, h - band, clear, w - band, band, clear); // right
+    saved->Apply();
+    saved->Release();
+}
+
+// BUG-9156: a rounded panel from (x0, y0) to (x1, y1): `fill`, with a `border` edge of 2 px (border 0: none)
+void panel(const SkHost* host, float x0, float y0, float x1, float y1, float radius, uint32_t fill, uint32_t border)
+{
+    auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
+    if (!device || !(x1 > x0) || !(y1 > y0)) return;
+    IDirect3DStateBlock9* saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved))) return;
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    auto shape = [&](float a0, float b0, float a1, float b1, float r, DWORD c) {
+        r = std::min(r, std::min(a1 - a0, b1 - b0) / 2.f);
+        std::vector<Vertex> v;
+        const float cx = (a0 + a1) / 2.f, cy = (b0 + b1) / 2.f;
+        v.push_back({cx, cy, 0, 1, c});
+        const float corners[4][2] = {{a1 - r, b0 + r}, {a1 - r, b1 - r}, {a0 + r, b1 - r}, {a0 + r, b0 + r}};
+        const float start[4] = {-1.5708f, 0.f, 1.5708f, 3.14159f};
+        for (int k = 0; k < 4; ++k)
+            for (int i = 0; i <= 6; ++i) {
+                const float t = start[k] + 1.5708f * i / 6.f;
+                v.push_back({corners[k][0] + r * std::cos(t), corners[k][1] + r * std::sin(t), 0, 1, c});
+            }
+        v.push_back(v[1]);
+        device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, (UINT)v.size() - 2, v.data(), sizeof(Vertex));
+    };
+    if (border) shape(x0, y0, x1, y1, radius, (DWORD)border);
+    shape(border ? x0 + 2 : x0, border ? y0 + 2 : y0, border ? x1 - 2 : x1, border ? y1 - 2 : y1,
+          border ? std::max(1.f, radius - 2) : radius, (DWORD)fill);
     saved->Apply();
     saved->Release();
 }

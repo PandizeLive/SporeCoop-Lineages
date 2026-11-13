@@ -177,6 +177,10 @@ void clear_enemy_health()
     g_enemies.clear();
 }
 
+static bool g_species_guard = true; // BUG-9157
+static uint32_t g_species_guarded;
+COOP_FIX("creature.max_hp_species", "BUG-9157", g_species_guard,
+         "creature: a creature without a species keeps its max health instead of faulting in the game's base");
 static float SK_THISCALL h_GetMaxHp(void* combatant)
 {
     if (g_partner_hp && !g_puppets.empty()) {
@@ -186,6 +190,14 @@ static float SK_THISCALL h_GetMaxHp(void* combatant)
             return it->second.max;
     }
     void* creature = (uint8_t*)combatant - game::kCombatOff;
+    // BUG-9157: the native base (0xC04170) reads the species profile (+0xB20, its +0x56C) without a check when the
+    // creature has neither a herd health nor a tuning: a creature without a species (a guest's herd update right after
+    // its death caption's OK, MSI 2026-11-12, twice) faulted there. Such a creature keeps the max it has.
+    if (g_species_guard && skg::readable((uint8_t*)creature + 0xB24, 4) && !skg::field<void*>(creature, 0xB20)) {
+        ++g_species_guarded;
+        const float kept = skg::field<float>(creature, game::kMaxHpOff);
+        return kept > 0 && std::isfinite(kept) ? kept : 1.f;
+    }
     const float base = o_GetMaxHp(combatant);
     if (!g_save_depth && enemy_scaled(creature)) return base * g_enemies.at(creature).factor;
     const float mirror = npc::reported_enemy_max(creature);

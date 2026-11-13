@@ -88,6 +88,7 @@ static void* g_persp_host;
 static void* g_own_village; // guest: its own village (members it owns outside the host's), refreshed by guest_tick (BUG-9152)
 static bool g_own_player = true; // tribe.own_player_village (BUG-9153, the switch below)
 static bool g_food_share = true; // tribe.food_share (BUG-9154, the switch with party_gift)
+static bool g_party_wipe = true; // tribe.party_wipe (BUG-9155, the switch with party_wipe)
 static void* native_player_tribe()
 {
     void* nm = game::noun_manager();
@@ -5693,7 +5694,10 @@ static bool protect_founder(void* victim, float damage, uint32_t attacker)
     const int seat = seat_of_village(tribe, player_tribe()); // the downed founder's seat (BUG-9135)
     if (seat < 0 || !rescue_players_here(seat) || tribe != founder_village(seat) || !intact_village(tribe)) return false;
     for (void* c : members(tribe)) if (c != victim && living(c)) return false;
-    if (!rescue_helper_alive(seat)) return false;
+    // BUG-9147: with no partner villager alive the last one died the game's way (the host's: the native game over for
+    // everyone). With the party wipe (BUG-9155) it goes down anyway: a partner may respawn and come, else the window ends
+    // in the party wipe and it gets up at its village.
+    if (!rescue_helper_alive(seat) && !g_party_wipe) return false;
     auto& rescue = g_founder_rescues[seat];
     rescue = {tracked->second.id, F<uint32_t>(tribe, 0x30), now + down_time(), -1, 0, game::position(victim)};
     rescue.attacker_faction = attacker;
@@ -5741,7 +5745,6 @@ static bool protect_founder_hut(void* hut, float damage, uint32_t attacker)
 // founder village is set to kRivalRelation); with no win yet every present founder village loses 10% of its food. The
 // villager gets up at its village; the world is saved and reloaded (checkpoint_reload) so the totem and the bar are the
 // game's own again on every game. Unlocks and the tools stay. `coop.fix tribe.party_wipe off`: the capture as before.
-static bool g_party_wipe = true;
 COOP_FIX("tribe.party_wipe", "BUG-9155", g_party_wipe,
          "tribe: a founder village wiped out costs the whole party its newest win (or 10% food) instead of a capture");
 static uint32_t g_party_wipes;

@@ -30,5 +30,13 @@ creature.downed_pose (on): the own downed creature plays the game's death animat
 ## Verification
 no-fail-run (feature, manual two-PC run). 2026-11-12, TITAN host + MSI guest on Samuth.spo (Creature): `coop.giveup down` on the MSI 99-107 m from the host: the MSI's creature played F14FAA46 and lay on its nest (coop.track; screenshot with spectating off); spectating: the host's puppet at the screen centre (640, 562 of 1280 x 960), SPECTATING Host with the arrows and the red edge, 0 faults. Within 4 m the host revived it at once (as before). Not seen: the puppet's pose on the host's screen (off screen there), Tab and the arrows with two or more partners, Cell / Tribe / Space (not built there). Fixed the same day: the ground under a far partner drew faintly while the camera was moved after its update; the camera update now runs with the partner's puppet as mpAvatar (game::run_as_avatar): solid ground 95 m away, two games on the MSI (TITAN could not start games that evening).
 
+## The downed screen (owner's mock-up, 2026-11-12)
+The owner sent a mock-up: over the ability bar a dark box "SPECTATING" with the partner's name between two yellow arrows,
+a red GIVE UP button under it, the revive ring under that, the red screen edge; nothing at the top. Built
+(coop.cpp draw_downed_hud, ring_timer::panel): the GIVE UP button gives up as holding G does (G still works), the
+arrows and Tab switch partners, the box is left out when there is nobody to watch (only GIVE UP and the ring), and the
+"Hold G to give up" line in the status block is left out while the button shows. Live on the MSI: the box, the button
+and the ring as in the mock-up, 0 faults.
+
 ## History
 - 2026-11-12: opened.

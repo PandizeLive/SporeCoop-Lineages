@@ -19,6 +19,7 @@ void message(uint8_t from, net::Reader& r);
 std::string status();
 bool ui_shown(); // BUG-9127: the on-screen knockout (coop.fix creature.rescue_ui)
 void give_up_now(); // BUG-9118: the downed player gives up (the timer's result at once)
+void set_give_up_button(bool shown); // BUG-9156: the downed screen shows GIVE UP (the "Hold G" line is left out)
 // BUG-9141: the revive ring's numbers (ring_timer.h)
 double window_seconds(); // a knockout's time (30 s; 10 with creature.down_30 off)
 float reach_m();         // a partner this close revives
