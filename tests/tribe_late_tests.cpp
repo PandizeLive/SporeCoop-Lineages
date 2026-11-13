@@ -141,6 +141,39 @@ int main()
         check(no_em_dash(line), "log line without em dash");
     }
 
+    // BUG-9159 (decision 2M): making a creature in the editor holds the stand-in; their saved creature founds the village
+    {
+        PartnerState e;
+        e.settled = true;
+        e.editing = true;
+        check(founding_wait(e, true, true, true) == Wait::Editing, "2M: founding_wait(e, true, true, true) == Wait::Editing");
+        check(!founds_now(Wait::Editing) && told(Wait::Editing), "2M: !founds_now(Wait::Editing) && told(Wait::Editing)");
+        check(!wait_text(Wait::Editing, "Ann").empty() && !host_status(Wait::Editing, "Ann").empty(), "2M: !wait_text(Wait::Editing, 'Ann').empty() && !host_status(Wai");
+        e.has_creature = true; // saved: their own creature, settling then founded as usual
+        check(founding_wait(e, true, true, true) == Wait::Ready, "2M: founding_wait(e, true, true, true) == Wait::Ready");
+        e.has_creature = false;
+        e.editing = false; // left without saving: the stand-in
+        check(founding_wait(e, true, true, true) == Wait::StandIn, "2M: founding_wait(e, true, true, true) == Wait::StandIn");
+        e.pending = true; e.editing = true; // a village already made finishes first
+        check(founding_wait(e, true, true, true) == Wait::Ready, "2M: founding_wait(e, true, true, true) == Wait::Ready");
+        // the host asks instead of a stand-in, waits kEditorAnswer for the answer, then the stand-in
+        check(editor_ask(Wait::StandIn, true, 0, 100) == Ask::AskNow, "2M: ask first");
+        check(editor_ask(Wait::StandIn, true, 100, 110) == Ask::Waiting, "2M: wait for the answer");
+        check(editor_ask(Wait::StandIn, true, 100, 100 + kEditorAnswer + 1) == Ask::None, "2M: no answer: the stand-in");
+        check(editor_ask(Wait::Ready, true, 0, 100) == Ask::None, "2M: a partner with a creature is founded");
+        check(editor_ask(Wait::StandIn, false, 0, 100) == Ask::None, "2M: off: the stand-in at once");
+        // the guest opens it when asked, once per world, not with a creature of their own
+        check(editor_first(true, true, false, false, 0), "2M: asked: open");
+        check(!editor_first(true, false, false, false, 0), "2M: not asked: never");
+        check(!editor_first(true, true, true, false, 0), "2M: plays their own creature");
+        check(!editor_first(true, true, false, true, 0), "2M: already opened here");
+        check(!editor_first(true, true, false, false, kEditorTries), "2M: tried enough");
+        check(!editor_first(false, true, false, false, 0), "2M: off");
+        check(loading_progress(0) == 0.f && loading_progress(-1) == 0.f, "2M: loading_progress(0) == 0.f && loading_progress(-1) == 0.f");
+        check(loading_progress(kFoundingSeconds * 10) <= 0.95f, "2M: loading_progress(kFoundingSeconds * 10) <= 0.95f");
+        check(loading_step(0.1f) == 0 && loading_step(0.3f) == 1 && loading_step(0.6f) == 2 && loading_step(0.9f) == 3, "2M: loading_step(0.1f) == 0 && loading_step(0.3f) == 1 && loadin");
+    }
+
     printf("tribe late: %d failures\n", g_failures);
     return g_failures ? 1 : 0;
 }

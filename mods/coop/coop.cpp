@@ -41,6 +41,7 @@
 #include "sui.h"
 #include "teamplay.h"
 #include "tribe.h"
+#include "tribe_late.h"
 #include "drama.h"
 #include "identity.h"
 #include "party.h"
@@ -1533,14 +1534,16 @@ COOP_FIX("creature.rescue_party", "BUG-9146", g_rescue_party_fix,
 // Tribe world the newest own creation it saved is their creature (creations::begin_new_creature) and the host founds
 // their village with it. Not yet run in a game (the editor without a creation key from Tribe, the host's checkpoints
 // while a guest edits): off by default, docs/re/tribe.md#tribe-late-joiners.
-static bool g_late_create_editor = false;
+// BUG-9159 (owner decision 2M, 2026-11-12): on; tribe.late_editor_first opens it by itself on joining.
+static bool g_late_create_editor = true;
 COOP_FIX("tribe.late_create_editor", "BUG-9135", g_late_create_editor,
-         "tribe: a partner without a creature of their own can make a new one in the creature editor from the Co-op window (unverified, off by default)");
+         "tribe: a partner without a creature of their own can make a new one in the creature editor");
 unsigned game_busy();
 bool mode_switch_pending();
 static bool late_create_offered()
 {
-    return g_late_create_editor && g_sess.role() == net::Role::Client && g_mode == modes::kTribe && tribe::late_prompt() != 0;
+    return g_late_create_editor && g_sess.role() == net::Role::Client && g_mode == modes::kTribe &&
+           (tribe::late_prompt() != 0 || tribe::late_needs_creature()); // BUG-9159: before the window's prompt too
 }
 // outside the frame (editors create D3D resources)
 static std::string open_new_creature_editor()
@@ -1567,6 +1570,7 @@ static std::string open_new_creature_editor()
         return "The creature editor could not be opened.";
     }
     LOG("late joiner: the creature editor for a new creature was requested (tribe.late_create_editor)");
+    tribe::late_editor_opened(); // BUG-9159: the host holds the stand-in while they make it
     notice(g_name + " is making a creature of their own in the editor", -1);
     return "Make your creature, save it, then leave the editor: it becomes your creature for this game.";
 }
@@ -4048,6 +4052,29 @@ void on_overlay(void*, int, void*)
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
+    // BUG-9159 (owner decision 1P A): a late joiner whose own creature is chosen (after the editor) waits for their
+    // village: the frame blurred, a ring and short steps until it is there (90 s at most)
+    {
+        static double s_since = -1;
+        const bool waiting = g_mode == modes::kTribe && sw > 0 && tribe::late_prompt() == 2 /* VillageComing */ &&
+                             !coop_ui::is_open() && !g_menu_up;
+        const double now = H->time_seconds();
+        if (!waiting) s_since = -1;
+        else if (s_since < 0) s_since = now;
+        if (waiting && now - s_since < 90) {
+            const float p = tribe_late::loading_progress(now - s_since);
+            const float cx = sw / 2.f, cy = sh * 0.45f, r = std::max(22.f, sh * 0.05f);
+            ring_timer::loading(H, sw, sh, cx, cy, r, p, now);
+            const std::string host = g_sess.name_of(0);
+            const std::string steps[4] = {"Catching up to " + host + "...", "Matching tools...", "Buildings are rising...",
+                                          "Final touches..."};
+            const char* title = "Founding your village";
+            bold((int)(cx - text_width(title) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title);
+            const std::string& step = steps[tribe_late::loading_step(p)];
+            H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
+            return; // nothing else over the loading screen
+        }
+    }
     // world labels stay off while a menu is up (and the co-op window: also right when it opens)
     bool labels = !g_menu_up && !coop_ui::is_open();
     if (!labels)
@@ -4807,7 +4834,8 @@ void setup_callbacks()
             return;
         }
         if (type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD || type == net::MSG_TRIBE_BUILDINGS ||
-            type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE || type == net::MSG_TRIBE_OUTFIT || type == net::MSG_TRIBE_COMBAT) {
+            type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE || type == net::MSG_TRIBE_OUTFIT || type == net::MSG_TRIBE_COMBAT ||
+            type == net::MSG_TRIBE_LATE) {
             tribe::on_message(type, from, r);
             return;
         }
@@ -7178,6 +7206,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     trc.here = [](uint8_t player) { // BUG-9135 phase 4
         auto it = g_remotes.find(player);
         return it != g_remotes.end() && !it->second.buf.empty() && same_place(it->second.buf.latest());
+    };
+    trc.open_creature_editor = [] { // BUG-9159: the editor first for a late joiner without a creature
+        H->run_outside_frame([](void*) {
+            if (!late_create_offered()) return;
+            const std::string said = open_new_creature_editor();
+            feed(said);
+        }, nullptr);
     };
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486

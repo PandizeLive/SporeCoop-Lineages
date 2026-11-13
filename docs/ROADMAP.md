@@ -122,7 +122,7 @@ The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-n
 |---|---|---|
 | Cell | together, revive ring, respawns | spectating while downed (not built there) |
 | Creature | own nest and pack per player, best-friend partners, nests migrate together, revive ring (60 s), debt bar, downed pose and spectating (BUG-9156) | personal evolving (the native cocoon, own editor through the mating call, personal DNA, migration together after a 10 s warning: 2D-2G), BUG-9151 |
-| Tribe | own village per player played with the game's own controls, hut menu and planner (BUG-9152, BUG-9153), camera starts at home, food share and gifts (BUG-9154), party wipe (BUG-9155), late join with a stand-in village (BUG-9150), revive ring | each right-click action confirmed live, BUG-9147 confirmed live (fix built 2026-11-12), the editor first for a joiner without a creature (2M) |
+| Tribe | own village per player played with the game's own controls, hut menu and planner (BUG-9152, BUG-9153), camera starts at home, food share and gifts (BUG-9154), party wipe (BUG-9155), late join with a stand-in village (BUG-9150), revive ring | each right-click action confirmed live, BUG-9147 (an empty host village still gets the native game over: seen 2026-11-12) |
 | Tribe -> Civ | four founders graduate, one capital each (phase 5) | - |
 | Civ | own capital and nation per player, late capitals caught up, the party wipe (BUG-9155) | the late joiner's loading screen (1P), the editor first for a joiner without a creature |
 | Space | the party shares one empire (today's co-op) | phase 6: own empires (1X), the shared protected homeworld (2N, checked first), launching together (2J), progress per player (2A), enemies run by whoever is there (1Z), difficulty per party (2B), the Galactic Core per party (2C) |
@@ -183,7 +183,7 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 2J | Space: who launches | A |
 | 2K | Space: what Space players may do to a planet where others still play Civ | A (owner asked what happens when 100-1000 players fill the galaxy: MMO research, in the Space notes) |
 | 2L | Tribe: when the Village page goes | B, now, prioritised (owner: "prioritize this"); page removed 2026-11-12 (BUG-9153); the guest's own village is its player village: Add Baby and the Tribal Planner work natively (live, two PCs); the camera starts at the own village; no Rebuild needed with the party wipe (BUG-9155) |
-| 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save |
+| 2M | Tribe: the creature editor for a joiner without a creature | B, the editor first, the village after they save; built and live 2026-11-12 (BUG-9159: the host asks, the editor opens, the village follows the save behind a loading screen) |
 | 2N | Space: the home of a player or party that leaves a planet others still share | owner's idea: the planet stays protected with one home city that every player's own game shows as their own (their personal empire's home); checked first, fallback a free first colony as the home |
 | 2O | Parties: several parties in one session now, or the session stays one party for now | A, later: the session stays one party; no friend list yet |
 | 2P | Tribe: a share of the food each player collects for the partners | owner: 25% of each delivery split among the partners in the game, each at least 1 food (even when that is more than was gathered: a party bonus); built 2026-11-12 with food gifts to party villages (BUG-9154, live on two PCs) |

@@ -26,7 +26,13 @@ struct Ctx {
     std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
     // host: the player's last state says they play in this world now (not loading it, not in the menu); BUG-9135
     std::function<bool(uint8_t player)> here;
+    // guest, BUG-9159: open the creature editor for a new creature (outside the frame; late_editor_opened on success)
+    std::function<void()> open_creature_editor;
 };
+// BUG-9159 (owner decision 2M): guest: in Tribe without a village and without a creature of their own
+bool late_needs_creature();
+void late_editor_opened();          // guest: the new-creature editor opened (the host holds the stand-in)
+void late_editor_done(bool saved);  // guest: back from it: a creature was saved (its key follows) or none
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing
 // own members selected now (the "give" button of the co-op window)

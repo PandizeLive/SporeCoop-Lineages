@@ -3754,3 +3754,24 @@ the camera stood over the guest's own village, level with the ground. `coop.trib
   three sections 0x051B54C0 (233-422), 0x051B54C1 (423-804), 0x051B54C2 (808-1179) for the 5 wins (1, 2 and 2 steps);
   the fill window 0x0652A628 and the marker 0x051B5168 are missing there; the step icons 0x05594A01..04 sit in it.
   `coop.tribe totems`: each founder village's pieces and model slots.
+
+## The editor first for a joiner without a creature (2026-11-12, feat/lineages-47)
+<a id="tribe-editor-first"></a>
+
+BUG-9159, owner decision 2M. ✔ (live, three games on the MSI) The host asks, the guest obeys:
+* Host: founding_wait of a partner who would get a stand-in (tribe_late Wait::StandIn: no creature of their own, one of
+  the host's creations, a founder's species) sends MSG_TRIBE_LATE {u8 1, u32 world} once (reset when they leave the
+  session) and counts them as Wait::Editing: 20 s for the answer (tribe_late::editor_ask), then the stand-in as before.
+* Guest: the message opens the creature editor for a new creature (CreatureEditorExtraLarge 0x465C50BA, no creation key;
+  coop.cpp open_new_creature_editor) and sends CMD_LATE_EDITING 1 (host: Editing for 15 minutes at most); back from it,
+  creations.cpp sends 2 when a new own creation was adopted (host: a minute for the creature key) or 0 when none was
+  saved in 30 s (host: the stand-in now). The creature key comes as for any choice; the founding waits the BUG-9137
+  settle (10 s after a key change) and founds with their own species: about 15 s after the save.
+* ✔ A guest cannot decide this by itself: its member state (g_gm) came 33 s after a join on the MSI (the first
+  messages are skipped while the world settles), and right after a rejoin of the same planet the world-entry time is
+  the old one.
+* The editor needs a mouth: "done" refused a body alone (the own editor's waiver is the part-list error, not this).
+  Tests: the palette drag needs the mouse moved in steps (`button x y down`, several `move`, `button up`); a fresh
+  test profile shows Spore's account window first (close it: X, then OK on "Quit registration?").
+* Host `coop.tribe late`: each unseated partner's wait (0 Ready .. 6 StandIn, 7 Editing), creature, settle times,
+  editing and when asked; `skipped=` why the last automatic founding did nothing.

@@ -28,6 +28,8 @@ enum class Wait : uint8_t {
     FounderSpecies, // plays the species of a founder's village (the host's species, an outfit of it, another partner's)
     StandIn,        // BUG-9150 (owner decision 14, "1B"): one of the three above, founded now with a stand-in of the
                     // host's creature that takes their own creature in place later
+    Editing,        // BUG-9159 (owner decision 2M): no creature of their own yet and they make one in the creature
+                    // editor now: their village comes when they save it (the stand-in only if they leave without)
 };
 
 struct PartnerState {
@@ -36,6 +38,7 @@ struct PartnerState {
     bool settled = false;         // founder_creature_settled (with no creature: the world is 15 s old)
     bool host_creation = false;   // creations::plays_host_creation
     bool founder_species = false; // the creature is a founder seat's species or one of its outfits
+    bool editing = false;         // BUG-9159: the partner said they make their creature in the editor (not expired)
 };
 
 // `settle_fix`: tribe.founder_settle (BUG-9137; off: neither the wait nor the host-creation check).
@@ -46,6 +49,7 @@ struct PartnerState {
 inline Wait founding_wait(const PartnerState& p, bool settle_fix, bool skip_fix, bool stand_in = false)
 {
     if (p.pending) return Wait::Ready; // the village is made: finish saving its seat
+    if (!p.has_creature && p.editing) return Wait::Editing; // decision 2M: the village waits for the creature they make
     if (!p.has_creature) return p.settled ? (stand_in ? Wait::StandIn : Wait::NoCreature) : Wait::NoCreatureYet;
     if (settle_fix) {
         if (!p.settled) return Wait::Settling;
@@ -59,7 +63,10 @@ inline Wait founding_wait(const PartnerState& p, bool settle_fix, bool skip_fix,
 inline bool founds_now(Wait w) { return w == Wait::Ready || w == Wait::StandIn; }
 
 // a wait worth telling the host and the partner (the others are seconds long)
-inline bool told(Wait w) { return w == Wait::NoCreature || w == Wait::HostCreation || w == Wait::FounderSpecies; }
+inline bool told(Wait w)
+{
+    return w == Wait::NoCreature || w == Wait::HostCreation || w == Wait::FounderSpecies || w == Wait::Editing;
+}
 
 // the partner found_partners founds now: the first ready one in join order, -1 none. `why`: the first wait worth
 // telling (index into `waits`, -1 none), reported while nobody is founded.
@@ -84,6 +91,8 @@ inline std::string wait_text(Wait w, const std::string& name)
     case Wait::FounderSpecies:
         return name + " plays one of the host's creatures, so they have no village of their own. They can choose their own "
                       "creature in the Co-op window (F9).";
+    case Wait::Editing:
+        return name + " is making a creature of their own. Their village is founded when they save it.";
     default:
         return {};
     }
@@ -93,6 +102,7 @@ inline std::string wait_text(Wait w, const std::string& name)
 inline std::string host_status(Wait w, const std::string& name)
 {
     if (!told(w)) return {};
+    if (w == Wait::Editing) return name + " is making their creature: their village follows.";
     return name + (w == Wait::NoCreature ? " has no village yet: they have no creature of their own."
                                          : " has no village yet: they play one of your creatures.");
 }
@@ -107,6 +117,37 @@ enum class Prompt : uint8_t {
     StandInChoose,  // BUG-9150: their village wears a stand-in of the host's creature: choose or make their own
     StandInComing,  // BUG-9150: their own creature was chosen: the village takes it shortly
 };
+
+// BUG-9159 (owner decision 2M): the host asks a partner who would get a stand-in (no creature of their own) to make their
+// creature in the editor first (MSG_TRIBE_LATE); the stand-in waits kEditorAnswer seconds for their answer
+// (CMD_LATE_EDITING) and then comes as before. The host decides: a guest's own guess from its member state came too late
+// (the state of a joiner arrived 33 s after the join) or too early (a guest with a village went in, 2026-11-12).
+constexpr double kEditorAnswer = 20;
+enum class Ask : uint8_t { None, AskNow, Waiting };
+inline Ask editor_ask(Wait w, bool on, double asked_at, double now)
+{
+    if (!on || w != Wait::StandIn) return Ask::None;
+    if (asked_at <= 0) return Ask::AskNow;
+    return now - asked_at < kEditorAnswer ? Ask::Waiting : Ask::None;
+}
+// the guest opens it when asked for this world, not already opened in it, without a creature of their own (chosen
+// meanwhile: no), at most kEditorTries times (a busy game refuses it; then the stand-in)
+constexpr int kEditorTries = 10;
+inline bool editor_first(bool on, bool asked_here, bool plays_own, bool opened_here, int tries)
+{
+    return on && asked_here && !plays_own && !opened_here && tries < kEditorTries;
+}
+// the loading screen after the editor (decision 1P A): its progress while the village is founded (0..0.95 over about
+// kFoundingSeconds; the village's arrival ends it) and its step (0..3: "Catching up to <host>...", "Matching tools...",
+// "Buildings are rising...", "Final touches...")
+constexpr double kFoundingSeconds = 20;
+inline float loading_progress(double seconds)
+{
+    if (!(seconds > 0)) return 0.f;
+    const double p = seconds / kFoundingSeconds;
+    return (float)(p < 0.95 ? p : 0.95);
+}
+inline int loading_step(float progress) { return progress < 0.25f ? 0 : progress < 0.5f ? 1 : progress < 0.75f ? 2 : 3; }
 
 // a guest in the host's Tribe world without a village of their own (or with one that still wears its stand-in), once
 // the world settled

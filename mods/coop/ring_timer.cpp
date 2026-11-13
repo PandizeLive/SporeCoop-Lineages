@@ -31,6 +31,65 @@ void paint(IDirect3DDevice9* device, D3DPRIMITIVETYPE type, const std::vector<Pt
 
 bool enabled() { return g_on; }
 
+void loading(const SkHost* host, int sw, int sh, float x, float y, float radius, float progress, double now)
+{
+    auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
+    if (!device || sw <= 0 || sh <= 0 || !std::isfinite(x) || !std::isfinite(y) || !(radius > 2)) return;
+    // the blur: the frame down to a 1/4 and a 1/16 copy and back up, each step filtered (a render target made per frame,
+    // as progress_debt's: nothing of ours in D3DPOOL_DEFAULT when the device resets); a failed step leaves it sharp
+    IDirect3DSurface9* back = nullptr;
+    D3DSURFACE_DESC bd{};
+    if (SUCCEEDED(device->GetRenderTarget(0, &back)) && SUCCEEDED(back->GetDesc(&bd))) {
+        IDirect3DSurface9 *quarter = nullptr, *tiny = nullptr;
+        const UINT qw = std::max<UINT>(1, bd.Width / 4), qh = std::max<UINT>(1, bd.Height / 4);
+        const UINT tw = std::max<UINT>(1, bd.Width / 16), th = std::max<UINT>(1, bd.Height / 16);
+        if (SUCCEEDED(device->CreateRenderTarget(qw, qh, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &quarter, nullptr)) &&
+            SUCCEEDED(device->CreateRenderTarget(tw, th, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &tiny, nullptr)) &&
+            SUCCEEDED(device->StretchRect(back, nullptr, quarter, nullptr, D3DTEXF_LINEAR)) &&
+            SUCCEEDED(device->StretchRect(quarter, nullptr, tiny, nullptr, D3DTEXF_LINEAR)) &&
+            SUCCEEDED(device->StretchRect(tiny, nullptr, quarter, nullptr, D3DTEXF_LINEAR)))
+            device->StretchRect(quarter, nullptr, back, nullptr, D3DTEXF_LINEAR);
+        if (tiny) tiny->Release();
+        if (quarter) quarter->Release();
+    }
+    if (back) back->Release();
+    IDirect3DStateBlock9* saved = nullptr;
+    if (FAILED(device->CreateStateBlock(D3DSBT_ALL, &saved))) return;
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetTexture(0, nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    const float w = (float)sw, h = (float)sh;
+    const DWORD dim = 0x80081018; // the Co-op window's dark blue, half see-through
+    Vertex q[4] = {{0, 0, 0, 1, dim}, {w, 0, 0, 1, dim}, {w, h, 0, 1, dim}, {0, h, 0, 1, dim}};
+    device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, q, sizeof(Vertex));
+    const float r_out = radius, r_in = radius * 0.78f, p = std::clamp(progress, 0.f, 1.f);
+    paint(device, D3DPT_TRIANGLELIST, pie(x, y, r_out + 3.f, 1.f), kDisc);
+    paint(device, D3DPT_TRIANGLESTRIP, arc_strip(x, y, r_in, r_out, 0.f, 1.f), 0xFF20303Cu);
+    if (p > 0.001f) paint(device, D3DPT_TRIANGLESTRIP, arc_strip(x, y, r_in, r_out, 0.f, p), 0xFFF0C040u); // the Co-op gold
+    const float spin = (float)std::fmod(now * 0.6, 1.0); // one turn in 1.7 s
+    paint(device, D3DPT_TRIANGLESTRIP, arc_strip(x, y, r_out + 4.f, r_out + 7.f, spin, 0.12f), 0xC0FFFFFFu);
+    saved->Apply();
+    saved->Release();
+}
+
 // BUG-9156: a red edge round the screen (a downed player spectating): four bands from the edge, opaque to clear
 void vignette(const SkHost* host, int sw, int sh, float strength)
 {

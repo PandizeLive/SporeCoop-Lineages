@@ -9,6 +9,9 @@
   Leave-style button as wide as the panel).
 - Creature: a crash when a player who joined dead confirmed the death message
   is fixed (BUG-9157).
+- Tribe: a player who joins without a creature of their own goes straight
+  into the creature editor; their village is founded with their creature when
+  they save it, behind a "Founding your village" loading screen (BUG-9159).
 - Tribe: a step lost to a party wipe shows red on the progress bar until the
   party wins it back (BUG-9155); a wipe right after a win now refreshes every
   player's world as soon as the game has saved.

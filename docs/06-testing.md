@@ -5289,3 +5289,15 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   profile), after the PC woke from sleep (Kernel-Power 17:55), a Windows Update install (18:11), a Steam restart (19:08,
   logged on) and a network change to a phone hotspot; the Intel UHD adapter showed Error in Device Manager. Not a mod
   problem (the mod's start is complete before it); a restart of the PC is the likely fix (not done: the owner's PC).
+
+## A third test game on the MSI; a new joiner (2026-11-12, feat/lineages-47)
+<a id="testing-msi-third-game"></a>
+
+* `tools/qa_win/msi.ps1 start -Instance 3 -Profile <name>` and a tunnel 47852 -> 47802 (`msi.ps1 tunnel -Instance 3`);
+  `qa.py msi3 <command>`. Three games (1280x960, 800x600, 1024x768) ran together on the MSI.
+* A joiner without creations: a new profile name (an empty `SporeKit-<name>`). Its first editor shows Spore's account
+  window: `click` its X, then OK on "Quit registration?". To save a creature: a mouth by a stepwise drag from the
+  palette (`move`, `button down`, several `move`, `button up`), the name field (`click`, `text <name>`), then done.
+* Tribe copies of the Jiff save made after BUG-9147 hold an empty host village: after some minutes the native game over
+  comes (`coop.status` busy: cinematic,paused) and stops every founding; its check mark goes on.
+* Founder seats are capped at 4: a copy with 4 seats (two of offline players) founds no village for a fifth person.

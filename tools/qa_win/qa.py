@@ -1,7 +1,7 @@
 """Windows QA console for the local QA copy and the MSI test PC (docs/06-testing.md#testing-two-pc-msi).
 
     py tools/qa_win/qa.py <instance> <console command...>   a QA game on this PC (instance N: TCP 47800 + N - 1)
-    py tools/qa_win/qa.py msi <console command...>          the MSI's game through the SSH tunnel (local 47850)
+    py tools/qa_win/qa.py msi <console command...>          the MSI's game through the SSH tunnel (local 47850; msi2, msi3: 47851, 47852)
 
 Safety (both learnt the hard way, 2026-11-11):
 * a local instance is refused unless the process listening on its port runs from the QA copy (out/<copy>/native):
@@ -42,8 +42,9 @@ def owner_path(port):
 
 def console(target):
     """a Console for instance number `target` (int / digit string) or 'msi'; raises SystemExit when unsafe"""
-    if str(target).lower() in ('msi', 'msi2'):  # msi2: the MSI's second test game (msi.ps1 -Instance 2)
-        port = MSI_PORT + (1 if str(target).lower() == 'msi2' else 0)
+    t = str(target).lower()
+    if t in ('msi', 'msi2', 'msi3'):  # msiN: the MSI's Nth test game (msi.ps1 -Instance N), its tunnel 47849 + N
+        port = MSI_PORT + (int(t[3:]) - 1 if len(t) > 3 else 0)
         path = owner_path(port)
         if not path or not path.lower().endswith('ssh.exe'):
             sys.exit('[refused] port %d is not the MSI tunnel (%s): start it with tools/qa_win/msi.ps1 tunnel' % (port, path))

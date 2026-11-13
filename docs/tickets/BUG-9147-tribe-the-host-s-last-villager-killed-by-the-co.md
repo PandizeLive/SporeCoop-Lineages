@@ -30,5 +30,13 @@ Not fixed.
 ## Verification
 no-fail-run: not analysed yet.
 
+## Seen again 2026-11-12 (MSI, copies of the Jiff save)
+The copies made after this report keep the host's village with no living member (`coop.tribe villages`: the player
+village, 0 members). Loaded and played for a few minutes, the host got the native game over ("Alas! Your population has
+fallen below the minimum needed to survive...", cinematic FBCD6489, the game paused, every founding stopped). So the
+native population check still ends the game for everyone when the host's village is empty by any way other than a
+knockout (here: already empty in the save). To do: catch the game over in Tribe while co-op founders exist (the party
+wipe and a member at the host's village instead) or keep a member alive; the native check is not found yet.
+
 ## History
 - 2026-11-12: opened.

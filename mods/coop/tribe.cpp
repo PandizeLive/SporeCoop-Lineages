@@ -1313,7 +1313,17 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_FORAGE = 3, CMD_REPAIR = 4, CMD_REBUILD = 5, CMD_BABY = 6, CMD_BUILD = 7, CMD_INSTRUMENT = 8, CMD_GIVE_UP = 9 };
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_FORAGE = 3, CMD_REPAIR = 4, CMD_REBUILD = 5, CMD_BABY = 6, CMD_BUILD = 7, CMD_INSTRUMENT = 8, CMD_GIVE_UP = 9,
+                 CMD_LATE_EDITING = 10 }; // BUG-9159: action 1 in the creature editor, 2 saved (its creature follows), 0 left without
+// BUG-9159 (owner decision 2M): host: until when a partner without a creature is making one in the editor (their village
+// waits for it instead of a stand-in); 15 minutes at most, a minute after they saved (their creature's key follows)
+static double g_late_editing_until[256];
+constexpr double kLateEditingMax = 900, kLateEditingSaved = 60;
+// host: when each partner was asked to make their creature in the editor (MSG_TRIBE_LATE; 0: not asked in this world)
+static double g_editor_asked_at[256];
+static bool g_editor_first = true;
+COOP_FIX("tribe.late_editor_first", "BUG-9159",
+         g_editor_first, "tribe: a late joiner without a creature of their own goes into the creature editor first; the village follows their save");
 static bool queue_instrument(uint8_t from, uint16_t id, unsigned tool, uint32_t token);
 static bool request_instrument(unsigned tool);
 static bool release_completed_performers(uint8_t from);
@@ -1343,7 +1353,7 @@ static bool queue_partner_rebuild(uint8_t from, uint16_t member, int action);
 
 static bool send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
-    if (kind != CMD_REPAIR && kind != CMD_GIVE_UP && (ids.empty() || g_guest_orders_held))
+    if (kind != CMD_REPAIR && kind != CMD_GIVE_UP && kind != CMD_LATE_EDITING && (ids.empty() || g_guest_orders_held))
         return false;
     net::Writer w;
     w.u8(kind);
@@ -2992,6 +3002,15 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
     pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
     if (!r.ok())
         return;
+    if (kind == CMD_LATE_EDITING) { // BUG-9159: a partner without a creature makes one in the editor (or is done)
+        const double now = H->time_seconds();
+        if (from < 0xFE)
+            g_late_editing_until[from] = action == 1 ? now + kLateEditingMax : action == 2 ? now + kLateEditingSaved : 0;
+        H->log(M, SK_INFO, "tribe: %s %s (BUG-9159)", C.sess->name_of(from).c_str(),
+               action == 1 ? "makes a creature in the editor: their village waits for it"
+                           : action == 2 ? "saved a creature: their village follows it" : "left the editor without a creature");
+        return;
+    }
     const bool village_orders = g_order_roster.guest().faction != 0;
     // BUG-9135: the sender's founder seat and its village (seat 1, the only partner, before)
     const int sender_seat = village_orders ? seat_of_player(from) : -1;
@@ -5105,7 +5124,20 @@ static tribe_late::Wait founding_wait(uint8_t partner, double now)
     s.settled = founder_creature_settled(partner, now) && (s.has_creature || (C.here && C.here(partner)));
     s.host_creation = s.has_creature && creations::plays_host_creation(partner, creations::kCreature);
     s.founder_species = s.has_creature && founder_species(creature);
-    return tribe_late::founding_wait(s, g_found_settle_fix, g_founding_skip, g_stand_in && g_late_prompt);
+    s.editing = g_late_editing_until[partner] > now; // BUG-9159
+    const auto wait = tribe_late::founding_wait(s, g_found_settle_fix, g_founding_skip, g_stand_in && g_late_prompt);
+    // BUG-9159 (decision 2M): before a stand-in, the partner is asked to make their creature in the editor
+    const auto ask = tribe_late::editor_ask(wait, g_editor_first, g_editor_asked_at[partner], now);
+    if (ask == tribe_late::Ask::AskNow) {
+        g_editor_asked_at[partner] = now;
+        net::Writer w;
+        w.u8(1);
+        w.u32(modes::current_world());
+        C.sess->send_reliable_to(partner, net::MSG_TRIBE_LATE, w);
+        H->log(M, SK_INFO, "tribe: %s has no creature of their own: asked to make one in the editor (BUG-9159)",
+               C.sess->name_of(partner).c_str());
+    }
+    return ask == tribe_late::Ask::None ? wait : tribe_late::Wait::Editing;
 }
 
 // the partner is ready for a village of their own (BUG-9137 guards, BUG-9138); `why`: a reason worth telling, `kind`
@@ -5155,6 +5187,50 @@ static bool guest_village_stand_in()
         if (m.c && m.owner == C.sess->my_id() && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) != home)
             return stand_in_key(game::species_key(m.c).instance);
     return false;
+}
+
+// BUG-9159 (owner decision 2M): a guest who joined without a creature of their own goes into the creature editor at once
+// (opened by coop.cpp outside the frame, which calls late_editor_opened); tried every 3 s up to 10 times per world while
+// the game is busy. Off: the Co-op window's choice and the stand-in only, as before.
+static uint32_t g_editor_first_world, g_editor_first_opened_world;
+static double g_editor_first_asked = -1e9;
+static uint32_t g_editor_asked_world; // guest: the world the host asked this player to make their creature in
+static int g_editor_first_tries;
+static uint32_t g_editor_first_opened;
+bool late_needs_creature()
+{
+    if (!g_late_prompt || !active() || !is_guest() || local_play() || creations::plays_own_creature()) return false;
+    return g_editor_asked_world == modes::current_world() || !guest_has_village();
+}
+static void late_editor_first_tick(double now)
+{
+    if (!g_editor_first || !g_late_prompt || !is_guest() || local_play() || !C.open_creature_editor) return;
+    const uint32_t world = modes::current_world();
+    if (world != g_editor_first_world) { g_editor_first_world = world; g_editor_first_tries = 0; }
+    if (now - g_editor_first_asked < 3) return;
+    const bool asked = world && g_editor_asked_world == world;
+    if (!tribe_late::editor_first(true, asked, creations::plays_own_creature(), g_editor_first_opened_world == world,
+                                  g_editor_first_tries)) {
+        if (asked && g_editor_first_tries >= tribe_late::kEditorTries && g_editor_first_opened_world != world) {
+            g_editor_asked_world = 0; // the editor would not open: the host's stand-in now
+            late_editor_done(false);
+        }
+        return;
+    }
+    g_editor_first_asked = now;
+    ++g_editor_first_tries;
+    C.open_creature_editor();
+}
+void late_editor_opened()
+{
+    if (!is_guest()) return;
+    g_editor_first_opened_world = modes::current_world();
+    ++g_editor_first_opened;
+    send_cmd(CMD_LATE_EDITING, {}, 1, {}, {});
+}
+void late_editor_done(bool saved)
+{
+    if (is_guest()) send_cmd(CMD_LATE_EDITING, {}, saved ? 2 : 0, {}, {});
 }
 
 int late_prompt()
@@ -5243,10 +5319,14 @@ static uint32_t g_catch_ups, g_catch_up_members, g_catch_up_racks; // coop.tribe
 static void catch_up_village(int seat, void* village, void* home);
 
 // outside the frame: one partner without a village gets one (their own nest's site, else the next free one)
+static const char* g_found_skip = ""; // BUG-9159: why the last automatic founding did nothing (coop.tribe late)
 static void found_partners()
 {
     if (!g_auto_founders || g_auto_found_manual_off || !active() || !is_host() || C.sess->players().size() < 2 ||
-        world::load_queued() || world::save_busy() || world::save_pending() || world::cinematic_playing() || world::time_paused()) return;
+        world::load_queued() || world::save_busy() || world::save_pending() || world::cinematic_playing() || world::time_paused()) {
+        g_found_skip = "off, alone, or the game is busy (load, save, cinematic, pause)";
+        return;
+    }
     auto report = [](const std::string& text) {
         if (text == g_auto_found_notice) return;
         g_auto_found_notice = text;
@@ -5255,9 +5335,14 @@ static void found_partners()
     };
     auto planet = world::current_game_key();
     void* home = player_tribe();
-    if (planet.empty() || !home || !intact_village(home) || !a_SpawnNpcTribe) return;
+    if (planet.empty() || !home || !intact_village(home) || !a_SpawnNpcTribe) {
+        g_found_skip = planet.empty() ? "no planet" : !home ? "no host village" : !a_SpawnNpcTribe ? "no symbol"
+                                                                               : "the host's village is not intact (its hut)";
+        return;
+    }
     const uint32_t home_species = tribe_info(home).key.instance, home_faction = F<uint32_t>(home, 0x30);
-    if (!home_species) return;
+    if (!home_species) { g_found_skip = "the host's village has no species"; return; }
+    g_found_skip = "";
     std::string error;
     // the planet's founders: those of this session (restored at the world's entry, recorded here), else the saved ones,
     // else a new roster of the host's village
@@ -5421,6 +5506,7 @@ static void auto_founders_multi(double now)
     if (!g_auto_found_refresh && g_order_roster.guest().faction &&
         party::unseated_partners(g_order_roster, founder_creature_match).empty()) {
         g_founding_wait_player = 0xFF; // nobody waits for a village
+        g_found_skip = "every connected partner has a seat";
         return;
     }
     g_auto_found_queued = true;
@@ -7341,8 +7427,11 @@ void tick(double now)
             send_cmd(CMD_GIVE_UP, {}, g_multi_founders ? (int)tribe_seats::seat_action(own) : 0, {}, {});
             g_give_up_now = false;
         }
+        late_editor_first_tick(now); // BUG-9159
     }
     if (is_host()) {
+        for (uint8_t p = 1; p < 0xFE; ++p) // BUG-9159: a partner who left is asked again when they come back
+            if (g_editor_asked_at[p] && !net::is_player(*C.sess, p)) g_editor_asked_at[p] = g_late_editing_until[p] = 0;
         founder_rescue_tick(now);
         g_give_up_now = false;
         host_tick(now);
@@ -7387,6 +7476,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         return;
     }
 
+    if (type == net::MSG_TRIBE_LATE) { // BUG-9159: the host asks this player to make their creature in the editor
+        const uint8_t kind = r.u8();
+        const uint32_t world = r.u32();
+        if (r.ok() && from == 0 && is_guest() && kind == 1 && world && world == modes::current_world()) {
+            g_editor_asked_world = world;
+            H->log(M, SK_INFO, "tribe: the host asks for a creature of our own: the creature editor opens (BUG-9159)");
+        }
+        return;
+    }
     if (!g_ok)
         return;
     if (type == net::MSG_TRIBE_OUTFIT) { receive_outfit(from, r); return; }
@@ -7533,6 +7631,9 @@ void on_session_end()
     persp_restore("session end"); // BUG-9153 (also the mod's unload)
     theme_forget(); // BUG-0568
     clear_coop_tables(true);
+    std::fill(std::begin(g_late_editing_until), std::end(g_late_editing_until), 0.0); // BUG-9159
+    std::fill(std::begin(g_editor_asked_at), std::end(g_editor_asked_at), 0.0);
+    g_editor_first_opened_world = g_editor_asked_world = 0;
     g_food_cycle = -1;
     g_guest_order_mode = false;
     g_extra_since = -1;
@@ -7784,10 +7885,25 @@ std::string debug(const std::vector<std::string>& a)
                      (int)guest_has_village(), (int)creations::plays_own_creature(), H->time_seconds() - g_auto_found_entered,
                      (int)g_late_prompt);
         else
-            snprintf(line, sizeof line, "late waiting=%u line='%s' catch_ups=%u members_added=%u racks_added=%u skip=%d catch_up=%d",
-                     (unsigned)g_founding_wait_player, founding_wait_line().c_str(), g_catch_ups, g_catch_up_members,
+            snprintf(line, sizeof line, "late waiting=%u line='%s' skipped='%s' catch_ups=%u members_added=%u racks_added=%u skip=%d catch_up=%d",
+                     (unsigned)g_founding_wait_player, founding_wait_line().c_str(), g_found_skip, g_catch_ups, g_catch_up_members,
                      g_catch_up_racks, (int)g_founding_skip, (int)g_late_catch_up);
-        return line;
+        std::string out = line;
+        if (is_host()) { // BUG-9159: each unseated partner's wait and why
+            const double now = H->time_seconds();
+            for (uint8_t p : party::unseated_partners(g_order_roster, founder_creature_match)) {
+                const uint32_t creature = creations::player_key(p, creations::kCreature).instance;
+                snprintf(line, sizeof line,
+                         "\n  player %u: wait=%d creature=%08X species=%d entered=%.0f s ago key_changed=%.0f s ago here=%d "
+                         "editing=%.0f s asked=%.0f s ago",
+                         (unsigned)p, (int)founding_wait(p, now), creature, (int)(creations::player_species(p) != nullptr),
+                         now - g_auto_found_entered, now - creations::player_key_changed_at(p, creations::kCreature),
+                         (int)(C.here && C.here(p)), g_late_editing_until[p] > now ? g_late_editing_until[p] - now : 0.0,
+                         g_editor_asked_at[p] ? now - g_editor_asked_at[p] : -1.0);
+                out += line;
+            }
+        }
+        return out;
     }
     // tests (BUG-9135 phase 4, decision 5): every village of this game as the catch-up compares them (the game's own
     // objects: on a guest its loaded world, not the host's state): faction, species, hut level, living members by age,
