@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Draw the co-op UI images: data/ui/*.png
 - coop_icon: main menu item icon (white shape, the game tints it)
-- toast_<kind>: notification panels (Spore-like dark blue glass, a coloured edge and icon)"""
+- toast_<kind>: notification panels (Spore-like dark blue glass, a coloured edge and icon)
+- lineages_downed_panel: the downed screen's SPECTATING box (the Co-op window's panel colour, see-through, its inner
+  boxes' edge, rounded; drawn cut in thirds by sui::std_drawable_tooltip, so the corners keep their size)
+Names as arguments write only those images."""
 import os
+import sys
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -129,11 +133,33 @@ def toast(kind):
     return img.resize((W, H), Image.LANCZOS)
 
 
+def downed_panel(third=12, radius=10, fill=(0x20, 0x3A, 0x4A, 0x66), edge=(0x78, 0x91, 0xA0, 0xFF)):
+    """the owner (2026-11-12): like the menus, "Transparency at like 60%", rounded; the Co-op window's panel is
+    #203A4A (its frame's content window), its inner boxes' edge #7891A0"""
+    size, s = third * 3, SS
+    img = Image.new('RGBA', (size * s, size * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, size * s - 1, size * s - 1], radius=radius * s, fill=edge)
+    d.rounded_rectangle([s, s, (size - 1) * s - 1, (size - 1) * s - 1], radius=(radius - 1) * s, fill=(0, 0, 0, 0))
+    inner = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(inner).rounded_rectangle([s, s, (size - 1) * s - 1, (size - 1) * s - 1], radius=(radius - 1) * s,
+                                            fill=fill)
+    img.alpha_composite(inner)
+    return img.resize((size, size), Image.LANCZOS)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
-    coop_icon().save(os.path.join(OUT, 'coop_icon.png'))
-    print('wrote', os.path.join(OUT, 'coop_icon.png'))
-    for k in TOASTS:
-        p = os.path.join(OUT, 'toast_%s.png' % k)
-        toast(k).save(p, optimize=True)
+    want = set(sys.argv[1:])
+
+    def write(name, img, **kw):
+        if want and name not in want:
+            return
+        p = os.path.join(OUT, name + '.png')
+        img.save(p, **kw)
         print('wrote', p)
+
+    write('coop_icon', coop_icon())
+    for k in TOASTS:
+        write('toast_%s' % k, toast(k), optimize=True)
+    write('lineages_downed_panel', downed_panel(), optimize=True)

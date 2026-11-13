@@ -5,8 +5,8 @@
 - Creature / Adventure: the downed screen as the owner drew it: a SPECTATING
   box with the partner's name and arrows, a GIVE UP button and the revive ring
   at the bottom of the screen (BUG-9156). The box, arrows and button use the
-  Co-op window's own colours and buttons (see-through panel, red Leave-style
-  button).
+  Co-op window's own colours and buttons (a rounded see-through panel, a red
+  Leave-style button as wide as the panel).
 - Creature: a crash when a player who joined dead confirmed the death message
   is fixed (BUG-9157).
 - Tribe: a player's last villager is knocked out even when no partner

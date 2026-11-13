@@ -2389,13 +2389,23 @@ static bool dh_build()
         });
         return w;
     };
-    // the box: the Co-op window's own panel colour, see-through (60%), with its inner boxes' light edge
-    const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | (kDownedBoxAlpha << 24);
-    g_dh.box = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
-    if (g_dh.box) sui::set_fill_color(g_dh.box, panel);
-    for (Win& e : g_dh.edge) {
-        e = sui::label(main, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
-        if (e) sui::set_fill_color(e, kMenuBoxEdge);
+    // the box: the Co-op window's own panel colour, see-through (60%), with its inner boxes' light edge; rounded
+    // (the owner 2026-11-12): data/ui/lineages_downed_panel.png (tools/make_icons.py) drawn cut in thirds so the
+    // corners keep their size; without it (an old package) a square box of filled labels
+    void* img = sui::image(sui::fnv("lineages_downed_panel"), 0x2F7D0004, sui::fnv("sporecoop"));
+    void* look = img ? sui::std_drawable_tooltip(img) : nullptr;
+    if (img) sui::release(img); // the drawable holds its own reference
+    if (look && (g_dh.box = sui::button_like(main, D.like_button, {0, 0, 10, 10}, ""))) {
+        sui::set_drawable(g_dh.box, look);
+        sui::set_flag(g_dh.box, sui::kFlagIgnoreMouse, true);
+    } else {
+        const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | (kDownedBoxAlpha << 24);
+        g_dh.box = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        if (g_dh.box) sui::set_fill_color(g_dh.box, panel);
+        for (Win& e : g_dh.edge) {
+            e = sui::label(main, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+            if (e) sui::set_fill_color(e, kMenuBoxEdge);
+        }
     }
     g_dh.title = sui::label(main, {0, 0, 10, 10}, "SPECTATING", D.font_body, kWhite, sui::kAlignCenter);
     g_dh.name = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
@@ -2437,8 +2447,9 @@ static void dh_apply(void*)
         sui::set_visible(w, on);
     };
     const Rect& b = want.box_area;
-    const float arrow_w = 50.f, arrow_h = 30.f, pad = 8.f, e = 1.f;
-    const float arrow_y = b.y1 + b.h() / 2 + 2;
+    // one padding all round (10, the panel's corner radius): the arrow row on the bottom, the title over it
+    const float arrow_w = 50.f, arrow_h = 30.f, pad = 10.f, e = 1.f;
+    const float arrow_y = b.y2 - pad - arrow_h;
     // front first: bring_to_front puts the window brought first on top (seen 2026-11-12: the box hid its own arrows
     // and the red button its caption when they were brought forward in the other order)
     if (g_dh.give_caption) sui::set_flag(g_dh.give_caption, sui::kFlagIgnoreMouse, true);
@@ -2448,7 +2459,7 @@ static void dh_apply(void*)
     place(g_dh.prev, box, {b.x1 + pad, arrow_y, b.x1 + pad + arrow_w, arrow_y + arrow_h});
     place(g_dh.name, box, {b.x1 + arrow_w + pad, arrow_y, b.x2 - arrow_w - pad, arrow_y + arrow_h});
     if (g_dh.name && box) sui::set_caption(g_dh.name, want.name);
-    place(g_dh.title, box, {b.x1, b.y1 + 6, b.x2, arrow_y - 2});
+    place(g_dh.title, box, {b.x1, b.y1 + pad, b.x2, arrow_y});
     place(g_dh.edge[0], box, {b.x1, b.y1, b.x2, b.y1 + e});
     place(g_dh.edge[1], box, {b.x1, b.y2 - e, b.x2, b.y2});
     place(g_dh.edge[2], box, {b.x1, b.y1, b.x1 + e, b.y2});

@@ -48,5 +48,12 @@ The D3D drawing stays as the fallback when the native windows cannot be made; th
 build: the box drew over its own arrows and the button over its caption (see docs/08-ui.md, Stacking); fixed by
 bringing the front-most window forward first.
 
+Then (the owner): "make sure its rounded, and is consistent spacing / size? The give up button should be the same
+size as the spectating rectangle." The box is now data/ui/lineages_downed_panel.png (tools/make_icons.py: the same
+colour, 40% opacity and edge, corner radius 10) drawn cut in thirds like Spore's tooltip, so the corners keep their
+size at any width; the old square box of filled labels stays for a package without the image. GIVE UP is as wide as
+the box (max(220, 17% of the screen width)), 8 px between box, button and the ring's dark disc, 10 px padding inside
+the box. Live on the MSI (both games restarted for the new package): rounded, same widths, even gaps, 0 faults.
+
 ## History
 - 2026-11-12: opened.

@@ -3998,18 +3998,20 @@ static void draw_downed_hud(int sw, int sh)
     const float cx = sw / 2.f;
     const float ring_r = std::max(18.f, sh * 0.036f);
     const float ring_y = sh * 0.815f;
-    const float btn_h = 36.f, btn_w = std::max(150.f, sw * 0.13f); // the Co-op window's button height
-    const float btn_y1 = ring_y - ring_r - 8.f, btn_y0 = btn_y1 - btn_h;
+    // the owner (2026-11-12): the button as wide as the box, the same gap between box, button and ring
+    const float w = std::max(220.f, sw * 0.17f), gap = 8.f;
+    const float btn_h = 36.f; // the Co-op window's button height
+    const float btn_y1 = ring_y - ring_r - 3.f - gap, btn_y0 = btn_y1 - btn_h; // the ring's dark disc: radius + 3
     const bool box = spectating() && g_spec_id != 0xFF;
-    const float box_h = 72.f, box_w = std::max(btn_w + 60.f, sw * 0.17f);
-    const sui::Rect give{cx - btn_w / 2, btn_y0, cx + btn_w / 2, btn_y1};
-    const sui::Rect box_area{cx - box_w / 2, btn_y0 - 6.f - box_h, cx + box_w / 2, btn_y0 - 6.f};
+    const float box_h = 74.f; // 10 + the title row 24 + the arrow row 30 + 10 (coop_ui dh_apply)
+    const sui::Rect give{cx - w / 2, btn_y0, cx + w / 2, btn_y1};
+    const sui::Rect box_area{cx - w / 2, btn_y0 - gap - box_h, cx + w / 2, btn_y0 - gap};
     const std::string name = box ? g_sess.name_of(g_spec_id) : std::string();
     // the Co-op window's own look (owner 2026-11-12: "ensure consistency"); drawn by the mod only without it
     const bool native = coop_ui::set_downed_hud(true, box, name, give, box_area, on_downed_button);
     if (!native) {
         if (box) {
-            ring_timer::panel(H, box_area.x1, box_area.y1, box_area.x2, box_area.y2, 7.f, 0xE0141820u, 0xFFB8BCC4u);
+            ring_timer::panel(H, box_area.x1, box_area.y1, box_area.x2, box_area.y2, 10.f, 0xE0141820u, 0xFFB8BCC4u);
             const char* title = "SPECTATING";
             bold((int)(cx - text_width(title) / 2.f), (int)(box_area.y1 + 6), 0xFFFFFFFFu, title);
             const float ny = box_area.y1 + box_h * 0.62f;
