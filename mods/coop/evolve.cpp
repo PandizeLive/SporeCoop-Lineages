@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include "creations.h"
+#include "npc.h"
 #include "fixes.h"
 #include "world.h"
 #include "sporekit_game.hpp"
@@ -96,12 +97,13 @@ static void* effect_at_pos(const net::Vec3& at, uint32_t id, float scale, float 
     return game::create_world_effect(id, xf);
 }
 // sized to the creature (2026-11-13: at scale 1 a creature of bounding radius 1.24 fitted in the shell, one of 1.40
-// with a long neck stuck its head out): the creature's radius / kShellFits, never below 0.8
-constexpr float kShellFits = 0.9f;
+// with a long neck stuck its head out; later the owner: "still visible through the cocoon"): the creature's radius /
+// kShellFits, never below 1.0
+constexpr float kShellFits = 0.7f;
 static void* effect_at(void* c, uint32_t id)
 {
     const float r = game::bounding_radius(c);
-    const float size = std::isfinite(r) && r > 0 ? std::clamp(r / kShellFits, 0.8f, 4.f) : 1.f;
+    const float size = std::isfinite(r) && r > 0 ? std::clamp(r / kShellFits, 1.0f, 5.f) : 1.f;
     return effect_at_pos(game::position(c), id, g_fx_scale * size, g_fx_up, g_fx_rows);
 }
 static void end_sac(Cocoon& c)
@@ -378,7 +380,10 @@ void family_tick(uint32_t mode, void* avatar, bool busy, double now)
     const bool herd_old = false;
     game::for_each_object([](void* creature, uint32_t noun, void* p) {
         auto& x = *static_cast<Ctx*>(p);
-        if (noun != 0x18EB45Eu || creature == x.avatar || game::is_puppet(creature) || !game::object_alive(creature) ||
+        // (not a guest's copies of the host's members: they come with the right species since BUG-9180; converted here
+        // they took the host's species while the avatar still wore it after a respawn, the MSI 2026-11-13)
+        if (noun != 0x18EB45Eu || creature == x.avatar || game::is_puppet(creature) || npc::is_proxy(creature) ||
+            !game::object_alive(creature) ||
             game::is_dead(creature) || game::herd_of(creature) != x.herd || game::species_profile(creature) == x.prof)
             return true;
         const int age = *(int*)((uint8_t*)creature + 0xB34);

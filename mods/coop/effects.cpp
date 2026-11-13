@@ -525,6 +525,33 @@ static void live_forget(void* fx, bool release)
         g_live_released++;
 }
 
+// BUG-9181: a creature effect a partner's game made on its creature (pool 3, "one-shot") can loop: the mating call's
+// rings (E1B24DDB) went on for good on the partners' screens (the owner, 2026-11-13: "the calling mate thing is still
+// permanent"); the sender sends no stop for pool 3. Those played on a puppet end after kOneShotMax s here.
+constexpr double kOneShotMax = 6.0;
+static struct { void* fx; double at; } g_oneshot[32];
+static uint32_t g_oneshot_stopped;
+static void oneshot_add(void* fx, double t)
+{
+    size_t oldest = 0;
+    for (size_t i = 0; i < 32; ++i) {
+        if (!g_oneshot[i].fx) { oldest = i; break; }
+        if (g_oneshot[i].at < g_oneshot[oldest].at) oldest = i;
+    }
+    if (g_oneshot[oldest].fx && game::effect_active(g_oneshot[oldest].fx) && game::stop_world_effect(g_oneshot[oldest].fx))
+        ++g_oneshot_stopped;
+    g_oneshot[oldest] = {fx, t};
+}
+static void oneshot_tick(double t)
+{
+    for (auto& o : g_oneshot)
+        if (o.fx && t - o.at >= kOneShotMax) {
+            if (game::effect_active(o.fx) && game::stop_world_effect(o.fx) && g_oneshot_stopped++ < 10)
+                H->log(M, SK_INFO, "effect: a partner's looping one-shot effect ended after %.0f s (BUG-9181)", kOneShotMax);
+            o = {};
+        }
+}
+
 static void live_add(void* fx, double t)
 {
     if (!fx)
@@ -660,6 +687,7 @@ void tick(double)
     }
     double t2 = H ? H->time_seconds() : 0;
     live_tick(t0, game::mode_id(), C.world ? C.world() : 0);
+    oneshot_tick(t0); // BUG-9181
     double t3 = H ? H->time_seconds() : 0;
     world_sent_clear();
     game::clear_effect_table();
@@ -814,6 +842,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 last.y = p[1];
                 last.z = p[2];
             } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
+                oneshot_add(fx, now()); // BUG-9181: ended after kOneShotMax s if it loops
                 net::Vec3 p = game::position(puppet);
                 last.has_pos = true;
                 last.x = p.x;

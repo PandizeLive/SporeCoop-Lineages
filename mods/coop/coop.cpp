@@ -4381,9 +4381,11 @@ std::string mates_report()
         const net::Vec3 p = game::position(creature);
         float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
         const bool on = H->world_to_screen(w, sc) != 0;
-        char line[200];
+        char line[240], lent[48] = "";
+        if (npc::is_proxy(creature))
+            snprintf(lent, sizeof lent, " (copy%s, lent %.1f)", game::is_puppet(creature) ? " puppet" : "", npc::lent_for(creature));
         snprintf(line, sizeof line, "  %p%s class %d hearts %d dead %d %.1f m screen %s%.0f %.0f species %p/%08X\n", creature,
-                 game::is_puppet(creature) ? " (copy)" : "",
+                 lent,
                  skg::cdecl_call<int>(g_mate_classify, creature), g_get_creature_effect(creature, 0x9005E011u) ? 1 : 0,
                  (int)game::is_dead(creature), net::dist(c.me, p), on ? "" : "(behind) ", sc[0], sc[1],
                  game::species_profile(creature), game::species_key(creature).instance);

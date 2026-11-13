@@ -11,7 +11,7 @@ versions: 0.7.8-lineages54-dev
 fixed_in:
 branch: feat/lineages-47
 commits:
-tests:
+tests: tools/qa_win/msi_input.ps1 (the MSI real mouse) and console, TITAN host + guest + the MSI, 2026-11-13
 signature:
 docs: docs/ROADMAP.md (2E, the owner sequence)
 related: BUG-9160 BUG-9161 BUG-9174 BUG-9175 BUG-9180
@@ -28,7 +28,8 @@ Observed: on a guest the mate is a copy of the host's member (npc.cpp: a puppet,
 npc.cpp lend_local_ai: a proxy runs its own AI on the guest for a while (puppet unregistered, the sync leaves it alone, back to the sync after). coop.cpp mate_keeper: the mate offered and the one the player mates with are lent, 2 s at a time while they are. evolve.cpp: the egg scene is the game's (no cocoon of the own body; Escape after 12 s, BUG-9161); when the editor opens the own family (its species within 50 m, never the egg) goes into the cocoon, on partners' games with the partner's cocoon (puppet_editing); back, the family comes out first (family_out); the player has no emerge of its own (it hatches from its egg); a partner's puppet leaves its cocoon without an emerge. The direct editor only after a 30 s stalled pairing (was 2 s on a guest).
 
 ## Verification
-Not yet: built and on all three games (2026-11-13); the click on the mate on the MSI needs the owner (remote clicks at 5 FPS miss a walking mate). Seen: the keeper lends the offered copy (keeper calls 5808, lends 2210), the copy then walks on its own (31 m from the nest).
+Live 2026-11-13 (the MSI as a guest, the owner's report first): FAIL (the owner): the click did nothing, the mod's cocoon after a while, the body through the cocoon, no family cocoons, the rings for good, creatures standing about after it that TITAN never saw. Causes found on the way: the guest's update filter destroyed the lent mate every frame (a lent proxy is no puppet: taken for a local NPC; it was made again at once), and the console's virtual cursor never reaches the game's hover in a background window (every creature class 0). PASS (msi_input.ps1, the real mouse on the MSI): the mate offered (class 9, hearts, lent, no puppet); the click: action 02D852F0, target the mate, the game's mating step state 2 2, the egg scene 12 s, "3 of our family into the cocoon" on the MSI and "3 of a partner's family into the cocoon" on the host, the editor; Done: the family out (own_emerges 1), the game's hatch at the nest; finished_by_mod 0; the rings on the host ended after 6 s ("a partner's looping one-shot effect ended"); 0 faults on three games. Not seen in a picture: the family's cocoons on the host's screen (the camera); the larger shell on a partner (kShellFits 0.7).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13 (later): the update filter keeps lent proxies; family_tick (BUG-9161) leaves proxies alone (it gave copies the host's species after a respawn); the shell sized 1/0.7 of the radius (at least 1); a partner's pool 3 effect ends after 6 s (the mating call rings, E1B24DDB, the sender sends no stop for pool 3). Live on two PCs.

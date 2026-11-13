@@ -32,6 +32,11 @@
   copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
 - Creature: a guest's own family wears the guest's own species (the mate offer),
   and the host's family stays out of a guest's own nest (BUG-9169).
+- Creature: a guest evolves the game's own way: the mate answers and walks
+  in, the dance, the egg; the family waits in cocoons while the player edits
+  and comes out first; the player hatches from the egg (BUG-9181).
+- Creature: a partner's mating call rings no longer stay on for good; the
+  old ring of player nests round the host's nest is removed once (BUG-9182).
 - Creature: a player's creature has one species id on every game, the same
   after a rejoin; its family needs no conversion and "your species is
   extinct" is gone (BUG-9180, BUG-9176).

@@ -266,6 +266,13 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 
 bool is_proxy(void* c) { return g_proxy_of.count(c) != 0; }
 
+double lent_for(void* creature)
+{
+    for (auto& [id, px] : g_proxies)
+        if (px.c == creature) return px.local_until > 0 ? px.local_until - H->time_seconds() : -1;
+    return -2;
+}
+
 bool lend_local_ai(void* creature, double seconds)
 {
     if (!creature)
@@ -303,6 +310,10 @@ static bool update_filter(void* c)
     if (!g_enabled || !is_guest() || !npc_stage())
         return true;
     if (game::is_puppet(c) || c == game::avatar())
+        return true;
+    // BUG-9181: a proxy lent to this game's AI (a guest's mate) is ours, not a local NPC to remove (it was removed
+    // and made again every frame: the mate never answered, the copies stood about)
+    if (g_proxy_of.count(c))
         return true;
     if (g_host_away) // the host left the world: the guest plays on alone with its own NPCs
         return true;
@@ -1513,7 +1524,7 @@ static void guest_tick(double now)
     std::sort(g_kill.begin(), g_kill.end());
     g_kill.erase(std::unique(g_kill.begin(), g_kill.end()), g_kill.end());
     for (void* c : g_kill)
-        if (c != av && !game::is_puppet(c) && !game::is_destroyed(c) && !game::destroy_pending(c)) {
+        if (c != av && !game::is_puppet(c) && !g_proxy_of.count(c) && !game::is_destroyed(c) && !game::destroy_pending(c)) {
             game::destroy_creature(c);
             g_removed_local++;
         }

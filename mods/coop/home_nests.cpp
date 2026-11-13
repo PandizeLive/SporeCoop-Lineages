@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -492,6 +493,106 @@ static void* noted_nest(size_t seat, const net::Vec3& home, net::Vec3& at)
     return f.herd;
 }
 
+// Decision 2Y A (owner 2026-11-13: the "big circle of random nests around the center nest"): before BUG-9180 a
+// partner's creature had a new species key at every rejoin under another network id, and every such session built one
+// more nest next to the host's (BUG-9173). Once per planet the host removes the nests the mod made for player creatures
+// no seat plays any more: a nest herd within kNear of the host's home, a family of kFamily (ours), its members of a
+// player creation's key (0x7C......), and that species neither the host's nor any seat's (an offline seat's nest is
+// the AI's and stays, decision 8). Its members, its eggs, the nest and the herd go through the game's own destroy.
+// `coop.fix creature.nest_ring_cleanup off`: they stay.
+static bool g_ring_fix = true;
+COOP_FIX("creature.nest_ring_cleanup", "BUG-9182", g_ring_fix,
+         "creature: once per planet the host removes old player nests no seat uses any more (left by the old species keys)");
+static uint32_t g_ring_world, g_ring_removed;
+static void ring_cleanup(void*)
+{
+    g_queued = false;
+    const uint32_t world = C.world ? C.world() : 0;
+    net::Vec3 home;
+    if (!g_ring_fix || !world || world == g_ring_world || !is_host() || !game::in_creature_stage() ||
+        game::cinematic_playing() || world::load_queued() || !host_home(home))
+        return;
+    g_ring_world = world;
+    std::vector<void*> keep; // the species profiles in use: the host's and every seat's
+    if (void* av = game::avatar()) keep.push_back(game::species_profile(av));
+    const auto& roster = party::roster();
+    for (size_t i = 0; i < roster.seats.size(); ++i)
+        if (roster.seats[i].species)
+            if (void* pr = game::species_by_key({roster.seats[i].species, kCrtType, kCrtGroup})) keep.push_back(pr);
+    std::vector<net::Vec3> noted; // a seat's nest noted on this planet (BUG-9173) is taken over, never removed
+    for (size_t seat = 1; seat < founders::kMaxSeats; ++seat) {
+        char key[16];
+        snprintf(key, sizeof key, "nest%zu", seat);
+        const std::string n = creations::world_note(key, world);
+        net::Vec3 p{};
+        if (!n.empty() && sscanf(n.c_str(), "%f %f %f", &p.x, &p.y, &p.z) == 3) noted.push_back(p);
+    }
+    struct Cand { void* herd; void* nest; std::vector<void*> members; };
+    struct Find { net::Vec3 home; std::vector<void*>* keep; std::vector<net::Vec3>* noted; void* own; std::vector<Cand> out; }
+        f{home, &keep, &noted, game::avatar_herd(), {}};
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto& f = *static_cast<Find*>(u);
+        net::Vec3 q;
+        if (noun != game::kHerdNoun || o == f.own || !live_herd(o) || !nest_pos_of(o, q) || net::dist(q, f.home) > kNear ||
+            skg::field<int32_t>(o, 0xF4) != kFamily)
+            return true;
+        void* prof = game::herd_species(o);
+        for (void* k : *f.keep)
+            if (k == prof) return true;
+        for (size_t i = 1; i < g_nests.size(); ++i)
+            if (g_nests[i].herd == o) return true;
+        for (const auto& n : *f.noted)
+            if (net::dist(n, q) < 6) return true;
+        f.out.push_back({o, game::herd_nest(o), {}});
+        return true;
+    }, &f);
+    std::vector<void*> living; // every species a living creature has anywhere (an empty nest of one of them is kept)
+    game::for_each_object([](void* o, uint32_t noun, void* u) {
+        auto& v = *static_cast<std::vector<void*>*>(u);
+        if (noun == 0x18EB45Eu && game::object_alive(o) && !game::is_dead(o)) {
+            void* p = game::species_profile(o);
+            if (std::find(v.begin(), v.end(), p) == v.end()) v.push_back(p);
+        }
+        return true;
+    }, &living);
+    for (auto& c : f.out) { // its members (the herd's own list) and their key: a player creation's
+        struct Mem { void* herd; std::vector<void*>* m; bool player_key = true; } m{c.herd, &c.members};
+        game::for_each_object([](void* o, uint32_t noun, void* u) {
+            auto& m = *static_cast<Mem*>(u);
+            if (noun == 0x18EB45Eu && game::object_alive(o) && game::herd_of(o) == m.herd) {
+                m.m->push_back(o);
+                m.player_key &= (game::species_key(o).instance & 0xFE000000u) == 0x7C000000u;
+            }
+            return true;
+        }, &m);
+        // an empty one: ours by its family size and the respawn times we leave (120000, or 2000 from a new nest), and its
+        // species on no living creature (the ring on Samuth, 2026-11-13: families died out, nests marked extinct)
+        const int32_t rate = skg::field<int32_t>(c.herd, 0x11C);
+        const bool alive_species = std::find(living.begin(), living.end(), game::herd_species(c.herd)) != living.end();
+        const bool orphan = c.members.empty() && (rate == 120000 || rate == kEmptyNestMs) && !alive_species;
+        if (!orphan && (c.members.empty() || !m.player_key)) {
+            net::Vec3 q{};
+            nest_pos_of(c.herd, q);
+            H->log(M, SK_INFO, "home nests: kept nest herd %p at (%.0f %.0f %.0f): %zu member(s)%s, respawn %d ms, extinct %d, species living %d",
+                   c.herd, q.x, q.y, q.z, c.members.size(), c.members.empty() ? "" : (m.player_key ? "" : ", not a player creation's key"),
+                   rate, (int)skg::field<uint8_t>(c.herd, 0x190), (int)alive_species);
+            c.herd = nullptr; // not provably a player creation's nest: kept
+            continue;
+        }
+        game::herd_quiet(c.herd); // no new members
+        for (void* mem : c.members) game::destroy_creature(mem);
+        for (void** e = skg::field<void**>(c.herd, 0x54), **end = skg::field<void**>(c.herd, 0x58); e && e < end && end - e < 64; ++e)
+            if (*e && game::object_alive(*e)) game::destroy_instance(*e);
+        if (c.nest && game::object_alive(c.nest)) game::destroy_instance(c.nest);
+        game::destroy_instance(c.herd);
+        ++g_ring_removed;
+    }
+    unsigned n = 0;
+    for (auto& c : f.out) n += c.herd != nullptr;
+    H->log(M, SK_INFO, "home nests: %u old player nest(s) removed round the host's home, %zu checked (decision 2Y, BUG-9182)", n,
+           f.out.size());
+}
+
 void host_tick(double now)
 {
     if (!g_fix || !is_host() || now < g_next || g_queued)
@@ -503,6 +604,11 @@ void host_tick(double now)
     net::Vec3 home;
     if (!host_home(home))
         return;
+    if (g_ring_fix && C.world && C.world() && C.world() != g_ring_world && !g_queued) { // decision 2Y A, once a planet
+        g_queued = true;
+        H->run_outside_frame(ring_cleanup, nullptr);
+        return;
+    }
     const auto& roster = party::roster();
     const uint32_t host_species = roster.seats.empty() ? 0 : roster.seats[0].species;
     for (size_t seat = 1; seat < roster.seats.size(); ++seat) {

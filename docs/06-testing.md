@@ -5335,6 +5335,10 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   downed box background" says so). The MSI gets the package with `msi.ps1 deploy`. Updating the installed
   package needs the owner's OK and every QA game closed (they hold the file open); the old one goes to
   out/owner-install-backup/ (never a second .package in the game's Data folder: the game loads it).
+* The MSI's real mouse: `tools/qa_win/msi_input.ps1 -X x -Y y [-Click]` (a one-shot task in its desktop session;
+  the console's click is a virtual cursor that never reaches the game's hover in a background window: every
+  creature class 0, 2026-11-13). A host whose creature starved stops the guests' NPCs: feed it
+  (`mem.write <avatar>+0xBBC 0000C842`, hunger 100) in long test sessions.
 * Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m
   out there.
 
