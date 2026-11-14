@@ -21,6 +21,8 @@ S = 4  # drawn at 4x, scaled down (smooth edges)
 PLATE = (102, 102, 102, 153)  # the name plates: 60% grey
 HEADER = (99, 99, 99, 156)    # the "Party" pill
 GOLD_EDGE = (253, 216, 109, 255)
+# the native Pack pill's thin light edge (the owner 2026-11-13: the other plates and the header lacked it)
+WHITE_EDGE = (235, 240, 245, 200)
 RIM_DARK, RIM_MID, RIM_LIGHT = (105, 86, 35), (175, 144, 59), (255, 236, 186)
 PARCHMENT = (188, 182, 164)
 
@@ -109,8 +111,8 @@ def main():
         'lineages_party_bar_back': bar('back'),
         'lineages_party_bar_fill': bar('fill'),
         'lineages_party_bar_ring': bar('ring'),
-        'lineages_party_header': rounded((91, 35), 12, HEADER),
-        'lineages_party_plate': rounded((170, 35), 17, PLATE),
+        'lineages_party_header': rounded((91, 35), 12, HEADER, WHITE_EDGE, 1),
+        'lineages_party_plate': rounded((170, 35), 17, PLATE, WHITE_EDGE, 1),
         'lineages_party_plate_me': rounded((170, 35), 17, PLATE, GOLD_EDGE, 1),
         'lineages_party_card': card(),
     }

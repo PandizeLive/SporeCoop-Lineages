@@ -4579,6 +4579,11 @@ static void draw_downed_hud(int sw, int sh)
 }
 
 // ---- the Party panel (the owner's mockup 2026-11-13, coop_ui::set_party_hud) ----
+// decision 3E C: a partner's arrow is a slim chevron in the HUD's blue with a white edge and a name plate
+// (images/partner_arrow_mockup_C.png); off: the green arrow and the name line
+static bool g_partner_chevron = true;
+COOP_FIX("ui.partner_chevron", "BUG-9191", g_partner_chevron,
+         "ui: a partner's arrow is the HUD-blue chevron with a name plate (decision 3E C)");
 static bool g_party_panel = true;
 COOP_FIX("ui.party_panel", "BUG-9191", g_party_panel,
          "ui: the Party panel (name plates, creature cards, health) instead of the CO-OP player list");
@@ -4826,12 +4831,34 @@ void on_overlay(void*, int, void*)
             }
             // BUG-9127: a downed partner's arrow is red (the way to them while the countdown runs)
             const bool partner_down = creature_rescue::ui_shown() && !r.buf.empty() && (r.buf.latest().flags & net::PF_DOWNED);
-            partner_marker::draw(H,x,y,dx,dy,size,partner_down ? 0xFFFF5050 : 0xFF70FFB0);
             const float distance = net::dist(modes::entity_pos(g_adapter,av),p);
             if (!std::isfinite(distance)) continue;
             std::string tag = r.name.substr(0,utf8::cut_bytes(r.name,32)) + "  " + std::to_string(int(std::min(distance,999999.f))) + " m";
             int tx = std::clamp(int(x)-text_width(tag)/2,8,std::max(8,sw-text_width(tag)-8));
             int ty = std::clamp(visible ? int(y-size*.7f)-18 : int(y+size*.7f),8,sh-26);
+            // decision 3E C (BUG-9191): the HUD-blue chevron and a name plate (the name, the distance under it)
+            std::string name_line, dist_line;
+            float px1 = 0, py1 = 0, px2 = 0, py2 = 0;
+            if (g_partner_chevron) {
+                const float cs = std::clamp(sh / 19.f, 30.f, 60.f) * ui_scale();
+                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : 0xFF46AAE6);
+                name_line = r.name.substr(0, utf8::cut_bytes(r.name, 32));
+                dist_line = std::to_string(int(std::min(distance, 999999.f))) + " m";
+                const float w = (float)std::max(text_width(name_line), text_width(dist_line)) + 20, h = 38;
+                float cx = x, cy = y - cs * .55f - h * .5f - 4;
+                if (!visible) { // beside the chevron, towards the middle of the screen
+                    const float l = std::hypot(dx, dy) > 0 ? std::hypot(dx, dy) : 1;
+                    cx = x - dx / l * (cs * .6f + w * .5f + 6);
+                    cy = y - dy / l * (cs * .6f + h * .5f + 6);
+                }
+                px1 = std::clamp(cx - w * .5f, 4.f, std::max(4.f, sw - w - 4));
+                py1 = std::clamp(cy - h * .5f, 4.f, std::max(4.f, sh - h - 4));
+                px2 = px1 + w;
+                py2 = py1 + h;
+                ty = (int)py1;
+                tx = (int)px1;
+            } else
+                partner_marker::draw(H,x,y,dx,dy,size,partner_down ? 0xFFFF5050 : 0xFF70FFB0);
             // BUG-9141: a downed partner's ring (Creature / Adventure): its time from when this game first saw it down,
             // a revive from when this player stood within reach (the host decides; this is what it looks like here)
             if (!partner_down) r.down_since = r.near_since = -1;
@@ -4850,8 +4877,17 @@ void on_overlay(void*, int, void*)
                 ring_timer::draw(H, std::clamp(x, rr + 4.f, sw - rr - 4.f), ry, rr,
                                  ring_timer::fraction(win - (label_now - r.down_since), win), revive, label_now);
             }
-            H->overlay_text(tx+1,ty+1,0xFF000000,tag.c_str());
-            H->overlay_text(tx,ty,0xFFB0FFD0,tag.c_str());
+            if (g_partner_chevron) {
+                partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
+                const int nx = (int)((px1 + px2) * .5f) - text_width(name_line) / 2;
+                const int dxl = (int)((px1 + px2) * .5f) - text_width(dist_line) / 2;
+                H->overlay_text(nx + 1, (int)py1 + 3, 0xFF000000, name_line.c_str());
+                H->overlay_text(nx, (int)py1 + 2, 0xFFFFFFFF, name_line.c_str());
+                H->overlay_text(dxl, (int)py1 + 19, 0xFFD4DCE2, dist_line.c_str());
+            } else {
+                H->overlay_text(tx+1,ty+1,0xFF000000,tag.c_str());
+                H->overlay_text(tx,ty,0xFFB0FFD0,tag.c_str());
+            }
             ++g_partner_indicators;
         } else if (front) {
             std::string tag = r.name;

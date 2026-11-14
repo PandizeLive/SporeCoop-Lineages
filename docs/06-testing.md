@@ -5360,3 +5360,6 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   launch clicks: docs/re/space.md#space-four-founder-launch. A guest joining while the host is in Space should be a
   fresh game at the menu (the MSI's long-running game ran out of address space and its load never finished).
 
+* Close every test game (TITAN's QA copies and the MSI's, `tools/qa_win/msi.ps1 stop`) as soon as a live test is done
+  (the owner 2026-11-13): running ones count as Steam playtime on the owner's account and keep the owner from starting
+  Spore. Start them again only for the next test.

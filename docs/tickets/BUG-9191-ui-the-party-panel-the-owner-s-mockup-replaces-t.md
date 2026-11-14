@@ -33,3 +33,4 @@ no-fail-run: a feature. Live on the MSI (the new package there): the panel with 
 ## History
 - 2026-11-13: opened.
 - 2026-11-13: panel, pictures, native-style bar and UI scale built on feat/lineages-47; the Sporepedia card still open.
+- 2026-11-13 (later): decision 3E C, the partner arrow is a HUD-blue chevron with a white edge and a name plate (ui.partner_chevron); the header and the other plates have the native Pack pill's thin light edge (the owner's note); live on TITAN (the chevron) and the MSI (the edges); the installed package refreshed (backup SporeCoop.package.2026-11-13-party-v1).
