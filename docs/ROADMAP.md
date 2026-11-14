@@ -219,8 +219,8 @@ closest to the owner's ask (with its issues), C an alternative; one answer per I
 | 1Y | Space: what phase 6 builds now | A; owner asked how an empire works for a planet that solo players leave (see 2N) |
 | 1Z | Space: who runs the enemies in a star system | A |
 | 2A | Space: where Space progress is saved | A |
-| 2B | Space: how difficulty scales | A; owner asked whether parties need a friend list and whether to switch from slots now (see 2O) |
-| 2C | Space: the Galactic Core ending | A |
+| 2B | Space: how difficulty scales | A; owner asked whether parties need a friend list and whether to switch from slots now (see 2O). Built 2026-11-14 (BUG-9199: the players in the system, raids the players online; docs/re/space.md#space-party-difficulty) |
+| 2C | Space: the Galactic Core ending | A. Checked 2026-11-14: the Core waits for the session's partners, which is the party while a session holds one party (cap 4, all seated); the party filter comes with the MMO layer (docs/re/space.md#space-party-difficulty) |
 | 2D | Creature: the "cocoon" | the native cocoon (owner: NPC species wrap into a cocoon and come out as a new species; Claude was wrong that the game has none); built 2026-11-13 (BUG-9160: the game's own cocoon animations and effects, live) |
 | 2E | Creature: how evolving starts (the owner's full sequence 2026-11-13 in BUG-9181: the game's mating, dance and egg; the family in cocoons while the player edits; back, the family out first, the player hatches from its egg) | owner's rule: native mating call; the nearest mate answers, else one is spawned; the player clicks the mate to start; built 2026-11-13 (BUG-9160, BUG-9161: no vote, the egg scene replaced by the cocoon; BUG-9175: a guest's click ends in the cocoon and the editor, "else one is spawned" as a dead family brought back in seconds) |
 | 2F | Creature: DNA when two players evolve at once | B, personal DNA (owner: "Everyone gets their own DNA."); built 2026-11-13 (BUG-9162, live on TITAN) |

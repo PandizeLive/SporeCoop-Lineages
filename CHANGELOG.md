@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Space: enemy ships are as strong as the number of players in that system
+  (raids: the players online), not the reserved seats (BUG-9199).
 - Space: a partner who rejoins under another name keeps their wars,
   alliances and budget, and shows as one empire, not two (BUG-9198).
 - Space: partners in a system without the host see the same enemy ships and

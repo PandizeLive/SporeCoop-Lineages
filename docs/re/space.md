@@ -2707,3 +2707,17 @@ BUG-9198, roadmap phase 6 step 2.
 * Not changed, on purpose: spacecoop.cpp (captains, downed partners, last star) and space_map.cpp rosters are live
   state each player sends again after a rejoin; space_map.cpp kept colonies keep their own side-file key
   (BUG-9189, the name without the "name:" prefix); space_finale.cpp (the Galactic Core) is roadmap 2C.
+
+## Space difficulty per party (2026-11-14, feat/lineages-47)
+<a id="space-party-difficulty"></a>
+
+BUG-9199, decision 2B A.
+* ✔ (live, two games) The three Space difficulty extras are enemy ship health (squadron.cpp scale_local_ships,
+  +15 % per extra seat at 100 %), enemy damage (h_TakeDamage, +5 %) and extra raiders (space_allies.cpp
+  h_BuildRaidFleet, one per extra seat). An enemy ship is a raid mission ship or one of an empire in the player
+  cEmpire enemies vector (+0x5C): pirates (political id 0xFFFFFFFF) are never scaled.
+* ✔ They now use `squadron::party_rules()`: seats = the players in the place (health, damage) or online (raids).
+  A ship already scaled is rescaled when the count changes (460/460 -> 400/400 when the partner landed).
+* Decision 2C A (the Galactic Core waits for your own party only): space_finale.cpp waits for the partners in the
+  session, which with one party per session (cap 4, every player seated, party.cpp) is the party. No code until
+  a session holds several parties (the MMO layer): then missing() and the gift filter by party.
