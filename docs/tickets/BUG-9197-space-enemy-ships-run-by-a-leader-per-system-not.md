@@ -11,7 +11,7 @@ versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
 commits: 59ca2bbc
-tests: tools/qa_win (three TITAN games: coop.fleet spawn/shoot/hurt, coop.space land/takeoff)
+tests: tools/qa_win (by hand: three TITAN QA games, coop.fleet spawn / shoot / hurt)
 signature:
 docs: docs/re/space.md#space-fleet-leader
 related: BUG-0037 BUG-0190 BUG-9187
