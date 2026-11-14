@@ -8,7 +8,8 @@ Cell the light blue-grey metal card with a purple-blue well, Creature the dark s
 gold-framed member squares and the glossy blue tab ("Tribe", "Military"), Space the captain card's blue scanlines. The
 images are drawn here from those colours (no game pixels); the mod draws the text, the bars and the picture.
 
-usage: py tools/party_card_assets.py
+usage: py tools/party_card_assets.py                      (the game's images, data/ui)
+       py tools/party_card_assets.py --layers <folder>   (every layer at 1x and 4x, per stage: for designing)
 """
 from pathlib import Path
 
@@ -18,10 +19,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'data' / 'ui'
 S = 4  # drawn at 4x, scaled down (smooth edges)
 
-PLATE = (128, 58)   # coop_ui.cpp kCardPlateW/H
-FRAME = (62, 62)    # kCardFrame
-TAB = (92, 26)      # kCardTabW/H
-BAR = (88, 9)       # kCardBarW/H: the second bars' fill (the health bar uses lineages_party_bar_*)
+PLATE = (128, 67)   # coop_ui.cpp CardLayout: plate_w, card_h - plate_dy - plate_cut
+FRAME = (71, 71)    # frame_w, card_h
+TAB = (92, 30)      # tab_w, tab_h
+BAR = (97, 8)       # bar_w, bar_h: the second bars' fill (the health bar uses lineages_party_bar_*)
 
 STYLES = {
     'cell': dict(plate=(0x97, 0xA5, 0xC5, 240), plate_edge=(0x5E, 0x6E, 0x94, 255), plate_hi=(0xDD, 0xE4, 0xF0, 255),
@@ -74,7 +75,11 @@ def plate(st):
     return small(im, PLATE)
 
 
-def frame(st):
+def frame(st, hover=False):
+    """the picture frame; `hover`: its edge lit (the card the pointer is over)"""
+    if hover:
+        st = dict(st, frame_edge=(0xF4, 0xF0, 0xD8), frame_hi=(0xFF, 0xFF, 0xFF),
+                  frame=tuple(min(255, int(v * 1.18) + 12) for v in st['frame']))
     w, h = FRAME
     im = big(FRAME)
     d = ImageDraw.Draw(im)
@@ -141,11 +146,53 @@ def icon(kind):
     return small(im, (12, 12))
 
 
+def export_layers(dest):
+    """the owner's own designs (2026-11-14: "send me the layers ... so I can try and create them myself"): every
+    image at the game's size and at 4x (drawn at 4x here, so not blown up), per stage in its own folder"""
+    import shutil
+    for name, st in STYLES.items():
+        d1, d4 = dest / name / '1x', dest / name / '4x'
+        d1.mkdir(parents=True, exist_ok=True)
+        d4.mkdir(parents=True, exist_ok=True)
+        global small
+        keep = small
+        for scale_dir, fn in ((d1, keep), (d4, lambda im, size: im)):
+            small = fn
+            plate(st).save(scale_dir / 'plate.png')
+            frame(st).save(scale_dir / 'frame.png')
+            frame(st, hover=True).save(scale_dir / 'frame_hover.png')
+            tab(st).save(scale_dir / 'tab.png')
+        small = keep
+    shared1, shared4 = dest / 'shared' / '1x', dest / 'shared' / '4x'
+    shared1.mkdir(parents=True, exist_ok=True)
+    shared4.mkdir(parents=True, exist_ok=True)
+    for name, (top, bottom) in SECOND_BARS.items():
+        b = bar_fill(top, bottom)
+        b.save(shared1 / f'bar_fill_{name}.png')
+        b.resize((b.width * 4, b.height * 4), Image.LANCZOS).save(shared4 / f'bar_fill_{name}.png')
+    for kind in ('health', 'energy', 'hunger'):
+        i = icon(kind)
+        i.save(shared1 / f'icon_{kind}.png')
+        i.resize((48, 48), Image.LANCZOS).save(shared4 / f'icon_{kind}.png')
+    for stem in ('bar_back', 'bar_fill', 'bar_ring'): # the health bar (tools/party_ui_assets.py: the native bar's pixels)
+        src = OUT / f'lineages_party_{stem}.png'
+        if src.exists():
+            shutil.copy(src, shared1 / f'health_{stem}.png')
+            im = Image.open(src)
+            im.resize((im.width * 4, im.height * 4), Image.NEAREST).save(shared4 / f'health_{stem}.png')
+
+
 def main():
+    import sys
+    if len(sys.argv) > 2 and sys.argv[1] == '--layers':
+        export_layers(Path(sys.argv[2]))
+        print('wrote the layers into', sys.argv[2])
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     for name, st in STYLES.items():
         plate(st).save(OUT / f'lineages_card_plate_{name}.png')
         frame(st).save(OUT / f'lineages_card_frame_{name}.png')
+        frame(st, hover=True).save(OUT / f'lineages_card_frame_{name}_hover.png')
         tab(st).save(OUT / f'lineages_card_tab_{name}.png')
     for name, (top, bottom) in SECOND_BARS.items():
         bar_fill(top, bottom).save(OUT / f'lineages_card_bar_{name}.png')

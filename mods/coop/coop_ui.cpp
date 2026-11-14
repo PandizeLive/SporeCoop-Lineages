@@ -2955,8 +2955,20 @@ static uint32_t g_ph_portraits_missing;
 static float g_ph_floor = -1; // the top of Spore's own UI at the right edge (screen pixels; -1 not measured)
 static uint32_t g_ph_own_stage; // this player's game mode (the tab's art)
 static bool g_ph_images_missing; // the cards' images not (yet) in the game: the caller shows the text list
+static int g_ph_hover = -1;       // the card the pointer is over (its frame lit and grown), -1 none
+static bool g_ph_dirty;           // laid out again at the next set_party_hud (a hover change)
 static std::vector<PartyRow> g_ph_cards; // the partners shown, top card first (a frame's click)
 static float ns_factor_now(); // the UI scale of Spore's own UI (below, 3H)
+// the card's layout (1x pixels; tests: `coop.cardlayout <name>=<value>...` changes them live, looked at by screenshot)
+// (the owner 2026-11-14: "some text that looked badly spaced", the name against the plate's top and "Party" low in its
+// tab: measured on screenshots, now 6-8 px inside every edge and between the rows, the title's glyphs 6 px from the
+// tab's top and bottom)
+static struct CardLayout {
+    float card_h = 71, frame_w = 71, plate_w = 128, plate_dy = 2, plate_cut = 2; // plate: top dy, bottom card_h - cut
+    float text_x = 9, name_y = 7, name_h = 18, place_y = 25, place_h = 14;     // from the plate's top left
+    float icon_x = 7, bar_x = 22, bar_w = 97, bar_h = 8, bar1_y = 40, bar2_y = 52, icon_dy = -2;
+    float pic_pad = 6, gap = 6, edge = 4, above = 6, tab_w = 92, tab_h = 30, tab_gap = 6, title_dy = 1;
+} g_cl;
 
 static const char* card_style(uint32_t mode)
 {
@@ -3003,6 +3015,11 @@ static void set_look(Win w, std::string& shown, const std::string& stem)
     if (!w || shown == stem) return;
     if (void* look = card_look(stem)) {
         sui::set_drawable(w, look);
+        // the game draws a window's new drawable only once the window changes (seen 2026-11-14: a partner's new
+        // stage showed its art ~10 s late): hidden and shown again, it is drawn anew
+        const bool was = sui::visible(w);
+        sui::set_visible(w, false);
+        sui::set_visible(w, was);
         shown = stem;
     }
 }
@@ -3130,10 +3147,11 @@ static void ph_apply(void*)
     auto px = [s](float v) { return (float)std::lround(v * s); };
     g_ph_floor = measure_right_floor(sw, sh);
     const int n = std::min<int>((int)want.size(), kPartyRows);
-    const float right = sw - px(4), bottom = g_ph_floor - px(6);
-    const float row_h = px(62), gap = px(6);
-    const float top = bottom - n * row_h - (n - 1) * gap - px(30);
-    const Rect all{right - px(186), top, right, bottom};
+    const CardLayout& L = g_cl;
+    const float right = sw - px(L.edge), bottom = g_ph_floor - px(L.above);
+    const float row_h = px(L.card_h), gap = px(L.gap);
+    const float top = bottom - n * row_h - (n - 1) * gap - px(L.tab_h + L.tab_gap);
+    const Rect all{right - px(L.frame_w + L.plate_w - 4), top, right, bottom};
     if (show && main) {
         sui::set_area(g_ph.root, all);
         if (sui::parent(g_ph.root) != main) sui::add_child(main, g_ph.root);
@@ -3150,8 +3168,8 @@ static void ph_apply(void*)
     const char* own = card_style(g_ph_own_stage);
     const std::string own_style = own ? own : "space";
     set_look(g_ph.tab, g_ph.tab_style, "lineages_card_tab_" + own_style);
-    place(g_ph.tab, show, {right - px(92), top, right, top + px(26)});
-    place(g_ph.title, show, {right - px(92), top + px(1), right, top + px(25)});
+    place(g_ph.tab, show, {right - px(L.tab_w), top, right, top + px(L.tab_h)});
+    place(g_ph.title, show, {right - px(L.tab_w), top + px(L.title_dy), right, top + px(L.tab_h + L.title_dy)});
     sui::set_label_color(g_ph.title, 0xFFFFFFFF);
     for (int i = 0; i < kPartyRows; ++i) {
         auto& r = g_ph.rows[i];
@@ -3159,17 +3177,20 @@ static void ph_apply(void*)
         const PartyRow row = on ? want[i] : PartyRow{};
         const char* st = card_style(row.stage);
         const std::string style = st ? st : own_style;
-        if (on && style != r.shown_style) {
+        const bool hover = on && g_ph_hover == i;
+        const std::string want_style = style + (hover ? "_hover" : "");
+        if (on && want_style != r.shown_style) {
             std::string a = "", b = "";
             set_look(r.plate, a, "lineages_card_plate_" + style);
-            set_look(r.frame, b, "lineages_card_frame_" + style);
-            r.shown_style = style;
+            set_look(r.frame, b, "lineages_card_frame_" + want_style);
+            r.shown_style = want_style;
         }
         // the newest partner on top: row i counts up from the bottom
         const float cy = bottom - (float)(n - i) * row_h - (float)(n - 1 - i) * gap;
-        const float fx = right - px(62);
-        const Rect frame{fx, cy, right, cy + px(62)};
-        const Rect plate{fx - px(124), cy + px(2), fx + px(4), cy + px(60)};
+        const float fx = right - px(L.frame_w);
+        const float grow = hover ? px(3) : 0; // the hovered card's frame and picture grow a little (as the game's buttons)
+        const Rect frame{fx - grow, cy - grow, right + std::min(grow, px(L.edge) - 1), cy + px(L.card_h) + grow};
+        const Rect plate{fx - px(L.plate_w - 4), cy + px(L.plate_dy), fx + px(4), cy + px(L.card_h - L.plate_cut)};
         place(r.plate, on, plate);
         // left-aligned: the game's labels centre their text, so each box is as wide as its text plus the label's
         // own margin (text_px), starting one margin left of the text
@@ -3177,8 +3198,10 @@ static void ph_apply(void*)
             const float m = kLabelMargin;
             return Rect{x - m, y1, x - m + text_px(t, small) + 2 * m, y2};
         };
-        place(r.name, on, left(plate.x1 + px(9), plate.y1 + px(1), plate.y1 + px(19), row.name, false));
-        place(r.place, on, left(plate.x1 + px(9), plate.y1 + px(17), plate.y1 + px(31), row.place, D.font_button != 0));
+        place(r.name, on, left(plate.x1 + px(L.text_x), plate.y1 + px(L.name_y), plate.y1 + px(L.name_y + L.name_h),
+                               row.name, false));
+        place(r.place, on, left(plate.x1 + px(L.text_x), plate.y1 + px(L.place_y),
+                                plate.y1 + px(L.place_y + L.place_h), row.place, D.font_button != 0));
         if (on) {
             const bool light = style == "cell"; // dark text on the Cell's light metal
             sui::set_caption(r.name, row.name);
@@ -3189,7 +3212,9 @@ static void ph_apply(void*)
         // the bars: health, then the second one (its own colour and icon)
         for (int k = 0; k < 2; ++k) {
             auto& bar = r.bars[k];
-            const float value = k == 0 ? row.health : row.energy;
+            // the second bar where the stage has one (Creature hunger, Space energy)
+            const bool second = row.stage == modes::kCreature || row.stage == modes::kSpace;
+            const float value = k == 0 ? row.health : second ? row.energy : -1.f;
             const bool visible = on && value >= 0;
             if (visible && k == 1) {
                 const bool space = row.stage == modes::kSpace;
@@ -3198,10 +3223,11 @@ static void ph_apply(void*)
                 if (bar.fill && bar.shown_fill != fill_stem) set_look(bar.fill, bar.shown_fill, fill_stem);
                 set_look(bar.icon, bar.shown_icon, icon_stem);
             }
-            const float by = plate.y1 + px(k == 0 ? 33 : 46);
-            const Rect b{plate.x1 + px(22), by, plate.x1 + px(120), by + px(9)};
+            const float by = plate.y1 + px(k == 0 ? L.bar1_y : L.bar2_y);
+            const Rect b{plate.x1 + px(L.bar_x), by, plate.x1 + px(L.bar_x + L.bar_w), by + px(L.bar_h)};
             const float filled = std::round((b.x2 - b.x1) * std::clamp(value, 0.f, 1.f));
-            place(bar.icon, visible, {plate.x1 + px(7), by - px(2), plate.x1 + px(19), by + px(10)});
+            place(bar.icon, visible, {plate.x1 + px(L.icon_x), by + px(L.icon_dy), plate.x1 + px(L.icon_x + 12),
+                                      by + px(L.icon_dy + 12)});
             place(bar.back, visible, b);
             place(bar.clip, visible && filled > 0, {b.x1, b.y1, b.x1 + filled, b.y2});
             if (bar.fill) { // the full pill inside the clipping window (its own coordinates)
@@ -3229,8 +3255,10 @@ static void ph_apply(void*)
             H->log(M, SK_INFO, "ui: Party cards: no picture %08X/%08X here for %s", row.portrait, row.portrait_group,
                    row.name.c_str());
         }
+        if (hover && r.frame) sui::bring_to_front(g_ph.root, r.frame); // over its neighbours while grown
         if (r.portrait) sui::bring_to_front(g_ph.root, r.portrait);
-        place(r.portrait, on && r.shown_portrait, {fx + px(6), cy + px(6), right - px(6), cy + px(56)});
+        place(r.portrait, on && r.shown_portrait,
+              {frame.x1 + px(L.pic_pad), frame.y1 + px(L.pic_pad), frame.x2 - px(L.pic_pad), frame.y2 - px(L.pic_pad)});
     }
     g_ph_shown = g_ph_want;
     g_ph_cards = want;
@@ -3246,8 +3274,27 @@ bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, vo
     g_ph_click = on_portrait;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
+    // the hover: the pointer's last place (the game window's own mouse moves) over a card's frame (the frames' mouse
+    // enter / leave messages did not come, 2026-11-14)
+    if (show && g_ph_shown_show && g_ph.root) {
+        int mx = -1, my = -1;
+        mouse::last_move(mx, my);
+        const Rect root = sui::screen_rect(g_ph.root);
+        int h = -1;
+        for (int i = 0; i < kPartyRows && i < (int)g_ph_cards.size(); ++i) {
+            Win f = g_ph.rows[i].frame;
+            if (!f || !sui::visible(f)) continue;
+            const Rect a = sui::area(f); // (relative to the root)
+            if (mx >= root.x1 + a.x1 && mx < root.x1 + a.x2 && my >= root.y1 + a.y1 && my < root.y1 + a.y2) h = i;
+        }
+        if (h != g_ph_hover) {
+            g_ph_hover = h;
+            g_ph_dirty = true;
+        }
+    }
     bool same = show == g_ph_shown_show && rows == g_ph_shown && scale == g_ph_shown_scale &&
-                sw == g_ph_shown_sw && sh == g_ph_shown_sh;
+                sw == g_ph_shown_sw && sh == g_ph_shown_sh && !g_ph_dirty;
+    if (!same) g_ph_dirty = false;
     static double s_floor_at = 0; // Spore's own right-edge UI comes and goes (the Pack list): measured again each second
     if (same && show && H->time_seconds() >= s_floor_at) {
         s_floor_at = H->time_seconds() + 1;
@@ -3500,6 +3547,30 @@ static void native_scale_tick()
 // tests (BUG-9191): `coop.partymode <n>`: the portrait drawable's layout mode, the pictures made again
 void register_party_commands()
 {
+    H->command_add(M, "coop.cardlayout", "coop.cardlayout [<name>=<value>...] - tests: the Party cards' layout (1x px)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       struct F { const char* n; float* v; };
+                       CardLayout& L = g_cl;
+                       const F fields[] = {{"card_h", &L.card_h}, {"frame_w", &L.frame_w}, {"plate_w", &L.plate_w},
+                                           {"plate_dy", &L.plate_dy}, {"plate_cut", &L.plate_cut}, {"text_x", &L.text_x},
+                                           {"name_y", &L.name_y}, {"name_h", &L.name_h}, {"place_y", &L.place_y},
+                                           {"place_h", &L.place_h}, {"icon_x", &L.icon_x}, {"bar_x", &L.bar_x},
+                                           {"bar_w", &L.bar_w}, {"bar_h", &L.bar_h}, {"bar1_y", &L.bar1_y},
+                                           {"bar2_y", &L.bar2_y}, {"icon_dy", &L.icon_dy}, {"pic_pad", &L.pic_pad},
+                                           {"gap", &L.gap}, {"edge", &L.edge}, {"above", &L.above}, {"tab_w", &L.tab_w},
+                                           {"tab_h", &L.tab_h}, {"tab_gap", &L.tab_gap}, {"title_dy", &L.title_dy}};
+                       for (int i = 1; i < argc; i++) {
+                           const char* eq = strchr(argv[i], '=');
+                           if (!eq) continue;
+                           for (const F& f : fields)
+                               if (!strncmp(argv[i], f.n, eq - argv[i]) && strlen(f.n) == (size_t)(eq - argv[i]))
+                                   *f.v = (float)atof(eq + 1);
+                       }
+                       for (const F& f : fields) H->out_printf(out, "%s=%g ", f.n, *f.v);
+                       g_ph_shown.clear(); // laid out again
+                       g_ph_shown_show = false;
+                       return 0;
+                   }, nullptr, 0);
     H->command_add(M, "coop.partymode", "coop.partymode <n> - tests: the Party portraits' drawable layout mode",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1) g_portrait_mode = (uint32_t)strtoul(argv[1], nullptr, 0);
