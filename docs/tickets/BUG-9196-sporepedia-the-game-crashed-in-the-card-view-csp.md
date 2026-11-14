@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 64c3afed
 tests: tools/qa_win (to run: the Sporepedia from a game, then My Creations in the galaxy menu)
 signature: cPlayer::GetConsequenceTrait 0xC75880 read 0+0x10FC from the Sporepedia card (0xDD1000) in the galaxy menu
 docs:

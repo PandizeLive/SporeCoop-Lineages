@@ -10,7 +10,7 @@ role: host
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 64c3afed
 tests: tools/qa_win (to run: a downed player with an enemy on it)
 signature:
 docs:
