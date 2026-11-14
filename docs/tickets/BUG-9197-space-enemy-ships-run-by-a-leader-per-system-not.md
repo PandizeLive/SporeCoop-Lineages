@@ -10,7 +10,7 @@ role: both
 versions: 0.7.8-lineages54-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 59ca2bbc
 tests: tools/qa_win (three TITAN games: coop.fleet spawn/shoot/hurt, coop.space land/takeoff)
 signature:
 docs: docs/re/space.md#space-fleet-leader
