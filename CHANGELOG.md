@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Space: a partner who rejoins under another name keeps their wars,
+  alliances and budget, and shows as one empire, not two (BUG-9198).
 - Space: partners in a system without the host see the same enemy ships and
   fights: the first player there runs them for everyone (BUG-9197).
 - Party: each partner has a card in the style of the stage they play

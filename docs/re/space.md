@@ -2693,3 +2693,17 @@ BUG-9197, decision 3D A.
 * ~ A mirror needs the ship's model on the mirroring game: a test ship with the leader's own ship model was listed
   but not drawn on the other guest ("no mirror yet", BUG-0323's rule); one with a model both have was (coop.fleet
   spawn <type> like <ship>).
+
+## Per-player Space lists keyed by identity (2026-11-14, feat/lineages-47)
+<a id="space-identity-keys"></a>
+
+BUG-9198, roadmap phase 6 step 2.
+* ✔ (live, two games) Rivalry relations, proposals, kept budgets and the ally mirrors are keyed by
+  `identity::key(player)` ("id:<16 hex>", "name:<name>" until the identity is known): a rejoin under another name
+  keeps the war and the budget, and there is one mirror per partner.
+* ✔ Guests learn the identities from the host: MSG_IDENTITY sent by the host is its table (u8 count, then u8
+  player + u64 identity); a guest still sends its own u64 to the host. `identity::of()` stays host-only (party,
+  tribe and civ code rely on 0 on guests); `identity::known()` is the any-machine form.
+* Not changed, on purpose: spacecoop.cpp (captains, downed partners, last star) and space_map.cpp rosters are live
+  state each player sends again after a rejoin; space_map.cpp kept colonies keep their own side-file key
+  (BUG-9189, the name without the "name:" prefix); space_finale.cpp (the Galactic Core) is roadmap 2C.

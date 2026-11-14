@@ -812,3 +812,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9195](BUG-9195-creature-a-late-joiner-who-finished-the-editor-i.md) | fixed | bug | creature | 2026-11-13 | unreleased | Creature: a late joiner who finished the editor is sent to the galaxy menu and gets the world again |
 | [BUG-9196](BUG-9196-sporepedia-the-game-crashed-in-the-card-view-csp.md) | fixed | crash | menu | 2026-11-13 | unreleased | Sporepedia: the game crashed in the card view (cSPAssetView) browsing My Creations after a co-op session (read of 0x10FC) |
 | [BUG-9197](BUG-9197-space-enemy-ships-run-by-a-leader-per-system-not.md) | fixed | feature | space | 2026-11-14 | unreleased | Space: enemy ships run by a leader per system, not only where the host is |
+| [BUG-9198](BUG-9198-space-rivalry-and-ally-lists-keyed-by-name-a-ren.md) | fixed | bug | space | 2026-11-14 | unreleased | Space rivalry and ally lists keyed by name: a rename or rejoin loses or duplicates them |
