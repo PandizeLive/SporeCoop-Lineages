@@ -16,6 +16,7 @@ static bool (*g_graphics_input)(unsigned, uintptr_t, int, int);
 static bool (*g_list_input)(unsigned, uintptr_t, int, int);
 static bool (*g_depth_input)(unsigned, uintptr_t, int, int);
 static bool (*g_tribe_input)(unsigned, uintptr_t, int, int); // BUG-9154: right presses on a party member's hut
+static bool (*g_remap)(unsigned, int&, int&);                  // BUG-9191: the scaled UI's unscaled places
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
 static volatile int g_mx = -1, g_my = -1; // the last mouse move over the game window (client pixels)
@@ -34,6 +35,24 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
 {
     if (code == HC_ACTION && wp == PM_REMOVE && lp) {
         MSG* m = (MSG*)lp;
+        // BUG-9191 (3H): first, so the game and every handler below see the point the UI's layout expects
+        if (g_remap && ours(m->hwnd) && ((m->message >= WM_MOUSEFIRST && m->message <= WM_MBUTTONDBLCLK) ||
+                                         m->message == WM_MOUSEWHEEL)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->message == WM_MOUSEWHEEL)
+                ScreenToClient(g_wnd, &p);
+            else if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            int x = p.x, y = p.y;
+            if (g_remap(m->message, x, y)) {
+                p = {x, y};
+                if (m->message == WM_MOUSEWHEEL)
+                    ClientToScreen(g_wnd, &p);
+                else if (m->hwnd != g_wnd)
+                    MapWindowPoints(g_wnd, m->hwnd, &p, 1);
+                m->lParam = MAKELPARAM((WORD)(short)p.x, (WORD)(short)p.y);
+            }
+        }
         if (g_list_input && ours(m->hwnd) &&
             (m->message == WM_MOUSEWHEEL || m->message == WM_LBUTTONDOWN ||
              m->message == WM_LBUTTONUP || m->message == WM_MOUSEMOVE)) {
@@ -106,6 +125,7 @@ void install(const void* game_window)
 
 void set_fov_wheel(bool (*handler)(int delta)) { g_fov_wheel = handler; }
 void set_tribe_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_tribe_input = handler; }
+void set_remap(bool (*handler)(unsigned, int&, int&)) { g_remap = handler; }
 void set_graphics_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_graphics_input = handler; }
 void set_list_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_list_input = handler; }
 void set_depth_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_depth_input = handler; }

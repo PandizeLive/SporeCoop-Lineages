@@ -284,3 +284,4 @@ SporeCoop::TribeHutUI_HandleMessage ; BUG-9153: a guest's Add Baby sent to the h
 SporeCoop::TribeStage_AddGoalProgress ; BUG-9155: the party wipe's test win (coop.tribe win) is off on GOG 2016 (unsupported build)
 SporeCoop::CreatureMateKeeper ; BUG-9174: a guest's own-family copy offered as mate (icon, hearts) is off on GOG 2016 (unsupported build)
 SporeCoop::cPlayer_GetConsequenceTrait ; the Sporepedia trait guard (a card read outside a game) is off (BUG-9196)
+UTFWin::ISlider::Create ; the native UI Scale slider of our Settings is off on GOG 2016 (BUG-9191)

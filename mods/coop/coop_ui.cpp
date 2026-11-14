@@ -1986,13 +1986,187 @@ static bool g_settings_tabs_fix = true;
 COOP_FIX("ui.settings_tabs", "BUG-9120", g_settings_tabs_fix,
          "ui: the Frame Rate Cap controls in Spore's Settings no longer make the dialog vanish on another tab");
 
+// ---- decision 3I (the owner's layout 2026-11-13, images/uiscale_mockup_owner.png) ----
+// Spore's Settings dialog grows taller; the Graphic page gets an "Interface" box under the quality table with the
+// Interface Size slider (a native WinSlider, lying on its side), the Frame Rate field moves into the Screen Size box
+// and a Borderless Mode check box sits under Full Screen Mode (the two exclusive). The left panel keeps only the tabs.
+// Old (`coop.fix ui.settings_layout off`, before the dialog first opens): the controls in the left panel.
+static bool g_settings_layout = true;
+COOP_FIX("ui.settings_layout", "BUG-9191", g_settings_layout,
+         "ui: Interface Size slider, Frame Rate and Borderless Mode on Spore's Graphic Settings page (the dialog grows)");
+static bool g_settings_visible;
+
+constexpr uint32_t kIfaceBox = 0xC00F0115, kIfaceTitle = 0xC00F0116, kIfaceLabel = 0xC00F0117,
+                   kIfaceValue = 0xC00F0118;
+constexpr uint32_t kFullScreenCheck = 0x05B591C0;
+
+static void move_win(Win w, float dy, float grow = 0)
+{
+    const auto a = sui::area(w);
+    sui::set_area(w, {a.x1, a.y1 + dy, a.x2, a.y2 + dy + grow});
+}
+
+// the dialog `d` pixels taller and up by half of it (centered; 800x600 still holds it). Its root holds the frame
+// (pieces relative to it: the lower ones move, the tall edges grow), two backgrounds, Accept, Cancel and the settings
+// window (tabs, title, the pages' container).
+static void grow_settings_dialog(Win settings, float d)
+{
+    Win root = sui::parent(settings);
+    if (!root) return;
+    const float up = std::floor(d / 2);
+    for (Win c : sui::children(root)) {
+        if (c == settings) continue;
+        const auto a = sui::area(c);
+        const auto pieces = sui::children(c);
+        if (pieces.size() >= 10) { // the frame
+            for (Win f : pieces) {
+                const auto b = sui::area(f);
+                if (b.y1 >= 400) move_win(f, d);
+                else if (b.y2 >= 400) move_win(f, 0, d);
+            }
+            move_win(c, -up, d);
+        } else if (a.h() >= 400)
+            move_win(c, -up, d); // the backgrounds
+        else
+            move_win(c, d - up); // Accept, Cancel
+    }
+    for (Win c : sui::children(settings)) {
+        if (sui::control_id(c) == 0x046967C0) { // the pages
+            move_win(c, -up, d);
+            for (Win page : sui::children(c)) move_win(page, 0, d);
+        } else
+            move_win(c, -up);
+    }
+}
+
+static int ui_percent(Win w)
+{
+    if (sui::as_slider(w)) return (sui::slider_value(w) + 2) / 5 * 5;
+    const std::string c = sui::caption(w);
+    return atoi(c.c_str() + std::min<size_t>(10, c.size()));
+}
+
+static bool borderless_on(Win w)
+{
+    return sui::caption(w).empty() ? sui::button_selected(w) : sui::caption(w) == "Borderless: On";
+}
+
+// the owner's Graphic page; false when a native window it builds on is missing (nothing changed then)
+static bool build_graphic_page(Win settings, Win panel, const uint32_t* ids, Win& fps, Win& borderless, Win& ui_scale)
+{
+    Win row_label = sui::find_caption(panel, "Shadows");          // the quality table's row label: our labels' look
+    Win screen_title = sui::find_caption(panel, "Screen Size");
+    Win screen_box = screen_title ? sui::parent(screen_title) : nullptr;
+    Win full_box = sui::find(panel, 0x061C90B8);
+    Win full_check = sui::find(panel, kFullScreenCheck);
+    Win full_label = sui::find(panel, 0x0695B438);
+    Win combo = sui::find(panel, 0x046170A1);
+    Win note = sui::find_caption(panel, "Changing the screen size");
+    Win music = sui::find(settings, 0x8BDD39EC); // the Audio page's Music slider: the slider class and its look
+    if (!row_label || !screen_box || !full_box || !full_check || !full_label || !combo || !music) {
+        H->log(M, SK_WARN, "ui: Graphic page layout: a native window is missing, the old controls instead");
+        return false;
+    }
+    // even spacing (the owner 2026-11-13: "a little inconsistent with spacing"): 8 px between the boxes, rows 8 px
+    // under a box's title band (30 px) and 10 px above its bottom; the two check boxes centred in theirs
+    constexpr float kGrow = 72, kShift = 65, kBoxH = 98;
+    grow_settings_dialog(settings, kGrow);
+    for (Win c : sui::children(panel)) // everything under the quality table makes room for the Interface box
+        if (sui::area(c).y1 >= 240) move_win(c, kShift);
+    for (Win b : {screen_box, full_box}) { // a second row in each
+        const auto a = sui::area(b);
+        sui::set_area(b, {a.x1, a.y1, a.x2, a.y1 + kBoxH});
+    }
+    {
+        const auto a = sui::area(combo);
+        sui::set_area(combo, {a.x1, 68, a.x2, 68 + a.h()});
+    }
+    if (note) {
+        sui::set_caption(note, "Changing the screen size needs a restart.");
+        const auto a = sui::area(note);
+        sui::set_area(note, {a.x1, kBoxH + 4, a.x2, kBoxH + 24});
+    }
+    // the Interface box (the Screen Size box's look: its title band), its title, the label, the value, the slider
+    Win box = sui::box(panel, {2, 246, 454, 308}, sui::drawable(screen_box));
+    // (the native labels are text windows, not buttons: ours take their fonts and colours, sampled 2026-11-13)
+    constexpr uint32_t kLabelColor = 0xFFC0C7CB, kTitleColor = 0xFFDBDEE0;
+    const uint32_t label_font = sui::font(row_label), title_font = sui::font(screen_title);
+    Win title = sui::label(panel, {20, 253, 250, 272}, "Interface", title_font, kTitleColor, sui::kAlignLeft);
+    Win size_label = sui::label(panel, {20, 274, 112, 294}, "Interface Size", label_font, kLabelColor, sui::kAlignLeft);
+    Win size_value = sui::label(panel, {114, 274, 160, 294}, "100%", label_font, 0xFFFFFFFF, sui::kAlignLeft);
+    void* knob = sui::image(sui::fnv("lineages_slider_knob_h"), 0x2F7D0004, sui::fnv("sporecoop"));
+    void* track = sui::image(sui::fnv("lineages_slider_track_h"), 0x2F7D0004, sui::fnv("sporecoop"));
+    void* look = knob && track ? sui::slider_drawable_with(sui::slider_drawable_of(music), nullptr, knob, track) : nullptr;
+    ui_scale = sui::slider(panel, {178, 269, 438, 299}, 50, 200, 100, true, look); // (16 px from the box's right)
+    // Frame Rate in the Screen Size box, above the resolution
+    const auto sb = sui::area(screen_box);
+    Win fps_label = sui::label(panel, {sb.x1 + 18, sb.y1 + 38, sb.x1 + 100, sb.y1 + 58}, "Frame Rate", label_font,
+                               kLabelColor, sui::kAlignLeft);
+    // the field in the Graphic Cache Size field's look (the owner: "make sure the frame rate field looks nice and
+    // native"): its glossy black box and arrows drawn from that field's pixels (tools/settings_ui_assets.py; the
+    // native drawables draw nothing in a window of ours), its font, no background of our own
+    Win cache = sui::find(panel, 0x04728B30);
+    const sui::Rect field_area{sb.x1 + 106, sb.y1 + 34, sb.x1 + 162, sb.y1 + 61};
+    const uint32_t ui_group = sui::fnv("sporecoop");
+    Win fps_frame = sui::image_window(panel, sui::fnv("lineages_field_box"), ui_group, field_area.x1, field_area.y1);
+    fps = sui::text_edit(panel, field_area, "", cache ? sui::font(cache) : sui::font(full_label), 3, !fps_frame);
+    // its up / down arrows (the owner: "if you keep the up and down arrow, then we can do 15, 30, 45, 60, 90, 120,
+    // 144, 160, 170, 240, 360"): the cache field's spinner look; the upper half steps up, the lower down; below 15
+    // the field is blank (Spore's own frame rate); typing any number still works
+    Win fps_spin = sui::image_window(panel, sui::fnv("lineages_field_arrows"), ui_group, field_area.x2 + 1,
+                                     field_area.y1);
+    if (fps_spin && fps) {
+        sui::set_flag(fps_spin, sui::kFlagIgnoreMouse, false);
+        sui::add_handler(fps_spin, [fps](Win w, const sui::Msg& m) {
+            if (m.type != sui::kMsgMouseDown) return false;
+            static const int kSteps[] = {15, 30, 45, 60, 90, 120, 144, 160, 170, 240, 360};
+            float y = 0;
+            memcpy(&y, &m.b, 4); // the mouse, relative to the arrows
+            const bool up = y < sui::area(w).h() / 2;
+            const int now = atoi(sui::edit_text(fps).c_str());
+            int next = now;
+            if (up) {
+                next = kSteps[std::size(kSteps) - 1];
+                for (int s : kSteps)
+                    if (s > now) { next = s; break; }
+            } else {
+                next = 0;
+                for (int s : kSteps)
+                    if (s < now) next = s;
+            }
+            sui::set_edit_text(fps, next ? std::to_string(next) : "");
+            return true;
+        });
+    }
+    // Borderless Mode under Full Screen Mode (the native check box copied)
+    for (Win w : {full_check, full_label}) { // Full Screen Mode up into the first of the two centred rows
+        const auto a = sui::area(w);
+        sui::set_area(w, {a.x1, 19, a.x2, 45});
+    }
+    borderless = sui::button_like(full_box, full_check, {29, 53, 55, 79}, "");
+    Win border_label = sui::label(full_box, {62, 53, 177, 79}, "Borderless Mode", sui::font(full_label), kLabelColor,
+                                  sui::kAlignLeft);
+    Win windows[] = {fps_label, fps,        borderless, border_label, ui_scale, box,
+                     title,     size_label, size_value, fps_frame,    fps_spin};
+    for (int i = 0; i < 11; ++i)
+        if (windows[i]) sui::set_ids(windows[i], ids[i], ids[i]); // never command 0 (BUG-9120)
+    for (Win l : {box, title, size_label, size_value, fps_label, border_label, fps_frame})
+        if (l) sui::set_flag(l, sui::kFlagIgnoreMouse, true);
+    H->log(M, SK_INFO, "ui: Graphic page laid out (slider %s, its look %s)", ui_scale ? "made" : "MISSING",
+           look ? "ours" : "MISSING");
+    return fps && borderless;
+}
+
 static void refresh_graphics_options()
 {
     constexpr uint32_t kSettings = 0x043DE590;
     constexpr uint32_t kGraphicPanel = 0x0437A968;
     constexpr uint32_t kAccept = 0x043B7A18;
     constexpr uint32_t kDefaults = 0x05CACA50;
-    constexpr uint32_t kControls[] = {0xC00F0110, 0xC00F0111, 0xC00F0112, 0xC00F0113, 0xC00F0114};
+    // the Frame Rate label, its field, Borderless, its hint (the new layout: its label), UI Scale, then the new layout's
+    // Interface box, title, label and value
+    constexpr uint32_t kControls[] = {0xC00F0110, 0xC00F0111, 0xC00F0112, 0xC00F0113, 0xC00F0114,
+                                      kIfaceBox, kIfaceTitle, kIfaceLabel, kIfaceValue, 0xC00F0119, 0xC00F011A};
     static Win last_open = nullptr;
     Win settings = sui::find(sui::main_window(), kSettings);
     Win panel = settings ? sui::find(settings, kGraphicPanel) : nullptr;
@@ -2002,6 +2176,7 @@ static void refresh_graphics_options()
             if (!sui::visible(w)) return false;
         return true;
     };
+    g_settings_visible = visible(settings);
     if (!visible(settings)) {
         last_open = nullptr;
         g_graphics_fps = nullptr;
@@ -2018,17 +2193,20 @@ static void refresh_graphics_options()
         if (!defaults || !accept) return;
         const uint32_t font = sui::font(sui::find(panel, 0x0695B438));
         if (!font) return;
-        Win label = sui::label(settings, {77, 395, 211, 418}, "Frame Rate Cap", font, kWhite, sui::kAlignLeft);
-        fps = sui::text_edit(settings, {209, 392, 261, 420}, "", font, 3);
-        borderless = sui::button_like(settings, defaults, {76, 431, 263, 467}, "");
-        Win hint = sui::label(settings, {77, 472, 268, 500}, "Borderless uses windowed mode.", font, kDim,
-                              sui::kAlignLeft);
-        ui_scale = sui::button_like(settings, defaults, {76, 505, 263, 541}, "");
-        Win windows[] = {label, fps, borderless, hint, ui_scale};
-        for (int i = 0; i < 5; ++i)
-            if (windows[i]) sui::set_ids(windows[i], kControls[i], g_settings_tabs_fix ? kControls[i] : 0);
+        const bool laid_out = g_settings_layout && build_graphic_page(settings, panel, kControls, fps, borderless, ui_scale);
+        if (!laid_out) {
+            Win label = sui::label(settings, {77, 395, 211, 418}, "Frame Rate Cap", font, kWhite, sui::kAlignLeft);
+            fps = sui::text_edit(settings, {209, 392, 261, 420}, "", font, 3);
+            borderless = sui::button_like(settings, defaults, {76, 431, 263, 467}, "");
+            Win hint = sui::label(settings, {77, 472, 268, 500}, "Borderless uses windowed mode.", font, kDim,
+                                  sui::kAlignLeft);
+            ui_scale = sui::button_like(settings, defaults, {76, 505, 263, 541}, "");
+            Win windows[] = {label, fps, borderless, hint, ui_scale};
+            for (int i = 0; i < 5; ++i)
+                if (windows[i]) sui::set_ids(windows[i], kControls[i], g_settings_tabs_fix ? kControls[i] : 0);
+        }
         if (!fps || !borderless) return;
-        if (ui_scale)
+        if (ui_scale && !laid_out)
             sui::add_handler(ui_scale, [](Win button, const sui::Msg& msg) { // 75 .. 150 %, round
                 if (!sui::is_click(msg)) return false;
                 static const int kSteps[] = {75, 90, 100, 110, 125, 150};
@@ -2042,7 +2220,7 @@ static void refresh_graphics_options()
         sui::add_handler(fps, [](Win, const sui::Msg& msg) {
             return msg.type == sui::kMsgTextChanged;
         });
-        sui::add_handler(borderless, [](Win button, const sui::Msg& msg) {
+        if (!laid_out) sui::add_handler(borderless, [](Win button, const sui::Msg& msg) {
             if (!sui::is_click(msg)) return false;
             sui::set_caption(button, sui::caption(button) == "Borderless: On" ? "Borderless: Off" : "Borderless: On");
             return true;
@@ -2050,8 +2228,7 @@ static void refresh_graphics_options()
         sui::add_handler(accept, [fps, borderless, ui_scale, file](Win, const sui::Msg& msg) {
             if (!sui::is_click(msg)) return false;
             if (ui_scale) { // its own key: saved apart from the frame cap and the window (read again within 2 s)
-                const std::string c = sui::caption(ui_scale);
-                const int percent = atoi(c.c_str() + std::min<size_t>(10, c.size()));
+                const int percent = ui_percent(ui_scale);
                 if (percent && percent != lineages_graphics::read_ui_scale(file))
                     lineages_graphics::write_ui_scale(file, percent);
             }
@@ -2063,7 +2240,7 @@ static void refresh_graphics_options()
                             L"Frame Rate Cap", MB_OK | MB_ICONWARNING);
                 return true;
             }
-            const lineages_graphics::Settings value_to_save{(int)value, sui::caption(borderless) == "Borderless: On"};
+            const lineages_graphics::Settings value_to_save{(int)value, borderless_on(borderless)};
             const auto previous = lineages_graphics::read(file);
             if (previous.fps == value_to_save.fps && previous.borderless == value_to_save.borderless)
                 return false;
@@ -2098,8 +2275,16 @@ static void refresh_graphics_options()
     if (last_open != settings) {
         const auto saved = lineages_graphics::read(file);
         sui::set_edit_text(fps, saved.fps ? std::to_string(saved.fps) : "");
-        sui::set_caption(borderless, saved.borderless ? "Borderless: On" : "Borderless: Off");
-        if (ui_scale) sui::set_caption(ui_scale, "UI Scale: " + std::to_string(lineages_graphics::read_ui_scale(file)) + "%");
+        const int percent = lineages_graphics::read_ui_scale(file);
+        if (sui::caption(borderless).empty()) // the check box: off while Full Screen Mode is on (the two exclusive)
+            sui::set_button_selected(borderless,
+                                     saved.borderless && !sui::button_selected(sui::find(settings, kFullScreenCheck)));
+        else
+            sui::set_caption(borderless, saved.borderless ? "Borderless: On" : "Borderless: Off");
+        if (sui::as_slider(ui_scale))
+            sui::set_slider_value(ui_scale, percent);
+        else if (ui_scale)
+            sui::set_caption(ui_scale, "UI Scale: " + std::to_string(percent) + "%");
         last_open = settings;
     }
     for (uint32_t id : kControls)
@@ -2108,17 +2293,32 @@ static void refresh_graphics_options()
             if (g_settings_tabs_fix && visible(panel) && !(sui::flags(control) & sui::kFlagEnabled))
                 sui::set_enabled(control, true); // BUG-9120: the tab switch disabled it with its page
         }
+    if (sui::as_slider(ui_scale)) { // the value beside the slider, rounded to 5 %
+        const std::string shown = std::to_string(ui_percent(ui_scale)) + "%";
+        Win value = sui::find(settings, kIfaceValue);
+        if (value && sui::caption(value) != shown) sui::set_caption(value, shown);
+    }
+    if (sui::caption(borderless).empty()) { // Borderless Mode and Full Screen Mode exclude each other (the owner)
+        static bool was_border;
+        Win full = sui::find(settings, kFullScreenCheck);
+        if (sui::button_selected(borderless) && full && sui::button_selected(full)) {
+            if (!was_border) sui::set_button_selected(full, false); // Borderless was just ticked
+            else sui::set_button_selected(borderless, false);       // Full Screen was just ticked
+        }
+        was_border = sui::button_selected(borderless);
+    }
     g_graphics_fps = visible(panel) ? fps : nullptr;
     if (!g_graphics_fps) g_graphics_typing = false;
     mouse::set_graphics_input(graphics_input);
 }
 
+static void native_scale_tick(); // below the Party panel (3H)
 static void refresh_task(void*)
 {
     refresh();
     refresh_graphics_options();
+    native_scale_tick();
 }
-
 void init(const SkHost* host, SkMod* mod, Api api)
 {
     H = host;
@@ -2387,7 +2587,7 @@ void tick()
         g_status_until = 0;
         g_dirty = true;
     }
-    double period = g_want_open ? 0.25 : 1.0;
+    double period = g_settings_visible ? 0.1 : g_want_open ? 0.25 : 1.0; // the Settings: its slider's value
     if (!g_pending && (g_dirty || now - g_last_refresh >= period)) {
         g_pending = true;
         g_dirty = false;
@@ -2815,6 +3015,215 @@ bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, vo
 }
 
 Rect party_hud_area() { return g_ph_shown_show ? g_ph.area : Rect{}; }
+
+// ---- decision 3H A: Spore's own UI at the Interface Size (BUG-9191) ----
+// No native setting exists (docs/re/graphics.md). The window manager builds each window's transform and sends it to the
+// window's procs as kMsgTransformed (0x15, d = the matrix), as the game's InflateEffect grows a button; a proc of ours on
+// every top piece of the UI (the first windows under the full-screen layers: the HUD pieces, dialogs, menus) scales that
+// matrix. The game scales about the window's middle; ours moves the pivot to the piece's own screen side (a HUD piece
+// at the bottom left grows from the bottom left, a dialog in the middle from its middle), so nothing leaves the
+// screen. Hit tests use the inverse the window manager computes from it. The Party panel scales itself (set_party_hud).
+// The mouse: ns_remap below. Nothing changes at 100 % (the default). Old (`coop.fix ui.native_scale off`): Spore's UI at
+// 100 %, only the mod's parts scale.
+static bool g_native_scale = true;
+COOP_FIX("ui.native_scale", "BUG-9191", g_native_scale,
+         "ui: the Interface Size scales Spore's own HUD, menus and dialogs, not only the mod's parts");
+static float g_ns_factor = 1.f;
+static std::vector<std::pair<Win, uint32_t>> g_ns_done; // windows with our proc (and their id, against a reused address)
+
+// one piece's size and pivot: its extent (its own rectangle and its children's: Settings' root is a 44x38 box in a
+// corner with its frame and pages placed around it; children as large as the screen, as the dim layer behind
+// Options, do not count), the factor (no piece past 95 % of the screen: a dialog at 150 % on a 768 high screen) and
+// the pivot (the side of the screen the piece sits on, by thirds, else its middle)
+struct NsXform {
+    float s = 1, px = 0, py = 0;
+    sui::Rect extent;
+};
+static NsXform ns_xform(Win w)
+{
+    NsXform t;
+    const sui::Rect screen = sui::area(sui::main_window());
+    sui::Rect r = sui::screen_rect(w);
+    for (Win c : sui::children(w)) {
+        if (!sui::visible(c)) continue;
+        const sui::Rect b = sui::screen_rect(c);
+        if (b.w() >= screen.w() * 0.9f || b.h() >= screen.h() * 0.9f) continue;
+        r = {std::min(r.x1, b.x1), std::min(r.y1, b.y1), std::max(r.x2, b.x2), std::max(r.y2, b.y2)};
+    }
+    t.extent = r;
+    t.s = g_ns_factor;
+    if (t.s > 1 && r.w() > 0 && r.h() > 0)
+        t.s = std::max(1.f, std::min({t.s, screen.w() * 0.95f / r.w(), screen.h() * 0.95f / r.h()}));
+    const float cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2, sw = screen.w(), sh = screen.h();
+    t.px = cx < sw / 3 ? r.x1 : cx > sw * 2 / 3 ? r.x2 : cx;
+    t.py = cy < sh / 3 ? r.y1 : cy > sh * 2 / 3 ? r.y2 : cy;
+    return t;
+}
+
+static bool ns_handle(Win w, const sui::Msg& m)
+{
+    if (m.type != sui::kMsgTransformed || !m.d || g_ns_factor == 1.f) return false;
+    float* x = (float*)(uintptr_t)m.d;
+    if (IsBadWritePtr(x, 64)) return false;
+    const NsXform t = ns_xform(w);
+    // the game scales about the window's own middle (seen live 2026-11-13: the main menu, Options); the pivot moves
+    // to (px, py)
+    const sui::Rect own = sui::screen_rect(w);
+    const float mx = (own.x1 + own.x2) / 2, my = (own.y1 + own.y2) / 2;
+    x[0] *= t.s;
+    x[5] *= t.s;
+    x[12] += (t.px - mx) * (1 - t.s);
+    x[13] += (t.py - my) * (1 - t.s);
+    return false;
+}
+
+// the top pieces of Spore's UI, back to front (each window's children in their list order): the first windows under
+// the full-screen layers, without the Party panel (it scales itself)
+static void ns_pieces(Win w, const sui::Rect& screen, std::vector<Win>& out, int depth = 0)
+{
+    if (depth > 8) return;
+    for (Win c : sui::children(w)) {
+        if (out.size() >= 2000) return;
+        if (!sui::visible(c) || c == g_ph.root) continue;
+        const sui::Rect r = sui::screen_rect(c);
+        if (r.w() >= screen.w() * 0.9f && r.h() >= screen.h() * 0.9f) ns_pieces(c, screen, out, depth + 1);
+        else out.push_back(c);
+    }
+}
+
+// a visible window of the piece, taking the mouse, under the (unscaled) point; `own` tells whether it or a window
+// between it and the piece has a transform of its own (then the game hit-tests it through the drawn transform: an
+// Options button that grows on hover took a remapped press one row too low, 2026-11-13)
+static bool ns_takes_mouse_at(Win w, float x, float y, bool& own, int depth = 0)
+{
+    if (depth > 12) return false;
+    for (Win c : sui::children(w)) {
+        if (!sui::visible(c)) continue;
+        const sui::Rect r = sui::screen_rect(c);
+        const bool inside = x >= r.x1 && x < r.x2 && y >= r.y1 && y < r.y2;
+        if (inside && !(sui::flags(c) & sui::kFlagIgnoreMouse)) {
+            bool deeper = false;
+            if (ns_takes_mouse_at(c, x, y, deeper, depth + 1)) own = deeper; // the deepest one decides
+            own = own || sui::has_own_transform(c);
+            return true;
+        }
+        bool deeper = false;
+        if (ns_takes_mouse_at(c, x, y, deeper, depth + 1)) { // (children can lie outside their parent)
+            own = deeper || sui::has_own_transform(c);
+            return true;
+        }
+    }
+    return false;
+}
+
+// The mouse over a scaled piece: Spore hit-tests, hovers and drags (sliders, the planner) in the pieces' unscaled
+// places, so the pointer goes to the place the piece has at 100 % (the game's flag 0x20 fixed the hit tests only:
+// a slider still took its old place, 2026-11-13). The topmost piece with a window that takes the mouse there wins;
+// a press keeps its piece until the release (a drag past the piece's edge). Anywhere else (the world) stays as is.
+// the point's place at 100 % inside a piece: its drawn transform undone (the game places a scaled piece a little off
+// the pivot ns_handle aims at: Options sat ~30 px higher, 2026-11-13, so the drawn transform is the truth here)
+struct NsMap {
+    float sx = 1, sy = 1, tx = 0, ty = 0, ox = 0, oy = 0;
+};
+static bool ns_map_of(Win w, NsMap& m)
+{
+    if (!sui::render_xform(w, m.sx, m.sy, m.tx, m.ty)) return false;
+    const sui::Rect own = sui::screen_rect(w); // its unscaled origin
+    m.ox = own.x1;
+    m.oy = own.y1;
+    return true;
+}
+static bool ns_remap(unsigned message, int& x, int& y)
+{
+    static Win s_capture = nullptr;
+    static NsMap s_capture_t;
+    static sui::Rect s_capture_extent;
+    if (g_ns_factor == 1.f) {
+        s_capture = nullptr;
+        return false;
+    }
+    const bool down = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN ||
+                      message == WM_LBUTTONDBLCLK || message == WM_RBUTTONDBLCLK;
+    const bool up = message == WM_LBUTTONUP || message == WM_RBUTTONUP || message == WM_MBUTTONUP;
+    auto apply = [&](const NsMap& t) {
+        x = (int)std::lround((x - t.tx) / t.sx + t.ox);
+        y = (int)std::lround((y - t.ty) / t.sy + t.oy);
+    };
+    if (s_capture && !down) { // the drag of a press that began on a piece: moved while over the piece's drawn extent
+        // (a part dragged from an editor's palette into the world follows the real pointer out there)
+        const sui::Rect e = s_capture_extent;
+        const float ux = (x - s_capture_t.tx) / s_capture_t.sx + s_capture_t.ox,
+                    uy = (y - s_capture_t.ty) / s_capture_t.sy + s_capture_t.oy;
+        const bool over = ux >= e.x1 && ux < e.x2 && uy >= e.y1 && uy < e.y2;
+        if (up) s_capture = nullptr;
+        if (!over) return false;
+        apply(s_capture_t);
+        return true;
+    }
+    s_capture = nullptr;
+    Win main = sui::main_window();
+    if (!main) return false;
+    std::vector<Win> pieces;
+    ns_pieces(main, sui::area(main), pieces);
+    for (auto it = pieces.rbegin(); it != pieces.rend(); ++it) {
+        NsMap t;
+        if (!ns_map_of(*it, t) || (t.sx == 1.f && t.sy == 1.f)) continue;
+        const float ux = (x - t.tx) / t.sx + t.ox, uy = (y - t.ty) / t.sy + t.oy;
+        const sui::Rect e = ns_xform(*it).extent;
+        bool own = false;
+        if (ux < e.x1 || ux >= e.x2 || uy < e.y1 || uy >= e.y2 || !ns_takes_mouse_at(*it, ux, uy, own)) continue;
+        if (own) { // the game maps this one itself: the point as it is
+            if (down) H->log(M, SK_INFO, "ui: press %d,%d on piece %08X: a window with its own transform, not moved", x, y,
+                             sui::control_id(*it));
+            return false;
+        }
+        if (down)
+            H->log(M, SK_INFO, "ui: press %d,%d on piece %08X (drawn x%.2f +%.0f,%.0f, origin %.0f,%.0f) -> %.0f,%.0f", x, y,
+                   sui::control_id(*it), t.sx, t.tx, t.ty, t.ox, t.oy, ux, uy);
+        apply(t);
+        if (down) {
+            s_capture = *it;
+            s_capture_t = t;
+            s_capture_extent = e;
+        }
+        return true;
+    }
+    return false;
+}
+
+static void native_scale_tick()
+{
+    static double next = 0;
+    const double now = H->time_seconds();
+    if (now < next) return;
+    next = now + 1;
+    float want = 1.f;
+    if (g_native_scale)
+        want = lineages_graphics::read_ui_scale(slotfs::widen(H->mods_dir()) + L"\\" + lineages_graphics::file_name) / 100.f;
+    if (want == 1.f && g_ns_factor == 1.f) return; // 100 %: nothing to attach
+    Win main = sui::main_window();
+    if (!main) return;
+    mouse::set_remap(ns_remap);
+    std::vector<Win> pieces;
+    ns_pieces(main, sui::area(main), pieces);
+    for (Win p : pieces) {
+        const uint32_t id = sui::control_id(p);
+        bool done = false;
+        for (auto& d : g_ns_done) done |= d.first == p && d.second == id;
+        if (done) continue;
+        // every message group: kMsgTransformed (0x15) is in none of ModAPI's named flags (0x80 alone missed it,
+        // 2026-11-13); the proc returns at once for the others
+        sui::add_handler(p, ns_handle, 0xFFFF);
+        g_ns_done.push_back({p, id});
+        if (g_ns_done.size() > 4000) g_ns_done.erase(g_ns_done.begin(), g_ns_done.begin() + 1000);
+        sui::invalidate_transform(p);
+    }
+    if (want != g_ns_factor) { // a new size: every piece found now builds its transform again
+        H->log(M, SK_INFO, "ui: Spore's UI at %.0f %% (%zu pieces)", want * 100, pieces.size());
+        g_ns_factor = want;
+        for (Win p : pieces) sui::invalidate_transform(p);
+    }
+}
 
 // tests (BUG-9191): `coop.partymode <n>`: the portrait drawable's layout mode, the pictures made again
 void register_party_commands()

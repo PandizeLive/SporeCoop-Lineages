@@ -384,6 +384,7 @@ Simulator::cStarManager::GetPlanetRecord=0x00BA6F10 ; verified thiscall cPlanetR
 Simulator::cTerraformingManager::Get=0x00B3D530 ; verified cdecl() plain ret: mov eax,[0x167EB30] (BUG-0143)
 UTFWin::GetAllocator=0x00951220 ; verified cdecl() plain ret: mov eax,[0x166AAB4] (BUG-0143)
 UTFWin::ITextEdit::Create=0x0098CAA0 ; verified stdcall ITextEdit*(int, ICoAllocator*) ret 8: [esp+8] = the allocator, 0 -> UTFWin::GetAllocator (as sui.cpp calls it) (BUG-0143)
+UTFWin::ISlider::Create=0x00985AC0 ; verified stdcall IWindow*(int, ICoreAllocator*) ret 8, as IButton::Create: alloc 0x258 "UTFWin/EA::UTFWinControls::WinSlider" (the only push of that string), ctor, returns obj+4 (found 2026-11-13 in the Steam game's memory at 0xA15AC0, image shifted +0x90000)
 UTFWin::IWindowManager::Get=0x0067CA60 ; verified cdecl() plain ret: mov eax,[0x15FCC4C] (BUG-0143)
 UTFWin::Image::GetImage=0x00806320 ; likely cdecl bool(ResourceKey*, Image**, bool, int, int) plain ret 0x806402 (BUG-0143)
 UTFWin::UILayout::GetContainerWindow=0x00810610 ; verified thiscall IWindow*(UILayout*) plain ret: [[ecx+0x14]+0x88] (BUG-0143)

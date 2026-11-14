@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Settings: the Graphic page has an Interface box with an Interface Size
+  slider (50-200 %) that scales Spore's own menus, dialogs and HUD as well as
+  the mod's; Frame Rate (with up / down steps) sits in the Screen Size box and
+  Borderless Mode under Full Screen Mode (ticking one unticks the other).
 - Creature: enemies leave a downed player alone and go back to their own
   business (BUG-9192).
 - Creature: a player joining late starts at their own nest, and a joiner

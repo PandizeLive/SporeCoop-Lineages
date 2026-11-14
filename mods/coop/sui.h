@@ -29,6 +29,7 @@ struct Msg {
     int type;
     uint32_t a, b, c, d;
 };
+constexpr int kMsgTransformed = 0x15; // d: the Matrix4* the window manager is building (InflateEffect scales it)
 constexpr int kMsgKeyDown = 1, kMsgKeyUp = 2, kMsgMouseDown = 6, kMsgMouseUp = 7, kMsgButtonClick = 0x17,
               kMsgButtonSelect = 0x18, kMsgMouseEnter = 0x1B, kMsgMouseLeave = 0x1C,
               kMsgTextChanged = (int)0x9B1552DA, kMsgComponentActivated = 0x287259F6;
@@ -37,6 +38,9 @@ constexpr int kMsgKeyDown = 1, kMsgKeyUp = 2, kMsgMouseDown = 6, kMsgMouseUp = 7
 inline bool is_click(const Msg& m) { return m.type == kMsgComponentActivated; }
 constexpr int kAlignLeft = 1, kAlignRight = 2, kAlignCenter = 3;
 constexpr uint32_t kFlagVisible = 1, kFlagEnabled = 2, kFlagIgnoreMouse = 0x10, kFlagAlwaysInFront = 0x40;
+// not in ModAPI: hit tests (the mouse) go through the window's transform (seen live 2026-11-13: without it a scaled
+// window drew larger and took clicks at its old size)
+constexpr uint32_t kFlagTransformHits = 0x20;
 
 bool init(const SkHost* host, SkMod* mod);
 void register_commands();
@@ -95,6 +99,29 @@ void set_label_color(Win label, uint32_t argb);
 Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len,
               bool draw_background = true);
 void set_edit_masked(Win edit, bool masked);
+// a native slider (UTFWin WinSlider, as the Audio page's): `drawable` an ISliderDrawable (e.g. slider_drawable_of(another
+// slider)), horizontal or vertical; values min..max
+void* as_slider(Win w); // ISlider* or nullptr
+Win slider(Win parent, const Rect& r, int min, int max, int value, bool horizontal, void* drawable);
+void* slider_drawable_of(Win slider);
+// a new SliderDrawable of `like`'s class (a SliderDrawable) with our images (background groove, thumb, thumb container;
+// a null keeps `like`'s)
+void* slider_drawable_with(void* like, void* background, void* thumb, void* container);
+int slider_value(Win w);
+// a toggle button's (check box's) ticked state (IButton state flag 4, kBtnStateSelected)
+bool button_selected(Win w);
+void set_button_selected(Win w, bool on);
+// a window that only draws `drawable` (a box's background), ignoring the mouse
+Win box(Win parent, const Rect& r, void* drawable);
+void set_slider_value(Win w, int value);
+// the window manager builds the window's transform again (IWindow vt 0x98, InvalidateTransform)
+void invalidate_transform(Win w);
+// the window's transform as drawn (screen = local * scale + offset; Window +0x148, its type at +0x188: 0 identity,
+// 1 translation and scale, read live 2026-11-13); false for other types
+bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty);
+// the window has a transform of its own (its local transform, Window +0xC0, type at +0x100, is not the identity: the
+// game's InflateEffect buttons while they grow); the game hit-tests such a window through its full transform
+bool has_own_transform(Win w);
 std::string edit_text(Win edit);
 void set_edit_text(Win edit, const std::string& text);
 
@@ -117,7 +144,7 @@ void set_drawable(Win w, void* drawable);
 
 // ---- events ----
 // fn(window, message) -> handled. The handler object lives in sporekit (safe on hot reload).
-void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn);
+void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn, int event_flags = 0); // 0: input + advanced (0x81)
 void remove_handler(Win w, void* handler);
 
 uint32_t fnv(const char* s); // Spore id()

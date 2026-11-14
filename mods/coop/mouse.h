@@ -25,6 +25,9 @@ void set_graphics_input(bool (*handler)(unsigned message, uintptr_t value, int x
 void set_list_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
 // BUG-9154: Tribe, right presses and releases (client coordinates); true consumes the message
 void set_tribe_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
+// BUG-9191 (3H): every mouse message's point (client pixels) may be moved before the game and the other handlers see
+// it (Spore's scaled UI pieces take the mouse in their unscaled places); true = moved
+void set_remap(bool (*handler)(unsigned message, int& x, int& y));
 // remove it (on_unload: the hook procedure lives in this DLL)
 void shutdown();
 // primary clicks seen so far; a consumer keeps the last value it handled

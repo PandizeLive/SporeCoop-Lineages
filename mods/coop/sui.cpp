@@ -14,6 +14,7 @@ namespace sui {
 
 static const SkHost* H;
 static SkMod* M;
+static uintptr_t a_slider_create;
 static uintptr_t a_wm_get, a_btn_create, a_te_create, a_layout_ctor, a_layout_load, a_layout_container,
     a_image_get, a_obj_new, a_get_alloc, a_std_ctor, a_info_ctor;
 
@@ -41,6 +42,7 @@ bool init(const SkHost* host, SkMod* mod)
     a_wm_get = H->sym("UTFWin::IWindowManager::Get");
     a_btn_create = H->sym("UTFWin::IButton::Create");
     a_te_create = H->sym("UTFWin::ITextEdit::Create");
+    a_slider_create = H->sym("UTFWin::ISlider::Create");
     a_layout_ctor = H->sym("UTFWin::UILayout::UILayout");
     a_layout_load = H->sym("UTFWin::UILayout::Load");
     a_layout_container = H->sym("UTFWin::UILayout::GetContainerWindow");
@@ -371,6 +373,125 @@ Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_
     return w;
 }
 
+// ---------------- sliders ----------------
+static void* utf_new(size_t n);
+static void obj_addref(void* o);
+// ISlider (ModAPI order; checked live 2026-11-13 on the Audio page's sliders): 0x14 SetOrientation(1 horizontal, 2
+// vertical), 0x18 GetOrientation, 0x1C SetValue(v, notify), 0x20 GetValue, 0x24 SetMinValue, 0x28 GetMinValue, 0x2C
+// SetMaxValue, 0x30 GetMaxValue, 0x34 SetSliderDrawable, 0x38 GetSliderDrawable
+void* as_slider(Win w) { return w ? vcall<void*>(w, 0x0C / 4, 0x0F00A8A0u) : nullptr; }
+
+Win slider(Win parent, const Rect& r, int min, int max, int value, bool horizontal, void* drawable)
+{
+    if (!a_slider_create)
+        return nullptr;
+    Win w = ((CreateFn)a_slider_create)(0, nullptr);
+    void* s = as_slider(w);
+    if (!s)
+        return nullptr;
+    add_ref(w);
+    vcall<void>(s, 0x14 / 4, horizontal ? 1 : 2);
+    if (drawable)
+        vcall<void>(s, 0x34 / 4, drawable);
+    vcall<void>(s, 0x24 / 4, min, 0);
+    vcall<void>(s, 0x2C / 4, max, 0);
+    vcall<void>(s, 0x1C / 4, value, 0);
+    set_area(w, r);
+    set_visible(w, true);
+    set_enabled(w, true);
+    if (parent)
+        add_child(parent, w);
+    return w;
+}
+
+void* slider_drawable_of(Win w)
+{
+    void* s = as_slider(w);
+    return s ? vcall<void*>(s, 0x38 / 4) : nullptr;
+}
+
+void* slider_drawable_with(void* like, void* background, void* thumb, void* container)
+{
+    // the ISliderDrawable interface sits at +0xC of a SliderDrawable (read live 2026-11-13: +0 IDrawable vtable, +4
+    // DefaultLayoutElement vtable, +8 the reference count, +0xC ISliderDrawable vtable, +0x10 images[3], +0x1C a float
+    // 1.4, +0x20 / +0x24 zero); ModAPI's 0x1C bytes are too few in this build: 0x28 copied into a 0x40 block
+    if (!like || IsBadReadPtr((uint8_t*)like - 0xC, 0x28))
+        return nullptr;
+    uint8_t* src = (uint8_t*)like - 0xC;
+    uint8_t* d = (uint8_t*)utf_new(0x40);
+    if (!d)
+        return nullptr;
+    memset(d, 0, 0x40);
+    memcpy(d, src, 0x28);
+    *(int*)(d + 8) = 0; // nobody holds it yet (set_slider_drawable takes a reference)
+    void* const images[3] = {background, thumb, container};
+    for (int i = 0; i < 3; i++) {
+        void* img = images[i] ? images[i] : *(void**)(src + 0x10 + i * 4);
+        if (!images[i])
+            obj_addref(img); // `like`'s, now held twice; ours come with the caller's reference
+        *(void**)(d + 0x10 + i * 4) = img;
+    }
+    return d + 0xC;
+}
+
+void invalidate_transform(Win w)
+{
+    if (w) vcall<int>(w, 0x98 / 4);
+}
+
+bool has_own_transform(Win w)
+{
+    const uint8_t* p = (const uint8_t*)w;
+    if (!w || IsBadReadPtr(p + 0xC0, 0x44)) return false;
+    return *(const int*)(p + 0x100) != 0;
+}
+
+bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty)
+{
+    const uint8_t* p = (const uint8_t*)w;
+    if (!w || IsBadReadPtr(p + 0x148, 0x44)) return false;
+    const float* m = (const float*)(p + 0x148);
+    const int type = *(const int*)(p + 0x188);
+    if (type != 0 && type != 1) return false;
+    sx = m[0];
+    sy = m[5];
+    tx = m[12];
+    ty = m[13];
+    return sx > 0.01f && sy > 0.01f;
+}
+
+bool button_selected(Win w)
+{
+    void* b = as_button(w);
+    return b && (vcall<int>(b, 0x20 / 4) & 4);
+}
+
+void set_button_selected(Win w, bool on)
+{
+    if (void* b = as_button(w))
+        vcall<void>(b, 0x28 / 4, 4, on);
+}
+
+Win box(Win parent, const Rect& r, void* drawable)
+{
+    Win w = label(parent, r, "", 0, 0, kAlignLeft);
+    if (w && drawable)
+        set_drawable(w, drawable);
+    return w;
+}
+
+int slider_value(Win w)
+{
+    void* s = as_slider(w);
+    return s ? vcall<int>(s, 0x20 / 4) : 0;
+}
+
+void set_slider_value(Win w, int v)
+{
+    if (void* s = as_slider(w))
+        vcall<void>(s, 0x1C / 4, v, 0);
+}
+
 void set_edit_masked(Win w, bool masked)
 {
     constexpr int kPasswordMode = 0x80;
@@ -564,11 +685,11 @@ static int tramp(void* user, void* window, const void* msg)
     return b->fn && msg ? b->fn(window, *(const Msg*)msg) : 0;
 }
 
-void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn)
+void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn, int event_flags)
 {
     // the box is never freed: after a hot reload the old handler is disabled, not deleted
     auto* box = new HandlerBox{std::move(fn)};
-    void* p = H->ui_winproc(M, tramp, box, 0);
+    void* p = H->ui_winproc(M, tramp, box, event_flags);
     vcall<void>(w, 0x104 / 4, p);
     return p;
 }
@@ -695,6 +816,54 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
                       font(w));
         for (uint32_t i = 0; i < 8; i++)
             H->out_printf(out, " %08X", vcall<uint32_t>(b, 0x48 / 4, i));
+        return 0;
+    }
+    if (sub == "slider" && argc > 2) { // slider <win>: its values and drawable (tests)
+        Win w = arg_win(argv[2], out);
+        void* s = as_slider(w);
+        if (!s) {
+            H->out_printf(out, "not a slider");
+            return 1;
+        }
+        void* d = vcall<void*>(s, 0x38 / 4);
+        H->out_printf(out, "slider %p orient=%d value=%d min=%d max=%d drawable=%p", s, vcall<int>(s, 0x18 / 4),
+                      vcall<int>(s, 0x20 / 4), vcall<int>(s, 0x28 / 4), vcall<int>(s, 0x30 / 4), d);
+        if (d && !IsBadReadPtr(d, 0x1C))
+            for (int i = 0; i < 7; i++)
+                H->out_printf(out, " %08X", ((uint32_t*)d)[i]);
+        return 0;
+    }
+    if (sub == "mkslider" && argc > 7) { // mkslider <parent> x1 y1 x2 y2 <like slider> [h|v]: a test slider
+        Win p = arg_win(argv[2], out), like = arg_win(argv[7], out);
+        if (!p || !like)
+            return 1;
+        Rect r{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]), (float)atof(argv[6])};
+        Win w = slider(p, r, 50, 200, 100, argc < 9 || argv[8][0] != 'v', slider_drawable_of(like));
+        H->out_printf(out, "%s", w ? dump(w, 0, false).c_str() : "failed");
+        return w ? 0 : 1;
+    }
+    if (sub == "scale" && argc > 3) { // scale <win> <factor> [event flags hex]: tests of a native window's size
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        static float s_factor = 1.f;
+        static int s_seen = 0;
+        s_factor = (float)atof(argv[3]);
+        const int flags = argc > 4 ? (int)strtoul(argv[4], nullptr, 16) : 0xFFFF;
+        add_handler(w, [](Win win, const Msg& m) {
+            if (s_seen < 40) {
+                s_seen++;
+                H->log(M, SK_INFO, "sui: scale test: %p message %X a=%X b=%X c=%X d=%X", win, m.type, m.a, m.b, m.c, m.d);
+            }
+            if (m.type == kMsgTransformed && m.d && !IsBadReadPtr((void*)(uintptr_t)m.d, 64)) {
+                float* x = (float*)(uintptr_t)m.d;
+                x[0] *= s_factor;
+                x[5] *= s_factor;
+            }
+            return false;
+        }, flags);
+        invalidate_transform(w);
+        H->out_printf(out, "scale %.2f on %p (flags %X)", s_factor, w, flags);
         return 0;
     }
     if (sub == "font" && argc > 3) {

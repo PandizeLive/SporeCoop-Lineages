@@ -147,4 +147,37 @@ BUG-9191 (the Party panel).
   global; spore-decomp) and the hit tests go through the inverse; a window proc gets kMsgTransformed 0x15 (OnTransform)
   as the game's own InflateEffect (button growth) uses. The route for a "scale Spore's HUD" setting: a scale transform
   on the HUD roots (minimap, Pack, ability bar, avatar card), not a global one. Not tried yet.
+  ~ superseded (2026-11-14): see #graphics-native-scale.
+
+## Native sliders, Settings layout and UI scale (2026-11-14, feat/lineages-47)
+<a id="graphics-native-scale"></a>
+
+* ✔ UTFWin::ISlider::Create 0x985AC0 (GOG 2024 / Steam; found as the only push of "UTFWin/EA::UTFWinControls::WinSlider"
+  in the running Steam game, image +0x90000): stdcall(int, allocator) ret 8, as IButton::Create; ISlider = Cast
+  0x0F00A8A0; vt 0x14 SetOrientation (1 horizontal, 2 vertical), 0x1C SetValue(v, notify), 0x20 GetValue, 0x24 / 0x2C
+  min / max, 0x34 / 0x38 the slider drawable. The Audio page's Music slider is 0x8BDD39EC (values 0..1000).
+* ✔ A SliderDrawable here is 0x28 bytes (ModAPI: 0x1C): +0 IDrawable vt, +4 DefaultLayoutElement vt, +8 the reference
+  count, +0xC the ISliderDrawable vt (what GetSliderDrawable returns), +0x10 images[3] (background, thumb, thumb
+  container), +0x1C a float 1.4. The native slider draws no background; the container (38x130) is the groove with its
+  ticks, stretched to the window. **The thumb image is a strip of 4 states side by side**: the thumb is a quarter of the
+  image wide (a single 13x27 knob drew 3 px wide); the idle knob draws the second frame.
+* ✔ The native text labels of the Settings pages ("Shadows", "Screen Size", "Full Screen Mode") are not buttons:
+  sui::button_like on them gives nothing; sui::label with their fonts works. The Graphic cache field's spinner drawable
+  (0x046170A4) and frame draw nothing in a window of ours.
+* ✔ The Settings dialog: root (a 44x38 window, its pieces placed around it) holding the frame (19 pieces), two
+  backgrounds, Accept 0x043B7A18, Cancel 0x043C8FD8 and the settings window 0x043DE590 (tabs, title, the pages 0x046967C0);
+  the Graphic page 0x0437A968: the quality table, the cache box, Defaults, Screen Size (combo 0x046170A1), Full Screen
+  (0x061C90B8, check box 0x05B591C0, a toggle button: state flag 4). Moving and growing these with set_area holds while
+  the dialog lives (it is kept between openings).
+* ✔ Window transforms (Window +0xC0 local, +0x104 its inverse, +0x148 as drawn, +0x18C the inverse global; each 0x40
+  floats then the type: 0 identity, 1 translation and scale). Writing the local matrix does nothing: the window
+  manager rebuilds it and sends it to the window's procs as kMsgTransformed (0x15, Message +0x18 the matrix), the way
+  InflateEffect grows a button; a proc with event flags 0xFFFF gets it (0x80 alone does not). Scaling x[0] / x[5] there
+  scales the window about its own middle; InvalidateTransform (vt 0x98) asks for it again.
+* ✔ Hit tests: a scaled window is drawn scaled but the game hit-tests plain windows at their unscaled places (a slider
+  took the mouse at its old size, a Cancel did nothing where drawn). Window flag 0x20 makes the hit test of that window
+  go through its transform, but not the controls' own mouse use. Windows with a transform of their own (InflateEffect
+  menu buttons) are hit-tested through the full transform. coop_ui ns_remap moves the mouse message's point to the
+  piece's unscaled place unless the window under it has its own transform.
+
 
