@@ -1181,6 +1181,13 @@ static void drop_share_loads()
 
 bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on); }
 
+bool incoming(float& fraction)
+{
+    if (!g_in.active) return false;
+    fraction = g_in.offer.total_size ? std::min(1.f, (float)g_in.received / (float)g_in.offer.total_size) : 0.f;
+    return true;
+}
+
 static void guest_launch_tick(net::Session& s);
 
 void guest_tick(net::Session& s)

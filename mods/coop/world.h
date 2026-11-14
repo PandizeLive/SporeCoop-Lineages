@@ -63,6 +63,8 @@ void reset_shares();
 void on_session_end();
 // guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
 bool load_queued();
+// guest: a world from the host is arriving now; `fraction` its share received (0..1) (BUG-9195: the loading screen)
+bool incoming(float& fraction);
 extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);

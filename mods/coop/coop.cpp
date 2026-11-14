@@ -4578,6 +4578,9 @@ static void draw_downed_hud(int sw, int sh)
                          cell ? cellsync::own_revive() : creature_rescue::own_revive(), H->time_seconds());
 }
 
+static bool g_reload_cover = true;
+COOP_FIX("ui.reload_cover", "BUG-9195", g_reload_cover,
+         "ui: the loading screen covers a world reload that comes in the middle of a stage (the galaxy menu and the load)");
 // ---- the Party panel (the owner's mockup 2026-11-13, coop_ui::set_party_hud) ----
 // decision 3E C: a partner's arrow is a slim chevron in the HUD's blue with a white edge and a name plate
 // (images/partner_arrow_mockup_C.png); off: the green arrow and the name line
@@ -4711,6 +4714,43 @@ void on_overlay(void*, int, void*)
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
+    // BUG-9195 (the owner 2026-11-13: "Maybe instead of that [the notice], we can do our loading screen to overlay
+    // it?"): a world from the host arriving while this guest plays a stage (its own new nest, a party wipe, a reload)
+    // took it through the galaxy menu and a load in plain sight. The loading screen covers it from the first byte until
+    // it plays the stage again (2 s settled; 120 s at most). `coop.fix ui.reload_cover off`: the galaxy menu shows.
+    {
+        static double s_since = -1, s_back_at = -1;
+        static bool s_nest = false;
+        const double now = H->time_seconds();
+        float got = 0;
+        const bool arriving = g_sess.role() == net::Role::Client && g_sess.connected() && world::incoming(got);
+        const bool in_stage = g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kTribe ||
+                              g_mode == modes::kCiv || g_mode == modes::kSpace;
+        if (g_reload_cover && s_since < 0 && arriving && in_stage) {
+            s_since = now;
+            s_back_at = -1;
+            s_nest = g_mode == modes::kCreature; // in Creature mid-play: the own nest's world (BUG-9167) as a rule
+        }
+        if (s_since >= 0) {
+            if (in_stage && !arriving && !world::load_queued()) {
+                if (s_back_at < 0) s_back_at = now;
+            } else
+                s_back_at = -1;
+            if ((s_back_at >= 0 && now - s_back_at > 2 && now - s_since > 4) || now - s_since > 120 || !g_sess.connected())
+                s_since = -1;
+        }
+        if (s_since >= 0 && sw > 0) {
+            const float p = arriving ? 0.6f * got : std::min(0.95f, 0.6f + (float)(now - s_since) * 0.01f);
+            const float cx = sw / 2.f, cy = sh * 0.45f, r = std::max(22.f, sh * 0.05f);
+            ring_timer::loading(H, sw, sh, cx, cy, r, p, now);
+            const std::string host = g_sess.name_of(0);
+            const char* title = s_nest ? "Bringing your nest" : "Getting the latest world";
+            const std::string step = arriving ? "Receiving " + host + "'s world..." : in_stage ? "Final touches..." : "Loading...";
+            bold((int)(cx - text_width(title) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title);
+            H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
+            return; // nothing else over the loading screen
+        }
+    }
     // BUG-9159 (owner decision 1P A): a late joiner whose own creature is chosen (after the editor) waits for their
     // village: the frame blurred, a ring and short steps until it is there (90 s at most)
     {

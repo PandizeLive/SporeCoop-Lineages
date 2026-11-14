@@ -12,6 +12,7 @@ fixed_in: unreleased
 branch: feat/lineages-47
 commits: 64c3afed
 tests: tools/qa_win (to run: a joiner's first creature)
+switch: ui.reload_cover
 signature:
 docs:
 related: BUG-9128 BUG-9167 BUG-9193
@@ -24,10 +25,11 @@ Owner live test 2026-11-13 20:31-20:55 (their own PC hosting Vandh.spo in Creatu
 Observed: by design a new nest reaches a guest only with a fresh world (home_nests.cpp: a nest made on a guest crashed, BUG-9128): host 20:39:39 "seat 2's world goes out 4 s after its nest was made", joiner 20:39:52 the galaxy menu and the reload. The spot after it: BUG-9193 (1). MSIGuest loaded twice too: its join share was saved before its nest existed.
 
 ## Fix
-A notice "<name>'s own nest is ready: their world reloads once to bring it" when that world goes out; the spot is BUG-9193's fix. Open: making a joiner's nest before its first share (one load instead of two).
+ui.reload_cover (on, owner 2026-11-13: "we can do our loading screen to overlay it"): the guest's loading screen (ring, "Bringing your nest" / "Getting the latest world", the steps) covers a world arriving mid-stage, from its first byte until the guest plays the stage again (2 s settled, 120 s at most), so the galaxy menu and the load are not seen. The earlier notice was dropped. The spot is BUG-9193's fix. Open: making a joiner's nest before its first share (one load instead of two).
 
 ## Verification
-no-fail-run: a notice; the reload stays by design.
+no-fail-run: the reload stays by design; the cover is to be checked live (a joiner's first creature).
 
 ## History
 - 2026-11-13: opened.
+- 2026-11-13 (later): the notice replaced by the loading screen over the reload (ui.reload_cover).

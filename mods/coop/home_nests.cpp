@@ -369,15 +369,9 @@ static void share_due_tick(double now)
             continue;
         std::string share_err;
         const bool ok = world::share_with(d.player, share_err, true);
-        if (ok) {
+        // (BUG-9195: that player's game covers the reload with the loading screen, coop.cpp ui.reload_cover)
+        if (ok)
             g_shares++;
-            // BUG-9195 (the owner 2026-11-13: the joiner "got sent to the galaxy menu before being resent the world"):
-            // a new nest reaches that player's game only with a fresh world (a nest made on a guest crashed, BUG-9128);
-            // say so, so the one reload does not look like a fault
-            const auto& roster = party::roster();
-            if (C.notice && seat < roster.seats.size() && !roster.seats[seat].name.empty())
-                C.notice(roster.seats[seat].name + "'s own nest is ready: their world reloads once to bring it");
-        }
         if (members > 0 && now - d.since > 1)
             g_share_waits++;
         H->log(M, ok ? SK_INFO : SK_WARN, "home nests: seat %zu's world goes out %.0f s after its nest was made (%d member(s)%s)%s%s",
