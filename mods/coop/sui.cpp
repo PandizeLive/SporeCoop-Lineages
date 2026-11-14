@@ -107,6 +107,13 @@ Win main_window()
     return wm ? vcall<Win>(wm, 0x04 / 4) : nullptr;
 }
 
+Win window_at(float x, float y)
+{
+    void* wm = a_wm_get ? skg::cdecl_call<void*>(a_wm_get) : nullptr;
+    float pt[2] = {x, y};
+    return wm ? vcall<Win>(wm, 0x44 / 4, (void*)pt) : nullptr;
+}
+
 // Window::mChildrenWindows: intrusive list anchor at IWindow+0x38 in this build (ModAPI: +0x3C);
 // a child's list node is at child+4
 std::vector<Win> children(Win w)

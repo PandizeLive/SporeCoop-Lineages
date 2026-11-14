@@ -179,6 +179,9 @@ BUG-9191 (the Party panel).
   go through its transform, but not the controls' own mouse use. Windows with a transform of their own (InflateEffect
   menu buttons) are hit-tested through the full transform. coop_ui ns_remap moves the mouse message's point to the
   piece's unscaled place unless the window under it has its own transform.
+  ~ superseded (2026-11-14): the main menu's items took the real point one row low too (Create opened Share); the rule
+  now asks the game: IWindowManager vt 0x44 GetWindowAtPosition(const Point&) (x, y floats) returns the window the
+  game's hit test finds; the remap keeps the real point when that is the window drawn there, else moves it.
 * ✔ The Screen Size control 0x046170A1 is a button (caption "1366 x  768 @  60Hz"), not a combo box (IComboBox cast
   fails); its list is a popup of one hidden button per display mode (children of the control, [10 10 85 30] until laid
   out), laid out 20 px apart around the selected one (place 0, beside the control) over a plain background window,

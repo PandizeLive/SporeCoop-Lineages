@@ -47,6 +47,8 @@ void register_commands();
 
 // ---- reading ----
 Win main_window();
+// the window the game's own hit test finds at a screen point (IWindowManager vt 0x44, GetWindowAtPosition(Point&))
+Win window_at(float x, float y);
 std::vector<Win> children(Win w);
 Win parent(Win w);
 const char* type_name(Win w); // GetComponentName

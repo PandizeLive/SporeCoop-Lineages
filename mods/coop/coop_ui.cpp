@@ -3400,37 +3400,45 @@ static void ns_pieces(Win w, const sui::Rect& screen, std::vector<Win>& out, int
     }
 }
 
-// a visible window of the piece, taking the mouse, under the (unscaled) point; `own` tells whether it or a window
-// between it and the piece has a transform of its own (then the game hit-tests it through the drawn transform: an
-// Options button that grows on hover took a remapped press one row too low, 2026-11-13)
-static bool ns_takes_mouse_at(Win w, float x, float y, bool& own, int depth = 0)
+// the window of the piece drawn under the (unscaled) point: the deepest visible one taking the mouse (later children
+// are drawn over earlier ones)
+static Win ns_target_at(Win w, float x, float y, int depth = 0)
 {
-    if (depth > 12) return false;
-    for (Win c : sui::children(w)) {
+    if (depth > 12) return nullptr;
+    const auto kids = sui::children(w);
+    const sui::Rect screen = sui::area(sui::main_window());
+    for (auto it = kids.rbegin(); it != kids.rend(); ++it) {
+        Win c = *it;
         if (!sui::visible(c)) continue;
+        if (Win deeper = ns_target_at(c, x, y, depth + 1)) return deeper; // (children can lie outside their parent)
         const sui::Rect r = sui::screen_rect(c);
         const bool inside = x >= r.x1 && x < r.x2 && y >= r.y1 && y < r.y2;
-        const sui::Rect screen = sui::area(sui::main_window());
         const bool layer = r.w() >= screen.w() * 0.9f || r.h() >= screen.h() * 0.9f; // a container, not a control
-        if (inside && !layer && !(sui::flags(c) & sui::kFlagIgnoreMouse)) {
-            bool deeper = false;
-            if (ns_takes_mouse_at(c, x, y, deeper, depth + 1)) own = deeper; // the deepest one decides
-            own = own || sui::has_own_transform(c);
-            return true;
-        }
-        bool deeper = false;
-        if (ns_takes_mouse_at(c, x, y, deeper, depth + 1)) { // (children can lie outside their parent)
-            own = deeper || sui::has_own_transform(c);
-            return true;
-        }
+        if (inside && !layer && !(sui::flags(c) & sui::kFlagIgnoreMouse)) return c;
     }
+    return nullptr;
+}
+
+// the game's hit `hit` is the window `target` (or a part of it, or the control it is part of; not the piece's root)
+static bool ns_same_control(Win hit, Win target, Win piece)
+{
+    if (!hit || !target) return false;
+    Win w = hit;
+    for (int i = 0; w && i < 4; ++i, w = sui::parent(w))
+        if (w == target) return true;
+    w = target;
+    for (int i = 0; w && i < 4; ++i, w = sui::parent(w))
+        if (w == hit) return hit != piece;
     return false;
 }
 
-// The mouse over a scaled piece: Spore hit-tests, hovers and drags (sliders, the planner) in the pieces' unscaled
-// places, so the pointer goes to the place the piece has at 100 % (the game's flag 0x20 fixed the hit tests only:
-// a slider still took its old place, 2026-11-13). The topmost piece with a window that takes the mouse there wins;
-// a press keeps its piece until the release (a drag past the piece's edge). Anywhere else (the world) stays as is.
+// The mouse over a scaled piece: Spore hit-tests most windows, and drags (sliders, the planner), in their unscaled
+// places, but some (buttons that grow on hover, the main menu's items) through their drawn transform, and that is not
+// told by a flag (2026-11-14: "Create" opened Share with the pointer as it was; Options' buttons one row low when
+// moved). So the window drawn under the pointer is found here (the piece's layout, unscaled), and the game's own hit
+// test (GetWindowAtPosition) is asked about the real point: when it finds that window the point stays as it is, else
+// it goes to the window's place at 100 %. A press keeps its choice until the release (a drag past the piece's edge
+// follows the real pointer out there). Anywhere else (the world) stays as is.
 // the point's place at 100 % inside a piece: its drawn transform undone (the game places a scaled piece a little off
 // the pivot ns_handle aims at: Options sat ~30 px higher, 2026-11-13, so the drawn transform is the truth here)
 struct NsMap {
@@ -3456,6 +3464,7 @@ static bool ns_remap_scale(unsigned message, int& x, int& y)
     static Win s_capture = nullptr;
     static NsMap s_capture_t;
     static sui::Rect s_capture_extent;
+    static bool s_capture_raw = false; // the press went to the game as it was: its drag too
     if (g_ns_factor == 1.f) {
         s_capture = nullptr;
         return false;
@@ -3474,7 +3483,7 @@ static bool ns_remap_scale(unsigned message, int& x, int& y)
                     uy = (y - s_capture_t.ty) / s_capture_t.sy + s_capture_t.oy;
         const bool over = ux >= e.x1 && ux < e.x2 && uy >= e.y1 && uy < e.y2;
         if (up) s_capture = nullptr;
-        if (!over) return false;
+        if (!over || s_capture_raw) return false;
         apply(s_capture_t);
         return true;
     }
@@ -3488,22 +3497,33 @@ static bool ns_remap_scale(unsigned message, int& x, int& y)
         if (!ns_map_of(*it, t) || (t.sx == 1.f && t.sy == 1.f)) continue;
         const float ux = (x - t.tx) / t.sx + t.ox, uy = (y - t.ty) / t.sy + t.oy;
         const sui::Rect e = ns_xform(*it).extent;
-        bool own = false;
         // (any window of the piece under the point: its popups reach past its extent, the resolution list below Settings)
-        if (!ns_takes_mouse_at(*it, ux, uy, own)) continue;
-        if (own) { // the game maps this one itself: the point as it is
-            if (down) H->log(M, SK_INFO, "ui: press %d,%d on piece %08X: a window with its own transform, not moved", x, y,
-                             sui::control_id(*it));
+        Win target = ns_target_at(*it, ux, uy);
+        if (!target) continue;
+        if (ns_same_control(sui::window_at((float)x, (float)y), target, *it)) { // the game finds it as it is
+            if (down) {
+                H->log(M, SK_INFO, "ui: press %d,%d on piece %08X: the game's hit test finds %08X there, not moved", x, y,
+                       sui::control_id(*it), sui::control_id(target));
+                s_capture = *it;
+                s_capture_t = t;
+                s_capture_extent = e;
+                s_capture_raw = true;
+            }
             return false;
         }
-        if (down)
-            H->log(M, SK_INFO, "ui: press %d,%d on piece %08X (drawn x%.2f +%.0f,%.0f, origin %.0f,%.0f) -> %.0f,%.0f", x, y,
-                   sui::control_id(*it), t.sx, t.tx, t.ty, t.ox, t.oy, ux, uy);
+        if (down) {
+            Win raw_hit = sui::window_at((float)x, (float)y), moved_hit = sui::window_at(ux, uy);
+            H->log(M, SK_INFO, "ui: press %d,%d on piece %08X (drawn x%.2f +%.0f,%.0f, origin %.0f,%.0f) -> %.0f,%.0f; "
+                   "drawn there %p %08X, the game finds %p %08X as it is, %p %08X moved", x, y, sui::control_id(*it), t.sx,
+                   t.tx, t.ty, t.ox, t.oy, ux, uy, target, sui::control_id(target), raw_hit, sui::control_id(raw_hit),
+                   moved_hit, sui::control_id(moved_hit));
+        }
         apply(t);
         if (down) {
             s_capture = *it;
             s_capture_t = t;
             s_capture_extent = e;
+            s_capture_raw = false;
         }
         return true;
     }
