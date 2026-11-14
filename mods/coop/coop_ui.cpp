@@ -3419,17 +3419,13 @@ static Win ns_target_at(Win w, float x, float y, int depth = 0)
     return nullptr;
 }
 
-// the game's hit `hit` is the window `target` (or a part of it, or the control it is part of; not the piece's root)
-static bool ns_same_control(Win hit, Win target, Win piece)
+// the window is drawn under the screen point: its rectangle through its drawn transform (Window +0x148)
+static bool ns_drawn_under(Win w, float x, float y)
 {
-    if (!hit || !target) return false;
-    Win w = hit;
-    for (int i = 0; w && i < 4; ++i, w = sui::parent(w))
-        if (w == target) return true;
-    w = target;
-    for (int i = 0; w && i < 4; ++i, w = sui::parent(w))
-        if (w == hit) return hit != piece;
-    return false;
+    float sx, sy, tx, ty;
+    if (!w || !sui::render_xform(w, sx, sy, tx, ty)) return false;
+    const sui::Rect r = sui::real_area(w);
+    return x >= tx && x < tx + r.w() * sx && y >= ty && y < ty + r.h() * sy;
 }
 
 // The mouse over a scaled piece: Spore hit-tests most windows, and drags (sliders, the planner), in their unscaled
@@ -3500,10 +3496,27 @@ static bool ns_remap_scale(unsigned message, int& x, int& y)
         // (any window of the piece under the point: its popups reach past its extent, the resolution list below Settings)
         Win target = ns_target_at(*it, ux, uy);
         if (!target) continue;
-        if (ns_same_control(sui::window_at((float)x, (float)y), target, *it)) { // the game finds it as it is
+        // the game's hits with the point as it is and moved: the one drawn under the pointer wins; both drawn there: a
+        // control (button, slider, field) before a plain window, then the one inside the other (the creator chooser's
+        // icons: their own hit test is right, a decoration over them took the moved point; the main menu's items and
+        // the Settings' buttons are found only moved, 2026-11-14)
+        Win raw_hit = sui::window_at((float)x, (float)y), moved_hit = sui::window_at(ux, uy);
+        auto ok = [&](Win h) { return h && h != *it && ns_drawn_under(h, (float)x, (float)y); };
+        auto control = [](Win h) { return sui::as_button(h) || sui::as_slider(h) || sui::as_combo(h); };
+        auto inside = [](Win a, Win b) { // a lies in b
+            for (Win w = a; w; w = sui::parent(w))
+                if (w == b) return true;
+            return false;
+        };
+        bool raw_right = ok(raw_hit) && raw_hit != moved_hit;
+        if (raw_right && ok(moved_hit)) {
+            if (control(raw_hit) != control(moved_hit)) raw_right = control(raw_hit);
+            else raw_right = inside(raw_hit, moved_hit);
+        }
+        if (raw_right) { // the game finds it as it is
             if (down) {
-                H->log(M, SK_INFO, "ui: press %d,%d on piece %08X: the game's hit test finds %08X there, not moved", x, y,
-                       sui::control_id(*it), sui::control_id(target));
+                H->log(M, SK_INFO, "ui: press %d,%d on piece %08X: the game's hit test finds %08X drawn there, not moved",
+                       x, y, sui::control_id(*it), sui::control_id(raw_hit));
                 s_capture = *it;
                 s_capture_t = t;
                 s_capture_extent = e;
@@ -3512,7 +3525,6 @@ static bool ns_remap_scale(unsigned message, int& x, int& y)
             return false;
         }
         if (down) {
-            Win raw_hit = sui::window_at((float)x, (float)y), moved_hit = sui::window_at(ux, uy);
             H->log(M, SK_INFO, "ui: press %d,%d on piece %08X (drawn x%.2f +%.0f,%.0f, origin %.0f,%.0f) -> %.0f,%.0f; "
                    "drawn there %p %08X, the game finds %p %08X as it is, %p %08X moved", x, y, sui::control_id(*it), t.sx,
                    t.tx, t.ty, t.ox, t.oy, ux, uy, target, sui::control_id(target), raw_hit, sui::control_id(raw_hit),
