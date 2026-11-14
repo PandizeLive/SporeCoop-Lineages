@@ -6079,8 +6079,9 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
         for (const auto& [id, r] : g_remotes) {
             SAY("\npartner %u: %s", (unsigned)id, puppet_why(r, H->time_seconds()));
             if (r.puppet && game::object_alive(r.puppet)) // tests: the partner's body against the own captain
-                SAY(" scale=%.3f radius=%.2f hp=%.1f/%.1f", game::scale(r.puppet), game::bounding_radius(r.puppet),
-                    game::health(r.puppet), game::max_health(r.puppet));
+                SAY(" scale=%.3f radius=%.2f hp=%.1f/%.1f side=%d (captain %d)", game::scale(r.puppet),
+                    game::bounding_radius(r.puppet), game::health(r.puppet), game::max_health(r.puppet),
+                    *(int*)((uint8_t*)r.puppet + 0x30), *(int*)((uint8_t*)av + 0x30)); // BUG-9200: the political ids
         }
     }
     SAY("\ngame_name '%s'", modes::raw_world_name().c_str()); // BUG-0258: CurrentGameName as is

@@ -616,6 +616,9 @@ std::string actors(float radius, int around_player)
         void* b=body_of(uint8_t(around_player));
         if (!b) return "no body of that player here\n";
         q.me=game::position(b);
+        char t[80];
+        snprintf(t,sizeof t,"body of %d at=%p avatar at=%p\n",around_player,b,q.av);
+        q.out=t;
     }
     game::for_each_object([](void* o, uint32_t noun, void* u) {
         auto q=(Q*)u;
@@ -626,10 +629,10 @@ std::string actors(float radius, int around_player)
         uint32_t key=0;
         if (session && session->role()==net::Role::Host) key=game::object_serial(o);
         else if (auto it=guest_key_of.find(o); it!=guest_key_of.end()) key=it->second;
-        char b[180];
-        snprintf(b,sizeof b,"actor %08X class=%d pos=(%.2f %.2f %.2f) hp=%.1f dead=%d key=%08X posse=%d d=%.0f\n",object_id(o),
+        char b[200];
+        snprintf(b,sizeof b,"actor %08X class=%d pos=(%.2f %.2f %.2f) hp=%.1f dead=%d key=%08X posse=%d d=%.0f at=%p\n",object_id(o),
                  *(int*)((uint8_t*)o+0x1C),p.x,p.y,p.z,game::health(o),(int)game::is_dead(o),key,
-                 (int)game::pack_member(o),net::dist(p,q->me));
+                 (int)game::pack_member(o),net::dist(p,q->me),o);
         q->out+=b; ++q->n;
         return true;
     },&q);

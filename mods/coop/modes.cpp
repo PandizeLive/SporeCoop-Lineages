@@ -16,6 +16,7 @@
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "adventure.h"
 #include "world_name.h"
 #include "net/interp.h"
 
@@ -453,8 +454,30 @@ bool adventure_body_ready()
     return g_adventure_bodies && play && *(int*)(play+0x90)==3;
 }
 
+// BUG-9200: a scenario creature attacks by side: its cGameData political id (+0x30) is 1 for the captain and its
+// army, 2 for the enemy army; a spawned body has -1 (no side), so the host's creatures chose it as their target
+// (npc ai_target) and never struck. While the host runs the creatures for everyone, a body takes its game's captain's
+// side. Off (`coop.fix adventure.body_side off`): -1, as in 44.
+static bool g_body_side = true;
+COOP_FIX("adventure.body_side", "BUG-9200", g_body_side,
+         "adventure: a partner's body is on the captain's side, so the host's creatures attack it");
+static uint32_t g_body_sides_set;
+static void adventure_side(void* p)
+{
+    void* av = game::avatar();
+    if (!av || !skg::readable((uint8_t*)av + 0x30, 4) || !skg::readable((uint8_t*)p + 0x30, 4))
+        return;
+    const int32_t want = g_body_side && adventure::partners_targetable() ? *(int32_t*)((uint8_t*)av + 0x30) : -1;
+    int32_t& pol = *(int32_t*)((uint8_t*)p + 0x30);
+    if (pol != want) {
+        pol = want;
+        g_body_sides_set++;
+    }
+}
+
 static void adventure_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
 {
+    adventure_side(p); // BUG-9200
     // the partner's scale arrives with its states (BUG-9113); a body spawned before it came is corrected
     if (s.captain_scale>0 && std::fabs(game::scale(p)-s.captain_scale)>0.01f*s.captain_scale)
         game::set_scale(p,s.captain_scale);
