@@ -1204,10 +1204,32 @@ static void __fastcall settings_build_guard(void* self, void*, void* a, void* b,
     g_settings_orig(self, a, b, c);
 }
 
+// BUG-9196 (the owner's crash 2026-11-13 20:55, crash-20261113-205550): in the galaxy menu the Sporepedia drew a card of
+// the player's own species with in-game "discovery" data (vtable 0x147CA48, its GetConsequenceTraits 0xDD1000), kept from
+// the game; it reads the traits from cGameNounManager's player (+0x74), which is null outside a game, and
+// cPlayer::GetConsequenceTrait read 0 + 0x10FC. With no player the trait is "none" (0, as before the stage was done).
+// `coop.fix gamefixes.trait_without_player off`: the game's own code (the crash).
+static bool g_trait_guard = true;
+COOP_FIX("gamefixes.trait_without_player", "BUG-9196", g_trait_guard,
+         "gamefixes: a Sporepedia card read outside a game gets no consequence trait instead of a crash");
+using TraitFn = uint32_t(SK_THISCALL*)(void*, uint32_t);
+static TraitFn g_trait_orig;
+static uint32_t g_trait_guarded;
+static uint32_t SK_THISCALL trait_guard(void* player, uint32_t stage)
+{
+    if (!player && g_trait_guard) {
+        if (g_trait_guarded++ < 5) H->log(M, SK_INFO, "game fixes: a consequence trait asked without a player: none (BUG-9196)");
+        return 0;
+    }
+    return g_trait_orig(player, stage);
+}
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
+    if (uintptr_t tr = H->sym("SporeCoop::cPlayer_GetConsequenceTrait"))
+        H->hook_create(M, (void*)tr, (void*)&trait_guard, (void**)&g_trait_orig);
     uintptr_t vt = H->sym("Terrain::cTerrainSphereTextureJob::vftable");
     uintptr_t fn = H->sym("Terrain::cTerrainSphereTextureJob::DrawLayer");
     uintptr_t* slot = vt ? (uintptr_t*)(vt + 3 * 4) : nullptr;

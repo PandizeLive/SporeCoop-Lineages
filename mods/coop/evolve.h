@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include "net/protocol.h"
 #include <string>
 #include "sporekit.h"
 
@@ -33,6 +34,8 @@ struct Cocoon {
     uint32_t key = 0;     // the partner's creature here when it went in (a new one: the new design came)
     float size = 0;       // BUG-9181: its scale before the cocoon (restored when it comes out; 0: not shrunk)
     float radius = 0;     // its bounding radius then: the shell keeps the size of the creature it holds
+    net::Vec3 spot;       // BUG-9194: where it went in: every new shell there (shells of two places overlapped as two)
+    bool spot_set = false;
 };
 
 void init(const SkHost* host, SkMod* mod);

@@ -4658,8 +4658,10 @@ static uint32_t g_sporepedia_opened, g_sporepedia_failed;
 static std::vector<std::pair<uint32_t, uint8_t>> g_sporepedia_bytes; // tests: request bytes (offset, value) to set
 void open_sporepedia_of(uint8_t player)
 {
-    const creations::Key k = player == g_sess.my_id() ? creations::mine(creations::kCreature).key
-                                                       : creations::player_key(player, creations::kCreature);
+    creations::Key k = player == g_sess.my_id() ? creations::mine(creations::kCreature).key
+                                                 : creations::player_key(player, creations::kCreature);
+    if (!k.instance) // the host that plays its world's species: the creature of its picture (that species here)
+        if (uint32_t inst = creations::portrait_of(player)) k = {inst, 0x2B978C46u, 0x40626200u};
     H->log(M, SK_INFO, "ui: Party portrait of player %u clicked: creature %08X/%08X/%08X", player, k.instance, k.type, k.group);
     if (!k.instance) {
         feed(g_sess.name_of(player) + "'s creature is not here yet.");
@@ -4679,6 +4681,9 @@ void open_sporepedia_of(uint8_t player)
         alignas(8) uint8_t req[0x60] = {};
         skg::thiscall<void*>(ctor, req);
         memcpy(req + 0x18, key, sizeof key);
+        // the large card of that creation, not only the grid: AdvancedLaunch opens the card when +0x24 is set, a key is
+        // given and +0x13 is clear (the constructor sets +0x13 = 1: the grid; spore-decomp, BUG-9191)
+        req[0x13] = 0;
         for (auto [off, v] : g_sporepedia_bytes)
             if (off < 0x48) req[off] = v;
         skg::cdecl_call<void>(show, (void*)req);
@@ -4819,7 +4824,8 @@ void on_overlay(void*, int, void*)
         sc[0] = sc[1] = NAN;
         H->world_to_screen(w, sc);
         const bool front = g_arrow_fix ? std::isfinite(sc[0]) && std::isfinite(sc[1]) : H->world_to_screen(w, sc) != 0;
-        if (g_partner_arrows && sw > 0 && sh > 0) {
+        // (BUG-9191: not over the Sporepedia, the pause menu or a caption: the game time stands then, as the Party panel)
+        if (g_partner_arrows && sw > 0 && sh > 0 && !(g_partner_chevron && (game_busy() & (busy::kPaused | busy::kInputLock)))) {
             const float size = std::clamp(sh / 24.f,30.f,60.f);
             const bool visible = front && sc[0] >= 40 && sc[0] < sw-40 && sc[1] >= 70 && sc[1] < sh-70;
             float x = 0, y = 0, dx = 0, dy = 1;
@@ -4889,7 +4895,7 @@ void on_overlay(void*, int, void*)
                 H->overlay_text(tx,ty,0xFFB0FFD0,tag.c_str());
             }
             ++g_partner_indicators;
-        } else if (front) {
+        } else if (front && !(g_partner_chevron && (game_busy() & (busy::kPaused | busy::kInputLock)))) {
             std::string tag = r.name;
             H->overlay_text((int)sc[0] - text_width(tag) / 2, (int)sc[1] - 10, 0xFF80FF80, tag.c_str());
         }
@@ -7268,6 +7274,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     ctx.player_dead = [](uint8_t id) {
         auto it = g_remotes.find(id);
         return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DEAD);
+    };
+    ctx.player_downed = [](uint8_t id) {
+        auto it = g_remotes.find(id);
+        return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_DOWNED);
     };
     ctx.feed = feed;
     // its own NPCs stay while it plays another world (BUG-0130), also until the host's first state

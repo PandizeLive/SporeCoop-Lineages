@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Creature: enemies leave a downed player alone and go back to their own
+  business (BUG-9192).
+- Creature: a player joining late starts at their own nest, and a joiner
+  still making their first creature no longer puts the host's family into
+  cocoons (BUG-9193); a cocoon is one shell again (BUG-9194); the one reload
+  that brings a new player's nest says so (BUG-9195).
+- A crash in the Sporepedia (My Creations in the galaxy menu after a game) is
+  fixed (BUG-9196). A Party portrait opens that creature's own card.
 - UI: the Party panel replaces the CO-OP player list: each player's name, where
   they are, their creature's picture and a health bar like the game's own;
   clicking a picture opens the Sporepedia. A UI Scale setting sits under

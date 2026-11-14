@@ -24,6 +24,8 @@ struct Ctx {
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos;
     // the latest state of player `id` says it is dead (death caption, respawn)
     std::function<bool(uint8_t id)> player_dead;
+    // the latest state of player `id` says it is down (waiting for a revive, PF_DOWNED; BUG-9192)
+    std::function<bool(uint8_t id)> player_downed;
     std::function<void(const std::string&)> feed;
     // guest: the host left the stage (main menu): the guest's own game simulates its NPCs meanwhile
     std::function<bool()> host_away;

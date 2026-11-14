@@ -100,11 +100,17 @@ static void* effect_at_pos(const net::Vec3& at, uint32_t id, float scale, float 
 // with a long neck stuck its head out): the creature's radius / kShellFits, never below 0.8. `radius`: the size it had
 // before it was shrunk inside (0: its own now)
 constexpr float kShellFits = 0.9f;
-static void* effect_at(void* c, uint32_t id, float radius = 0)
+// BUG-9194 (the owner 2026-11-13, a screenshot: the cocoons doubled): the shells laid again every kShellEvery overlap the
+// fading one for ~0.2 s; at the creature's position then, a held puppet's small drift showed two shells side by side
+// (at the owner's frame rate, not at 10 FPS). Every shell of one cocoon now at the spot it went in.
+// `coop.fix creature.cocoon_one_spot off`: at the creature's position each time.
+static bool g_one_spot = true;
+COOP_FIX("creature.cocoon_one_spot", "BUG-9194", g_one_spot, "creature: every shell of one cocoon is laid at the same spot");
+static void* effect_at(void* c, uint32_t id, float radius = 0, const net::Vec3* spot = nullptr)
 {
     const float r = radius > 0 ? radius : game::bounding_radius(c);
     const float size = std::isfinite(r) && r > 0 ? std::clamp(r / kShellFits, 0.8f, 4.f) : 1.f;
-    return effect_at_pos(game::position(c), id, g_fx_scale * size, g_fx_up, g_fx_rows);
+    return effect_at_pos(g_one_spot && spot ? *spot : game::position(c), id, g_fx_scale * size, g_fx_up, g_fx_rows);
 }
 
 // BUG-9181 (the owner, 2026-11-13: "I think growing the cocoon isn't the way. Maybe shrink the creature till they're
@@ -142,14 +148,18 @@ void drop(Cocoon& c, bool keep_state)
 static void wrap(void* puppet, Cocoon& c, double now, bool fresh)
 {
     if (!c.radius) c.radius = game::bounding_radius(puppet);
+    if (!c.spot_set || c.puppet != puppet) {
+        c.spot = game::position(puppet);
+        c.spot_set = true;
+    }
     game::hold_pose(puppet, true);
     game::play_animation(puppet, fresh ? kCocoonEnter : kCocoonHold, -1, true);
     end_sac(c);
-    if (void* fx = effect_at(puppet, kFxCreate, c.radius)) game::release_world_effect(fx); // the woven shell, ~2 s, ends by itself
+    if (void* fx = effect_at(puppet, kFxCreate, c.radius, &c.spot)) game::release_world_effect(fx); // the woven shell, ~2 s, ends by itself
     c.shell_at = now;
     if (!fresh) {
         shrink(puppet, c); // inside now
-        c.fx = effect_at(puppet, kFxHold, c.radius);
+        c.fx = effect_at(puppet, kFxHold, c.radius, &c.spot);
         c.fx_at = now;
     }
     c.puppet = puppet;
@@ -159,17 +169,17 @@ static void wrap(void* puppet, Cocoon& c, double now, bool fresh)
 // visible to MSI, even after a minute")
 static void keep(void* puppet, Cocoon& c, double now)
 {
-    if (c.puppet != puppet) { c.size = 0; c.radius = 0; wrap(puppet, c, now, false); return; } // (a new body: its own size)
+    if (c.puppet != puppet) { c.size = 0; c.radius = 0; c.spot_set = false; wrap(puppet, c, now, false); return; } // (a new body: its own size)
     // the woven shell lasts ~2 s (runtime 2026-11-13: full 0.2 s after it was made, gone at 2.0 s): the next one
     // before it fades, so the cocoon stays closed while the partner edits
     if (now - c.shell_at >= kShellEvery) {
-        if (void* fx = effect_at(puppet, kFxCreate, c.radius)) game::release_world_effect(fx);
+        if (void* fx = effect_at(puppet, kFxCreate, c.radius, &c.spot)) game::release_world_effect(fx);
         c.shell_at = now;
     }
     shrink(puppet, c);
     if ((!c.fx || !game::effect_active(c.fx)) && now - c.fx_at >= kSacAgain) {
         end_sac(c);
-        c.fx = effect_at(puppet, kFxHold, c.radius);
+        c.fx = effect_at(puppet, kFxHold, c.radius, &c.spot);
         c.fx_at = now;
     }
     uint32_t anim = 0;
@@ -256,6 +266,9 @@ static bool wrapped_alive(const Wrapped& w)
     return w.c && game::object_alive(w.c) && game::object_serial(w.c) == w.serial && !game::is_dead(w.c);
 }
 
+static bool g_family_own_species = true;
+COOP_FIX("creature.family_own_species", "BUG-9193", g_family_own_species,
+         "creature: a partner playing our species (no creature yet) does not put our family into cocoons");
 // the living family of `body` (its species near it) goes into the cocoon
 static void family_in(uint8_t who, void* body, double now)
 {
@@ -267,6 +280,12 @@ static void family_in(uint8_t who, void* body, double now)
         std::vector<Wrapped>* list;
     } f{body, game::avatar(), game::species_profile(body), game::position(body), &list};
     if (!f.profile) return;
+    // BUG-9193: a partner without a creature of its own plays this game's species (a late joiner in its first editor):
+    // its "family" here is ours; nobody of ours goes in for it. `coop.fix creature.family_own_species off`: as before.
+    if (g_family_own_species && who != kOwnFamily && f.avatar && game::species_profile(f.avatar) == f.profile) {
+        H->log(M, SK_INFO, "evolve: a partner who plays our species evolves: our family stays out of the cocoon (BUG-9193)");
+        return;
+    }
     game::for_each_object([](void* c, uint32_t noun, void* u) {
         auto& f = *static_cast<Find*>(u);
         if (noun != 0x18EB45Eu || c == f.body || c == f.avatar || !game::object_alive(c) || game::is_dead(c) ||

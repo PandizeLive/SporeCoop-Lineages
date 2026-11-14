@@ -1180,6 +1180,41 @@ static void pack_spares_partners(const std::vector<void*>& creatures)
     }
 }
 
+// BUG-9192 (the owner 2026-11-13: "When a player is down, the enemies continue attacking the downed player rather than
+// initiating their normal behavior"): a downed player takes no damage (creature_rescue::protect) but the creatures that
+// fight it kept attacking. On the host (it runs the creatures) every creature the game updates whose target (+0xE7C) is
+// a downed body (the host's own avatar while it is down, a partner's puppet whose player is down) drops it with its own
+// SetTarget (vt 0x84, (null, 1, 0), as BUG-0512) and forgets its stimuli from that body; its own AI goes on.
+// Off: they keep attacking (no damage).
+static bool g_downed_spared = true;
+COOP_FIX("npc.downed_spared", "BUG-9192", g_downed_spared, "creature: the creatures leave a downed player alone (their own behaviour goes on)");
+static uint32_t g_downed_targets_cleared = 0;
+static void downed_spared(const std::vector<void*>& creatures)
+{
+    if (!g_downed_spared || !game::in_creature_stage() || !C.sess) return;
+    std::vector<void*> down; // the downed bodies on this game
+    if (creature_rescue::down())
+        if (void* av = game::avatar()) down.push_back(av);
+    if (C.player_downed && C.puppet_of)
+        for (auto& p : C.sess->players())
+            if (p.id != C.sess->my_id() && C.player_downed(p.id))
+                if (void* pup = C.puppet_of(p.id)) down.push_back(pup);
+    if (down.empty()) return;
+    for (void* c : creatures) {
+        if (game::is_puppet(c) || c == game::avatar() || !skg::readable(c, kTargetOff + 4) || game::is_dead(c)) continue;
+        const uint8_t* t = skg::field<const uint8_t*>(c, kTargetOff);
+        for (void* d : down) {
+            if (!(t >= (const uint8_t*)d && t < (const uint8_t*)d + kCreatureSpan)) continue;
+            skg::vcall<void>(c, 0x84 / 4, (void*)nullptr, 1, 0);
+            gamefixes::clear_stimuli_from(c, d);
+            if (++g_downed_targets_cleared <= 8 || g_downed_targets_cleared % 100 == 0)
+                H->log(M, SK_INFO, "npc: creature %p had a downed player (%p) as its target: dropped (BUG-9192, %u)", c, d,
+                       g_downed_targets_cleared);
+            break;
+        }
+    }
+}
+
 static void host_tick(double now, const std::vector<void*>& creatures)
 {
     void* av = game::avatar();
@@ -1251,6 +1286,7 @@ static void host_tick(double now, const std::vector<void*>& creatures)
         }
     }
     pack_spares_partners(creatures); // BUG-0512
+    downed_spared(creatures);         // BUG-9192
     // creatures the game took out of the world (BUG-0274): the creature stage keeps NPCs only around
     // the host's avatar; one farther away goes back to the creature pool (herd cleared, position
     // (0 0 0), no more updates) and the nest spawns it again when it misses a member. It used to keep

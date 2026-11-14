@@ -134,4 +134,17 @@ BUG-9191 (the Party panel).
 * ~ Sporepedia::ShopperRequest::Show with currentSelection (+0x18) = a creature's key opens the Sporepedia browser
   (Everything); it did not open that creature's card, also with +0x2A = 1 (the "Close" button then). A partner's
   creation under its shared key is not in the browser's lists (Lineages Cache lists them under other keys).
+* ✔ (live 2026-11-13) The creature's own card: Sporepedia::ShopperRequest::Show (= SP::cSPUIAssetBrowser::AdvancedLaunch)
+  opens the large card when the request has +0x24 set, a key at +0x18 and **+0x13 clear** (the constructor sets +0x13 = 1:
+  the grid, which is what we saw first). A partner's shared key (0x7C...., a mod package) opens its card too
+  (Slinkodum on the host), and the host's world species on a guest (Gentmin).
+* ✔ (crash dump 2026-11-13, BUG-9196) cPlayer::GetConsequenceTrait 0xC75880 (thiscall(stage id) ret 4: +0x10FC Cell
+  A426730B, +0x1100 Creature AD56080C, +0x1104 Tribe F71FA311, +0x1108 Civ BEB528CB, +0x110C Space 2DB6DAD3), called
+  without a null check by a Simulator card data class (vtable 0x147CA48, slot 0x8C = 0xDD1000) through
+  cGameNounManager +0x74 (the player): a card kept from a game and drawn in the galaxy menu read 0 + 0x10FC.
+* ~ Native UI scale (research 2026-11-13): no setting in Properties.txt / ConfigManager.txt, no command-line option, no
+  known mod. UTFWin windows have four transforms (+0xC4 local, +0x108 its inverse, +0x14C render, +0x190 the inverse
+  global; spore-decomp) and the hit tests go through the inverse; a window proc gets kMsgTransformed 0x15 (OnTransform)
+  as the game's own InflateEffect (button growth) uses. The route for a "scale Spore's HUD" setting: a scale transform
+  on the HUD roots (minimap, Pack, ability bar, avatar card), not a global one. Not tried yet.
 

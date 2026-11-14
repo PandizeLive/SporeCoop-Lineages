@@ -351,6 +351,36 @@ void* home_herd()
     return herd && !IsBadReadPtr(herd, 0x48) ? herd : nullptr;
 }
 
+// BUG-9193 (the owner 2026-11-13: late joiners "spawned with the host" instead of at their own nest): a guest loads a
+// copy of the host's save, so its creature stands where the host's stood; the home nest is followed (follow_home) but
+// the body stays. Once per world, when the own nest is known and the body is more than kPlaceFar from it, the body goes
+// next to it (as a respawn does). `coop.fix creature.place_at_own_nest off`: it stays where the save had it.
+static bool g_place_fix = true;
+COOP_FIX("creature.place_at_own_nest", "BUG-9193", g_place_fix, "creature: a guest starts at its own nest after a load, not at the host's");
+static uint32_t g_placed_epoch;
+static uint32_t g_placed;
+constexpr float kPlaceFar = 30.f;
+static void place_at_home(double now)
+{
+    if (!g_place_fix || g_host_home_at < 0 || now - g_host_home_at > 5 || g_placed_epoch == game::world_epoch()) return;
+    void* av = game::avatar();
+    net::Vec3 mine;
+    if (!av || !game::in_creature_stage() || game::cinematic_playing() || game::health(av) <= 0 ||
+        !game::nest_position(av, mine) || net::dist(mine, g_host_home) >= 15.f)
+        return; // (not our own nest yet: follow_home first)
+    g_placed_epoch = game::world_epoch();
+    const net::Vec3 at = game::position(av);
+    const float l = net::dist(at, g_host_home);
+    if (l <= kPlaceFar) return;
+    net::Vec3 to = g_host_home;
+    to.x += (at.x - g_host_home.x) / l * 4.f; // 4 m off the nest, on the side we came from
+    to.y += (at.y - g_host_home.y) / l * 4.f;
+    to.z += (at.z - g_host_home.z) / l * 4.f;
+    game::teleport(av, to, game::orientation(av));
+    ++g_placed;
+    H->log(M, SK_INFO, "nest: this world started us %.0f m from our own nest: moved next to it (BUG-9193)", l);
+}
+
 // guest: join the herd of our own nest at the host's home when ours is elsewhere
 static void follow_home(double now)
 {
@@ -570,6 +600,7 @@ void tick(double now)
     } else if (is_guest()) {
         guest_tick(now);
         follow_home(now); // BUG-9128
+        place_at_home(now); // BUG-9193
     }
     else if (!g_mirrors.empty())
         clear_mirrors();
