@@ -128,6 +128,8 @@ struct PartyRow {
     std::string name, place;
     bool me = false;
     float health = -1; // 0..1, below 0: no bar
+    float energy = -1; // 3G: the second bar (Creature hunger, Space energy), 0..1; below 0: none
+    uint32_t stage = 0; // 3G: the player's game mode (the card's art: Cell, Creature, Tribe, Civ, Space)
     uint32_t portrait = 0, portrait_group = 0; // the creature's png (0x2F7D0004) key, 0 = none
     bool operator==(const PartyRow&) const = default;
 };

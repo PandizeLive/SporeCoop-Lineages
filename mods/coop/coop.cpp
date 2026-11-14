@@ -4639,6 +4639,8 @@ static bool update_party_panel(bool labels)
         if (have) {
             r.place = party_place(st.mode, st.editor);
             if (st.max_health > 0 && std::isfinite(st.health)) r.health = std::clamp(st.health / st.max_health, 0.f, 1.f);
+            r.energy = st.energy;
+            r.stage = st.mode;
         }
         // the creature's picture, sent by its owner (creations.cpp kPortrait) under its shared key
         r.portrait = creations::portrait_of(p.id);

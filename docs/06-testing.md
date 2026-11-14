@@ -5329,6 +5329,9 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
 * The key names are few: `key 0x1B` for Escape (`key escape` fails). `call <addr> thiscall ...` faulted the MSI's game
   (2026-11-13): read fields with `mem.read` instead. A Creature save's profile can hold a Cell planet too (DuoQACreatureHost
   Game0: Diplomavil is Cell, Samuth is Creature): `coop.load Game0 Samuth`.
+* New UI images on TITAN without touching the installed game (2026-11-14): `coop.creations mount "<repo>/build/SporeCoop.package"`
+  in each QA game while it sits in the galaxy menu; the Party cards look for their images again every 5 s, so they
+  appear once it is mounted. A hot reload (`mod.reload coop`) ends the session: host and join again.
 * The QA games on TITAN read the game's data packages from the installed game (the registry's DataDir: the Steam
   install's Data\SporeCoop.package), not from the QA copy's Data folder: a new image in build/SporeCoop.package is not
   there until the installed package is updated (the downed box drew its square fallback, 2026-11-13; the log line "ui:

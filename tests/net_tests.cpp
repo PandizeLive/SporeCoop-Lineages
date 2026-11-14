@@ -151,7 +151,7 @@ static void test_buffer()
     Reader r4(w4.data.data(), w4.size());
     PlayerState t4;
     CHECK(t4.read(r4) && t4.scale == 1.5f && r4.left() == 0);
-    Reader r5(w4.data.data(), w4.size() - 12); // Lineages: + the captain_scale f32 after agl
+    Reader r5(w4.data.data(), w4.size() - 16); // Lineages: + the captain_scale and energy f32 after agl
     PlayerState t5;
     CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021 && !agl_known(t5.agl));
     // BUG-0425: the sender's agl after the scale; a 0.7.7 sender's state (scale, no agl) reads as kNoAgl
@@ -161,7 +161,7 @@ static void test_buffer()
     Reader r6(w6.data.data(), w6.size());
     PlayerState t6;
     CHECK(t6.read(r6) && t6.agl == 2.5f && t6.scale == 1.5f && r6.left() == 0);
-    Reader r7(w6.data.data(), w6.size() - 8); // Lineages: + the captain_scale f32 after agl
+    Reader r7(w6.data.data(), w6.size() - 12); // Lineages: + the captain_scale and energy f32 after agl
     PlayerState t7;
     CHECK(t7.read(r7) && t7.scale == 1.5f && !agl_known(t7.agl));
     // Lineages (Adventure, BUG-9113): the captain's scale is written after upstream's scale and agl,
@@ -179,19 +179,26 @@ static void test_buffer()
     Reader rsc(sc.data.data(), sc.size());
     CHECK(t2.read(rsc) && t2.gate.visit == 42 && t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
     CHECK(t2.scale == 1.5f && t2.agl == 2.5f && rsc.left() == 0);
-    Reader rso(sc.data.data() + sc.size() - 28, 28); // scale, agl, captain_scale, gate
+    Reader rso(sc.data.data() + sc.size() - 32, 32); // scale, agl, captain_scale, energy, gate
     CHECK(rso.f32() == 1.5f && rso.f32() == 2.5f);
     float cs = rso.f32();
-    CHECK(cs > 2.09f && cs < 2.1f && rso.u32() == 42);
+    CHECK(cs > 2.09f && cs < 2.1f && rso.f32() == -1.f && rso.u32() == 42);
     s.gate = {};
     Writer sc2;
     s.write(sc2);
     Reader rsc2(sc2.data.data(), sc2.size());
     CHECK(t2.read(rsc2) && t2.gate.visit == 0 && t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
-    Reader rso2(sc2.data.data() + sc2.size() - 12, 12); // scale, agl, captain_scale, no gate
+    Reader rso2(sc2.data.data() + sc2.size() - 16, 16); // scale, agl, captain_scale, energy, no gate
     CHECK(rso2.f32() == 1.5f && rso2.f32() == 2.5f);
     cs = rso2.f32();
-    CHECK(cs > 2.09f && cs < 2.1f && rso2.left() == 0);
+    CHECK(cs > 2.09f && cs < 2.1f && rso2.f32() == -1.f && rso2.left() == 0);
+    // 3G: the second bar's value (0..1) travels; anything else is none
+    s.energy = 0.25f;
+    Writer en;
+    s.write(en);
+    Reader ren(en.data.data(), en.size());
+    CHECK(t2.read(ren) && t2.energy == 0.25f && t2.gate.visit == 0 && ren.left() == 0);
+    s.energy = -1;
     // BUG-9191: the open editor's id, written only while in an editor, after captain_scale (no gate then)
     s.editor = 0x96B24187;
     Writer ed;

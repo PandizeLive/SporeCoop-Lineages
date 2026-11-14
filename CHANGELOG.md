@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Party: each partner has a card in the style of the stage they play
+  (Cell, Creature, Tribe, Civ, Space) with their picture, name, place, health
+  and hunger (Creature) or energy (Space), stacked above the game's own cards
+  at the right edge; a click on the picture opens their Sporepedia card.
 - Settings: the Graphic page has an Interface box with an Interface Size
   slider (50-200 %) that scales Spore's own menus, dialogs and HUD as well as
   the mod's; Frame Rate (with up / down steps) sits in the Screen Size box and

@@ -2917,26 +2917,32 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
     return g_dh.give != nullptr || show; // the first frame: the parts are being made
 }
 
-// ---------------- the Party panel (the owner's mockup 2026-11-13) ----------------
-// images: data/ui/lineages_party_{header,plate,plate_me,card}.png (tools/party_ui_assets.py, the mockup's colours).
-// Layout in the mockup's pixels (1280x960, scale 1): the header pill 91x35 at the right edge (15 from it), the cards
-// 53x53 under it (40 below the header's top, one per 58), each name plate 170x35 left of its card (9 below the card's
-// top, its right end under the card), the name and the place in the plate's part left of the card.
+// ---------------- the Party cards (decision 3G, 2026-11-14) ----------------
+// One card per partner in the art of the stage that partner plays (images: data/ui/lineages_card_*.png,
+// tools/party_card_assets.py): a plate with the name, the place, the health bar and a second bar (Creature the hunger,
+// Space the ship's energy) and a picture frame right of it (a click: that creature's Sporepedia card). The cards stack
+// at the right edge from just above Spore's own UI there (the avatar or ship card, the Pack list, the Tribe and Military
+// tabs: measured, so nothing native is covered), the newest partner on top, with a "Party" tab in the art of this
+// player's own stage. The own card is the game's. Replaces the 2026-11-13 panel (header, plates, gold cards).
 constexpr int kPartyRows = 8;
-constexpr uint32_t kPartyTitle = 0xFFD4DCE2;
 // the health bar as the game builds its own (the Creature HUD, layout 5ED10964, read 2026-11-13: the empty pill, a
-// clipping window (flag 0x400) as wide as the health holding the full green pill, the edge on top); the images are
-// the native bar's pixels (tools/party_ui_assets.py)
+// clipping window (flag 0x400) as wide as the health holding the full pill, the edge on top)
 constexpr uint32_t kFlagClip = 0x400;
 static uint32_t g_portrait_mode = 0; // the layout mode of the portrait's drawable (std_drawable_image); coop.partymode
+struct CardBar {
+    Win icon = nullptr, back = nullptr, clip = nullptr, fill = nullptr, ring = nullptr;
+    std::string shown_fill, shown_icon;
+};
 struct PartyRowWin {
-    Win plate = nullptr, plate_me = nullptr, name = nullptr, place = nullptr, card = nullptr, portrait = nullptr,
-        bar_back = nullptr, bar_clip = nullptr, bar_fill = nullptr, bar_ring = nullptr;
+    Win plate = nullptr, frame = nullptr, name = nullptr, place = nullptr, portrait = nullptr;
+    CardBar bars[2];
     uint32_t shown_portrait = 0;
+    std::string shown_style;
 };
 static struct {
-    Win root = nullptr, header = nullptr, title = nullptr;
+    Win root = nullptr, tab = nullptr, title = nullptr;
     PartyRowWin rows[kPartyRows];
+    std::string tab_style;
     bool failed = false;
     Rect area{};
 } g_ph;
@@ -2946,18 +2952,59 @@ static float g_ph_want_scale = 1, g_ph_shown_scale = 0;
 static int g_ph_sw, g_ph_sh, g_ph_shown_sw, g_ph_shown_sh;
 static void (*g_ph_click)(uint8_t);
 static uint32_t g_ph_portraits_missing;
+static float g_ph_floor = -1; // the top of Spore's own UI at the right edge (screen pixels; -1 not measured)
+static uint32_t g_ph_own_stage; // this player's game mode (the tab's art)
+static bool g_ph_images_missing; // the cards' images not (yet) in the game: the caller shows the text list
+static std::vector<PartyRow> g_ph_cards; // the partners shown, top card first (a frame's click)
+static float ns_factor_now(); // the UI scale of Spore's own UI (below, 3H)
+
+static const char* card_style(uint32_t mode)
+{
+    switch (mode) {
+    case modes::kCell: return "cell";
+    case modes::kCreature: return "creature";
+    case modes::kTribe: return "tribe";
+    case modes::kCiv: return "civ";
+    case modes::kSpace: return "space";
+    default: return nullptr;
+    }
+}
+
+// one drawable per image (shared by the windows that show it; the game's tooltip drawable: corners kept, the rest
+// stretched)
+static void* card_look(const std::string& stem)
+{
+    static std::vector<std::pair<std::string, void*>> s_looks;
+    for (auto& l : s_looks)
+        if (l.first == stem) return l.second;
+    void* img = sui::image(sui::fnv(stem.c_str()), 0x2F7D0004, sui::fnv("sporecoop"));
+    void* look = img ? sui::std_drawable_tooltip(img) : nullptr;
+    if (img) sui::release(img);
+    if (look) {
+        sui::add_ref(look); // ours for the session (the windows take their own)
+        s_looks.push_back({stem, look});
+    }
+    return look;
+}
 
 static Win party_image_window(Win root, const char* stem)
 {
-    void* img = sui::image(sui::fnv(stem), 0x2F7D0004, sui::fnv("sporecoop"));
-    void* look = img ? sui::std_drawable_tooltip(img) : nullptr;
-    if (img) sui::release(img);
+    void* look = card_look(stem);
     if (!look) return nullptr;
     Win w = sui::button_like(root, D.like_button, {0, 0, 10, 10}, "");
     if (!w) return nullptr;
     sui::set_drawable(w, look);
     sui::set_label_color(w, 0);
     return w;
+}
+
+static void set_look(Win w, std::string& shown, const std::string& stem)
+{
+    if (!w || shown == stem) return;
+    if (void* look = card_look(stem)) {
+        sui::set_drawable(w, look);
+        shown = stem;
+    }
 }
 
 static bool ph_build()
@@ -2970,44 +3017,59 @@ static bool ph_build()
     }
     Win main = sui::main_window();
     if (!D.like_button || !main) { g_ph.failed = true; return false; }
-    if (!sui::has_image(sui::fnv("lineages_party_card"), sui::fnv("sporecoop"))) {
-        H->log(M, SK_WARN, "ui: the Party panel's images are not in this game's SporeCoop.package (an older one): the text list");
-        g_ph.failed = true;
+    static double s_retry_at = 0; // a package mounted later (tests) or still loading: looked for again every 5 s
+    if (H->time_seconds() < s_retry_at) return false;
+    if (!sui::has_image(sui::fnv("lineages_card_plate_space"), sui::fnv("sporecoop"))) {
+        static bool s_said = false;
+        if (!s_said) H->log(M, SK_WARN, "ui: the Party cards' images are not in this game's SporeCoop.package (an older one): the text list");
+        s_said = true;
+        s_retry_at = H->time_seconds() + 5;
+        g_ph_images_missing = true;
         return false;
     }
+    g_ph_images_missing = false;
     g_ph.root = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
     if (!g_ph.root) { g_ph.failed = true; return false; }
     Win root = g_ph.root;
-    sui::set_flag(root, sui::kFlagIgnoreMouse, false); // the cards take the clicks
+    sui::set_flag(root, sui::kFlagIgnoreMouse, false); // the frames take the clicks
     std::vector<Win> order;
-    g_ph.header = party_image_window(root, "lineages_party_header");
-    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), D.font_body, kPartyTitle, sui::kAlignCenter);
-    order.push_back(g_ph.header);
+    g_ph.tab = party_image_window(root, "lineages_card_tab_space");
+    g_ph.tab_style = "lineages_card_tab_space";
+    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), D.font_body, kWhite, sui::kAlignCenter);
+    order.push_back(g_ph.tab);
     order.push_back(g_ph.title);
     for (int i = 0; i < kPartyRows; ++i) {
         auto& r = g_ph.rows[i];
-        r.plate = party_image_window(root, "lineages_party_plate");
-        r.plate_me = party_image_window(root, "lineages_party_plate_me");
-        r.name = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        r.plate = party_image_window(root, "lineages_card_plate_space");
+        r.name = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignLeft);
         r.place = sui::label(root, {0, 0, 10, 10}, "", D.font_button ? D.font_button : D.font_body, kWhite,
-                             sui::kAlignCenter);
-        r.card = party_image_window(root, "lineages_party_card");
-        // r.portrait: the game's own image window, made for each picture (ph_apply)
-        r.bar_back = party_image_window(root, "lineages_party_bar_back");
-        r.bar_clip = sui::label(root, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
-        r.bar_fill = r.bar_clip ? party_image_window(r.bar_clip, "lineages_party_bar_fill") : nullptr;
-        r.bar_ring = party_image_window(root, "lineages_party_bar_ring");
-        if (r.bar_clip) sui::set_flag(r.bar_clip, kFlagClip, true);
-        for (Win w : {r.plate, r.plate_me, r.name, r.place, r.bar_back, r.bar_clip, r.bar_fill, r.bar_ring})
+                             sui::kAlignLeft);
+        order.insert(order.end(), {r.plate, r.name, r.place});
+        for (auto& bar : r.bars) {
+            bar.icon = party_image_window(root, "lineages_card_icon_health");
+            bar.back = party_image_window(root, "lineages_party_bar_back");
+            bar.clip = sui::label(root, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+            bar.fill = bar.clip ? party_image_window(bar.clip, "lineages_party_bar_fill") : nullptr;
+            bar.ring = party_image_window(root, "lineages_party_bar_ring");
+            bar.shown_fill = "lineages_party_bar_fill";
+            bar.shown_icon = "lineages_card_icon_health";
+            if (bar.clip) sui::set_flag(bar.clip, kFlagClip, true);
+            for (Win w : {bar.icon, bar.back, bar.clip, bar.fill, bar.ring})
+                if (w) sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+            order.insert(order.end(), {bar.icon, bar.back, bar.clip, bar.ring});
+        }
+        r.frame = party_image_window(root, "lineages_card_frame_space");
+        r.shown_style = "space";
+        // r.portrait: the game's own image window, made for each picture (ph_apply), over the frame
+        for (Win w : {r.plate, r.name, r.place})
             if (w) sui::set_flag(w, sui::kFlagIgnoreMouse, true);
-        if (r.card)
-            sui::add_handler(r.card, [i](Win, const sui::Msg& m) {
+        if (r.frame)
+            sui::add_handler(r.frame, [i](Win, const sui::Msg& m) {
                 if (!sui::is_click(m)) return false;
-                if (g_ph_click && i < (int)g_ph_shown.size()) g_ph_click(g_ph_shown[i].player);
+                if (g_ph_click && i < (int)g_ph_cards.size()) g_ph_click(g_ph_cards[i].player);
                 return true;
             });
-        for (Win w : {r.plate, r.plate_me, r.name, r.place, r.card, r.bar_back, r.bar_clip, r.bar_ring})
-            order.push_back(w);
+        order.push_back(r.frame);
     }
     for (Win w : order) // back to front, once
         if (w) {
@@ -3017,23 +3079,61 @@ static bool ph_build()
         }
     sui::add_ref(root);
     sui::set_visible(root, false);
-    H->log(M, SK_INFO, "ui: the Party panel is made (%d rows)", kPartyRows);
+    H->log(M, SK_INFO, "ui: the Party cards are made (%d rows)", kPartyRows);
     return true;
+}
+
+// the top of Spore's own UI at the right edge, below the screen's top quarter: the windows of the HUD layouts that
+// reach the right edge (the avatar / ship / cell card, the Pack list, the Tribe and Military tabs); the screen's bottom
+// bar's top when none. Drawn places: a scaled piece (ui.native_scale) is taller than its layout
+static float measure_right_floor(int sw, int sh)
+{
+    Win main = sui::main_window();
+    float floor = (float)sh - 64;
+    if (!main) return floor;
+    struct It { Win w; int depth; };
+    std::vector<It> stack{{main, 0}};
+    int seen = 0;
+    while (!stack.empty() && seen++ < 6000) {
+        const It it = stack.back();
+        stack.pop_back();
+        for (Win c : sui::children(it.w)) {
+            if (!sui::visible(c) || c == g_ph.root || c == D.root) continue;
+            const Rect r = sui::screen_rect(c);
+            const bool layer = r.w() >= sw * 0.9f && r.h() >= sh * 0.9f;
+            if (!layer && r.x2 >= sw - 14 && r.x1 >= sw * 0.6f && r.y1 >= sh * 0.25f && r.y1 < floor &&
+                r.h() < sh * 0.6f && r.w() > 8 && r.h() > 8 && (sui::drawable(c) || !sui::caption(c).empty()))
+                floor = r.y1;
+            if (it.depth < 9) stack.push_back({c, it.depth + 1});
+        }
+    }
+    if (ns_factor_now() != 1.f) floor = sh - (sh - floor) * ns_factor_now(); // (anchored at the bottom right)
+    return floor;
 }
 
 static void ph_apply(void*)
 {
     g_ph_queued = false;
-    const auto want = g_ph_want;
+    std::vector<PartyRow> want; // the partners (the own card is the game's)
+    for (const auto& r : g_ph_want)
+        if (!r.me) want.push_back(r);
     const bool show = g_ph_want_show && !want.empty();
     const float s = g_ph_want_scale;
     const int sw = g_ph_sw, sh = g_ph_sh;
+    if (!show && !g_ph.root) { // nothing to show: made when first needed
+        g_ph_shown = g_ph_want;
+        g_ph_shown_show = false;
+        return;
+    }
     if (!ph_build()) return;
     Win main = sui::main_window();
     auto px = [s](float v) { return (float)std::lround(v * s); };
-    const float right = sw - px(15), top = std::round(sh * 0.3625f);
+    g_ph_floor = measure_right_floor(sw, sh);
     const int n = std::min<int>((int)want.size(), kPartyRows);
-    const Rect all{right - px(178), top, right, top + px(40) + px(58) * (float)std::max(n, 1)};
+    const float right = sw - px(4), bottom = g_ph_floor - px(6);
+    const float row_h = px(62), gap = px(6);
+    const float top = bottom - n * row_h - (n - 1) * gap - px(30);
+    const Rect all{right - px(186), top, right, bottom};
     if (show && main) {
         sui::set_area(g_ph.root, all);
         if (sui::parent(g_ph.root) != main) sui::add_child(main, g_ph.root);
@@ -3046,28 +3146,73 @@ static void ph_apply(void*)
         if (on) sui::set_area(w, {r.x1 - all.x1, r.y1 - all.y1, r.x2 - all.x1, r.y2 - all.y1});
         sui::set_visible(w, on);
     };
-    place(g_ph.header, show, {right - px(91), top, right, top + px(35)});
-    place(g_ph.title, show, {right - px(91), top + px(4), right, top + px(31)});
+    // the tab in this player's own stage
+    const char* own = card_style(g_ph_own_stage);
+    const std::string own_style = own ? own : "space";
+    set_look(g_ph.tab, g_ph.tab_style, "lineages_card_tab_" + own_style);
+    place(g_ph.tab, show, {right - px(92), top, right, top + px(26)});
+    place(g_ph.title, show, {right - px(92), top + px(1), right, top + px(25)});
+    sui::set_label_color(g_ph.title, 0xFFFFFFFF);
     for (int i = 0; i < kPartyRows; ++i) {
         auto& r = g_ph.rows[i];
         const bool on = show && i < n;
         const PartyRow row = on ? want[i] : PartyRow{};
-        const float cy = top + px(40) + px(58) * (float)i, cx1 = right - px(53);
-        const Rect card{cx1, cy, right, cy + px(53)};
-        const Rect plate{right - px(178), cy + px(9), right - px(8), cy + px(44)};
-        place(r.plate, on && !row.me, plate);
-        place(r.plate_me, on && row.me, plate);
-        place(r.name, on, {plate.x1 + px(6), plate.y1 + px(1), cx1 - px(2), plate.y1 + px(20)});
-        place(r.place, on, {plate.x1 + px(6), plate.y1 + px(19), cx1 - px(2), plate.y2 - px(1)});
-        if (on) {
-            sui::set_caption(r.name, row.name);
-            sui::set_caption(r.place, row.place.empty() ? "" : "[" + row.place + "]");
+        const char* st = card_style(row.stage);
+        const std::string style = st ? st : own_style;
+        if (on && style != r.shown_style) {
+            std::string a = "", b = "";
+            set_look(r.plate, a, "lineages_card_plate_" + style);
+            set_look(r.frame, b, "lineages_card_frame_" + style);
+            r.shown_style = style;
         }
-        place(r.card, on, card);
-        // the portrait: the creature's Sporepedia picture (128x128) drawn into the card's parchment
+        // the newest partner on top: row i counts up from the bottom
+        const float cy = bottom - (float)(n - i) * row_h - (float)(n - 1 - i) * gap;
+        const float fx = right - px(62);
+        const Rect frame{fx, cy, right, cy + px(62)};
+        const Rect plate{fx - px(124), cy + px(2), fx + px(4), cy + px(60)};
+        place(r.plate, on, plate);
+        // left-aligned: the game's labels centre their text, so each box is as wide as its text plus the label's
+        // own margin (text_px), starting one margin left of the text
+        auto left = [&](float x, float y1, float y2, const std::string& t, bool small) {
+            const float m = kLabelMargin;
+            return Rect{x - m, y1, x - m + text_px(t, small) + 2 * m, y2};
+        };
+        place(r.name, on, left(plate.x1 + px(9), plate.y1 + px(1), plate.y1 + px(19), row.name, false));
+        place(r.place, on, left(plate.x1 + px(9), plate.y1 + px(17), plate.y1 + px(31), row.place, D.font_button != 0));
+        if (on) {
+            const bool light = style == "cell"; // dark text on the Cell's light metal
+            sui::set_caption(r.name, row.name);
+            sui::set_caption(r.place, row.place);
+            sui::set_label_color(r.name, light ? 0xFF182244 : 0xFFFFFFFF);
+            sui::set_label_color(r.place, light ? 0xFF2A3E8A : style == "space" ? 0xFF96CDFF : 0xFFE8C870);
+        }
+        // the bars: health, then the second one (its own colour and icon)
+        for (int k = 0; k < 2; ++k) {
+            auto& bar = r.bars[k];
+            const float value = k == 0 ? row.health : row.energy;
+            const bool visible = on && value >= 0;
+            if (visible && k == 1) {
+                const bool space = row.stage == modes::kSpace;
+                std::string fill_stem = space ? "lineages_card_bar_blue" : "lineages_card_bar_orange";
+                std::string icon_stem = space ? "lineages_card_icon_energy" : "lineages_card_icon_hunger";
+                if (bar.fill && bar.shown_fill != fill_stem) set_look(bar.fill, bar.shown_fill, fill_stem);
+                set_look(bar.icon, bar.shown_icon, icon_stem);
+            }
+            const float by = plate.y1 + px(k == 0 ? 33 : 46);
+            const Rect b{plate.x1 + px(22), by, plate.x1 + px(120), by + px(9)};
+            const float filled = std::round((b.x2 - b.x1) * std::clamp(value, 0.f, 1.f));
+            place(bar.icon, visible, {plate.x1 + px(7), by - px(2), plate.x1 + px(19), by + px(10)});
+            place(bar.back, visible, b);
+            place(bar.clip, visible && filled > 0, {b.x1, b.y1, b.x1 + filled, b.y2});
+            if (bar.fill) { // the full pill inside the clipping window (its own coordinates)
+                sui::set_area(bar.fill, {0, 0, b.x2 - b.x1, b.y2 - b.y1});
+                sui::set_visible(bar.fill, visible);
+            }
+            place(bar.ring, visible, b);
+        }
+        place(r.frame, on, frame);
         // the picture: an image window of the game's own (IImageDrawable::AddImageWindow: the picture as it is, scaled
-        // to the window; a StdDrawable cuts it in thirds, nothing showed in a 45-pixel card) made again for a new one,
-        // in front of the card and under the bar (a picture not here yet: asked again, set_party_hud)
+        // to the window) made again for a new one, over the frame (a picture not here yet: asked again, set_party_hud)
         if (on && row.portrait != r.shown_portrait && row.portrait &&
             sui::has_image(row.portrait, row.portrait_group)) {
             if (r.portrait) {
@@ -3078,28 +3223,18 @@ static void ph_apply(void*)
             r.portrait = sui::image_window(g_ph.root, row.portrait, row.portrait_group, 0, 0);
             if (r.portrait) {
                 sui::set_flag(r.portrait, sui::kFlagIgnoreMouse, true);
-                for (Win w : {r.bar_back, r.bar_clip, r.bar_ring}) // the bar stays over the picture
-                    if (w) sui::bring_to_front(g_ph.root, w);
                 r.shown_portrait = row.portrait;
             }
         } else if (on && row.portrait && !r.shown_portrait && g_ph_portraits_missing++ < 8) {
-            H->log(M, SK_INFO, "ui: Party panel: no picture %08X/%08X here for %s", row.portrait, row.portrait_group,
+            H->log(M, SK_INFO, "ui: Party cards: no picture %08X/%08X here for %s", row.portrait, row.portrait_group,
                    row.name.c_str());
         }
-        place(r.portrait, on && r.shown_portrait, {cx1 + px(4), cy + px(3), right - px(4), cy + px(43)});
-        const bool bar = on && row.health >= 0;
-        const Rect b{cx1 + px(3), cy + px(41), right - px(3), cy + px(52)};
-        const float filled = std::round((b.x2 - b.x1) * std::clamp(row.health, 0.f, 1.f));
-        place(r.bar_back, bar, b);
-        place(r.bar_clip, bar && filled > 0, {b.x1, b.y1, b.x1 + filled, b.y2});
-        if (r.bar_fill) { // the full pill inside the clipping window (its own coordinates)
-            sui::set_area(r.bar_fill, {0, 0, b.x2 - b.x1, b.y2 - b.y1});
-            sui::set_visible(r.bar_fill, bar);
-        }
-        place(r.bar_ring, bar, b);
+        if (r.portrait) sui::bring_to_front(g_ph.root, r.portrait);
+        place(r.portrait, on && r.shown_portrait, {fx + px(6), cy + px(6), right - px(6), cy + px(56)});
     }
-    g_ph_shown = want;
-    g_ph_shown_show = show;
+    g_ph_shown = g_ph_want;
+    g_ph_cards = want;
+    g_ph_shown_show = g_ph_want_show;
     g_ph_shown_scale = s;
     g_ph_shown_sw = sw;
     g_ph_shown_sh = sh;
@@ -3113,6 +3248,13 @@ bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, vo
     H->screen_size(&sw, &sh);
     bool same = show == g_ph_shown_show && rows == g_ph_shown && scale == g_ph_shown_scale &&
                 sw == g_ph_shown_sw && sh == g_ph_shown_sh;
+    static double s_floor_at = 0; // Spore's own right-edge UI comes and goes (the Pack list): measured again each second
+    if (same && show && H->time_seconds() >= s_floor_at) {
+        s_floor_at = H->time_seconds() + 1;
+        same = false;
+    }
+    for (const auto& r : rows)
+        if (r.me) g_ph_own_stage = r.stage;
     static double s_retry_at = 0; // a picture that was not here yet: asked again every 2 s
     if (same && show && H->time_seconds() >= s_retry_at)
         for (size_t i = 0; i < rows.size() && i < (size_t)kPartyRows; ++i)
@@ -3130,7 +3272,7 @@ bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, vo
         g_ph_queued = true;
         H->run_outside_frame(ph_apply, nullptr);
     }
-    return !g_ph.failed;
+    return !g_ph.failed && !g_ph_images_missing;
 }
 
 Rect party_hud_area() { return g_ph_shown_show ? g_ph.area : Rect{}; }
@@ -3148,6 +3290,7 @@ static bool g_native_scale = true;
 COOP_FIX("ui.native_scale", "BUG-9191", g_native_scale,
          "ui: the Interface Size scales Spore's own HUD, menus and dialogs, not only the mod's parts");
 static float g_ns_factor = 1.f;
+static float ns_factor_now() { return g_ns_factor; }
 static std::vector<std::pair<Win, uint32_t>> g_ns_done; // windows with our proc (and their id, against a reused address)
 
 // one piece's size and pivot: its extent (its own rectangle and its children's: Settings' root is a 44x38 box in a

@@ -77,6 +77,8 @@ static void creature_fill(void* av, net::PlayerState& st)
     }
     st.health = game::health(av);
     st.max_health = game::max_health(av);
+    // 3G: the hunger meter (+0xBBC, 0..100, CreatureSetHunger) for the Party card's second bar, in Creature only
+    if (game::mode_id() == kCreature) st.energy = std::clamp(skg::field<float>(av, 0xBBC) / 100.f, 0.f, 1.f);
     st.species = game::species_instance(av);
     if (game::mode_id() == kScenario) // BUG-9113: the scenario scales each captain; the partner's body copies it
         st.captain_scale = game::scale(av);
@@ -566,6 +568,8 @@ static void space_fill(void* u, net::PlayerState& st)
         st.flags |= net::PF_MOVING;
     st.health = skg::field<float>(u, kUfoCombat + 0x38);
     st.max_health = skg::field<float>(u, kUfoCombat + 0x2C);
+    const float max_energy = skg::field<float>(u, 0x7F8); // 3G: the ship's energy (mEnergy +0x7F4, docs/re/space.md)
+    if (max_energy > 0) st.energy = std::clamp(skg::field<float>(u, 0x7F4) / max_energy, 0.f, 1.f);
 }
 
 bool ufo_ident_fix = true;
