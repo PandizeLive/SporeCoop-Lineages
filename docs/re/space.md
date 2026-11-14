@@ -2677,3 +2677,19 @@ Roadmap phase 6 step 1, BUG-9187.
   window; in the spaceship editor three slow drags from the palette's first row onto the stage and "Name your
   Spaceship" (510,744), then the check (1000,745). Scale by the window size (800x600, 1280x960 used here).
 
+## The fleet leader per place (2026-11-14, feat/lineages-47)
+<a id="space-fleet-leader"></a>
+
+BUG-9197, decision 3D A.
+* ✔ (live, three games) The NPC ships of a place (PlayerState.world in Space: PlanetID | 0x40000000 on a planet,
+  StarID | 0x80000000 in a solar system) are run by one game: the host where it is, else the lowest seat there
+  (squadron.cpp leader_of). Its snapshot carries u8 leader, u32 place in front; a guest leader sends it to the host,
+  which forwards it to the players of that place (relayed 387 in the test).
+* ✔ Shots on mirrors (MSG_UFO_HIT) carry the leader; the host forwards a shot on a guest leader's ship with the
+  shooter in front, the leader applies it with that shooter's puppet as the attacker. An NPC hit on a partner's ship
+  (MSG_UFO_DAMAGE) carries the victim; a guest leader's goes through the host.
+* ✔ A guest that becomes the leader (the old one left) keeps the ships it showed: the mirrors are real UFOs
+  (SpawnUFO), released from the mirror lists they fly on with their own controller (2 kept, the damage too).
+* ~ A mirror needs the ship's model on the mirroring game: a test ship with the leader's own ship model was listed
+  but not drawn on the other guest ("no mirror yet", BUG-0323's rule); one with a model both have was (coop.fleet
+  spawn <type> like <ship>).

@@ -22,6 +22,9 @@ struct Ctx {
     std::function<bool()> with_host;            // guest: the host is in our place
     std::function<int(void* ufo)> puppet_owner; // host: player id of a puppet ship, -1 if none
     std::function<void*(uint8_t id)> puppet_of; // host: the puppet ship of a player
+    // BUG-9197: a player's place in Space (its state's star system or planet; this game's own for my id), 0 = not in
+    // Space or unknown
+    std::function<uint32_t(uint8_t id)> place_of;
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);

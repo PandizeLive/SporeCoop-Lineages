@@ -46,6 +46,7 @@ template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
+static uint8_t g_mirror_leader = 0xFF; // BUG-9197: whose ships the mirrors are
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 static bool in_space() { return g_ok && game::mode_id() == modes::kSpace; }
 
@@ -85,6 +86,47 @@ static uint16_t g_cycle;
 static uint8_t g_drop_chunk = 0xFF; // tests (coop.fleet drop <chunk> <n>): skip sending that chunk n times
 static int g_drop_left;
 static uint32_t g_hits_in, g_damage_out, g_puppet_shots;
+
+// ---------------- the leader per place (BUG-9197, decision 3D A, the owner 2026-11-14) ----------------
+// The NPC ships of a star system or planet are run by one game: the host's where the host is, else the lowest seat of
+// the party there. Before, only the host's were shared: two guests in a system without the host each saw their own
+// natives. The leader's snapshot (MSG_UFO_STATE: its id and place in front) goes to the players of its place; a guest
+// leader's goes through the host, which forwards it (guests only talk to the host). A shot on a mirror (MSG_UFO_HIT)
+// goes to the leader of the shooter's place, through the host; an NPC hit on a partner's ship there (MSG_UFO_DAMAGE)
+// from the leader to that partner, through the host. When the leader leaves, the next one keeps the ships it shows
+// (its mirrors become its own). Old (`coop.fix fleet.leader off`): the host's ships only, where the host is.
+static bool g_leader_fix = true;
+COOP_FIX("fleet.leader", "BUG-9197", g_leader_fix,
+         "space: the enemy ships of a system are run by one player there (the host, else the lowest seat), not only "
+         "where the host is");
+static uint32_t g_relayed, g_led_ticks, g_handovers, g_kept_on_handover;
+
+static uint32_t place_of(uint8_t id) { return C.place_of ? C.place_of(id) : 0; }
+static uint32_t my_place() { return C.sess ? place_of(C.sess->my_id()) : 0; }
+// the leader of a place: the host when it is there, else the lowest seat there; 0xFF: nobody there
+static uint8_t leader_of(uint32_t place)
+{
+    if (!C.sess || !place) return 0xFF;
+    uint8_t best = 0xFF;
+    for (auto& pl : C.sess->players())
+        if (place_of(pl.id) == place && pl.id < best) best = pl.id;
+    return best;
+}
+static bool is_host();
+// this game runs the NPC ships of its place and sends them
+static bool i_lead()
+{
+    if (is_host()) return true; // (the host always runs its own place's ships)
+    return g_leader_fix && C.sess && my_place() && leader_of(my_place()) == C.sess->my_id();
+}
+// this game shows another game's ships (the leader of its place, not itself)
+static bool mirroring()
+{
+    if (!g_leader_fix) return C.with_host && C.with_host();
+    if (i_lead() || !my_place()) return false;
+    const uint8_t l = leader_of(my_place());
+    return l != 0xFF && C.sess && l != C.sess->my_id();
+}
 
 // ---------------- guest ----------------
 struct Mirror {
@@ -199,7 +241,7 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
         auto* source = static_cast<uint8_t*>(attacker) - kCombat;
         // Hitting allied ships, buildings or the planet can pass a different combatant type.
         // Verify membership before reading offsets specific to a UFO.
-        if ((is_host() || (C.with_host && !C.with_host())) && game::ufo_listed(source) &&
+        if ((is_host() || !mirroring()) && game::ufo_listed(source) &&
             enemy_ship(source,skg::cdecl_call<uint32_t>(a_PlayerEmpireID)))
             dmg *= world::rules_for_current().enemy_damage_percent() / 100.f;
     }
@@ -218,6 +260,7 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
             g_mirror_hits++;
             if (me && att == me && type != 10) {
                 net::Writer w;
+                if (g_leader_fix) w.u8(g_mirror_leader); // BUG-9197: whose ship it is (the host forwards)
                 w.u16(it->second);
                 w.f32(dmg);
                 w.u32((uint32_t)type);
@@ -230,17 +273,18 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
         if (u == me && att && g_mirror_of.count(att))
             return 0; // the host decides when its ships hit us (MSG_UFO_DAMAGE)
     }
-    if (is_host() && C.puppet_owner) {
+    if (i_lead() && C.puppet_owner) {
         int owner = C.puppet_owner(u);
-        if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me) {
-            // an NPC ship hit a guest's ship: the guest takes it on its own ship
+        if (owner >= 0 && owner != C.sess->my_id() && att && C.puppet_owner(att) < 0 && att != me) {
+            // an NPC ship hit a partner's ship: the partner takes it on its own ship
             net::Writer w;
+            if (g_leader_fix) w.u8((uint8_t)owner); // BUG-9197: the victim (a guest leader's goes through the host)
             w.f32(dmg);
             w.u32((uint32_t)type);
             w.f32(dir ? dir[0] : 0); w.f32(dir ? dir[1] : 0); w.f32(dir ? dir[2] : 0);
             auto it = g_hid.find(att);
             w.u16(it == g_hid.end() ? 0xFFFF : it->second);
-            C.sess->send_reliable_to((uint8_t)owner, net::MSG_UFO_DAMAGE, w);
+            C.sess->send_reliable_to(is_host() ? (uint8_t)owner : (uint8_t)0, net::MSG_UFO_DAMAGE, w);
             g_damage_out++;
         }
     }
@@ -427,7 +471,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     return true;
 }
 
-// ---------------- host ----------------
+// ---------------- the leader (the host, or a guest leading its place: BUG-9197) ----------------
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.1)
@@ -458,9 +502,14 @@ static void host_tick(double now)
             g_hid_rev[id] = u;
         }
     g_cycle++;
+    g_led_ticks++;
     size_t per = 18, chunks = std::max<size_t>(1, (ships.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
+        if (g_leader_fix) { // BUG-9197: whose ships, and where
+            w.u8(C.sess->my_id());
+            w.u32(my_place());
+        }
         w.u16(g_cycle);
         w.u8((uint8_t)k);
         w.u8((uint8_t)chunks);
@@ -487,9 +536,16 @@ static void host_tick(double now)
             g_drop_left--;
             continue;
         }
-        for (auto& pl : C.sess->players())
-            if (pl.id != 0)
-                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        if (!g_leader_fix) {
+            for (auto& pl : C.sess->players())
+                if (pl.id != 0)
+                    C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        } else if (is_host()) { // the players of this place
+            for (auto& pl : C.sess->players())
+                if (pl.id != 0 && place_of(pl.id) == my_place())
+                    C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        } else // a guest leader: the host forwards it to the players here
+            C.sess->send_unreliable_to(0, net::MSG_UFO_STATE, w);
     }
 }
 
@@ -580,10 +636,26 @@ static void destroy_mirror(void* u, bool explode)
 
 static void guest_state(net::Reader& r)
 {
+    if (g_leader_fix) { // BUG-9197: only the ships of my place's leader
+        const uint8_t leader = r.u8();
+        const uint32_t place = r.u32();
+        if (!r.ok() || !mirroring() || place != my_place() || leader != leader_of(my_place()))
+            return;
+        if (leader != g_mirror_leader) { // another leader's ships: the old mirrors go
+            for (auto& [id, m] : g_mirrors)
+                if (m.u) {
+                    g_mirror_of.erase(m.u);
+                    destroy_mirror(m.u, false);
+                }
+            g_mirrors.clear();
+            g_rx_any = false;
+            g_mirror_leader = leader;
+        }
+    }
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
-    if (!r.ok() || !C.with_host || !C.with_host())
-        return; // the host's ships are mirrored only where the host is
+    if (!r.ok() || !mirroring())
+        return; // the leader's ships are mirrored only where the leader is
     if (g_chunk_fix) {
         if (!chunks || chunks > 31 || chunk >= chunks)
             return;
@@ -720,7 +792,7 @@ static void guest_state(net::Reader& r)
 
 static void guest_tick(double now)
 {
-    bool here = C.with_host && C.with_host();
+    bool here = mirroring();
     static double next_scale;
     if (here) {
         if (!g_ship_scales.empty()) clear_enemy_stats();
@@ -755,7 +827,7 @@ static void guest_tick(double now)
         if (m.max_hp > 0) F<float>(m.u, kMaxHp) = m.max_hp;
         F<float>(m.u, kHp) = m.hp > 0 ? m.hp : 1;
     }
-    if (!here && !g_mirrors.empty()) { // we left the host's place: drop the mirrors
+    if (!here && !g_mirrors.empty()) { // we left the leader's place: drop the mirrors
         for (auto& [id, m] : g_mirrors)
             if (m.u) {
                 g_mirror_of.erase(m.u);
@@ -763,6 +835,7 @@ static void guest_tick(double now)
             }
         g_mirrors.clear();
     }
+    if (!here) g_mirror_leader = 0xFF;
 }
 
 void tick(double now)
@@ -771,19 +844,81 @@ void tick(double now)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
         return;
     g_loco_vt = *(void**)((uint8_t*)player_ufo() + kLoco); // BUG-0479 (h_SetScale)
-    if (is_host())
+    if (i_lead()) {
+        if (!g_mirrors.empty()) { // BUG-9197: we lead now (the leader left): the ships we show become our own
+            for (auto& [id, m] : g_mirrors)
+                if (m.u && live(m.u)) {
+                    g_mirror_of.erase(m.u);
+                    g_kept_on_handover++;
+                }
+            g_mirror_of.clear();
+            g_mirrors.clear();
+            g_mirror_leader = 0xFF;
+            g_handovers++;
+            H->log(M, SK_INFO, "space: this game leads the enemy ships of its place now (%u kept)", g_kept_on_handover);
+        }
+        g_mirror_leader = 0xFF;
         host_tick(now);
-    else if (is_guest())
+    } else if (is_guest())
         guest_tick(now);
+}
+
+// BUG-9197: the host forwards a guest leader's messages (guests only talk to the host); true = handled here
+static bool host_forward(uint8_t type, uint8_t from, net::Reader& r)
+{
+    if (!g_leader_fix || !is_host() || from == 0) return false;
+    if (type == net::MSG_UFO_STATE) { // a guest leader's ships: to the other players of its place
+        net::Reader peek(r.cur(), r.left());
+        const uint8_t leader = peek.u8();
+        const uint32_t place = peek.u32();
+        if (!peek.ok() || leader != from || !place) return true;
+        net::Writer w;
+        w.raw(r.cur(), r.left());
+        for (auto& pl : C.sess->players())
+            if (pl.id != 0 && pl.id != from && place_of(pl.id) == place) {
+                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+                g_relayed++;
+            }
+        return true;
+    }
+    if (type == net::MSG_UFO_HIT) { // a shot on a guest leader's ship: to that leader, the shooter in front
+        net::Reader peek(r.cur(), r.left());
+        const uint8_t leader = peek.u8();
+        if (!peek.ok() || leader == 0) return false; // the host's own ship: applied below
+        net::Writer w;
+        w.u8(from);
+        w.raw(peek.cur(), peek.left());
+        C.sess->send_reliable_to(leader, net::MSG_UFO_HIT, w);
+        g_relayed++;
+        return true;
+    }
+    if (type == net::MSG_UFO_DAMAGE) { // a guest leader's ship hit a partner: to that partner
+        net::Reader peek(r.cur(), r.left());
+        const uint8_t victim = peek.u8();
+        if (!peek.ok() || victim == 0) return true; // (the host is never another leader's victim: it leads its place)
+        net::Writer w;
+        w.raw(r.cur(), r.left());
+        C.sess->send_reliable_to(victim, net::MSG_UFO_DAMAGE, w);
+        g_relayed++;
+        return true;
+    }
+    return false;
 }
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
+    if (host_forward(type, from, r))
+        return;
     if (!in_space() || !player_ufo())
         return;
     if (type == net::MSG_UFO_STATE && is_guest()) {
         guest_state(r);
-    } else if (type == net::MSG_UFO_HIT && is_host()) {
+    } else if (type == net::MSG_UFO_HIT && i_lead()) {
+        uint8_t shooter = from;
+        if (g_leader_fix) { // the leader byte (the host's own) or the shooter (forwarded by the host to a guest leader)
+            const uint8_t first = r.u8();
+            if (!is_host()) shooter = first;
+        }
         uint16_t id = r.u16();
         float dmg = r.f32();
         int t = (int)r.u32();
@@ -794,13 +929,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
         if (!net::finite3(dir))
             dir[0] = dir[1] = dir[2] = 0;
-        void* puppet = hit_puppet(from);
+        void* puppet = hit_puppet(shooter);
         g_applying = true;
         o_TakeDamage((uint8_t*)it->second + kCombat, dmg, skg::cdecl_call<uint32_t>(a_PlayerEmpireID), t, dir,
                      puppet ? (uint8_t*)puppet + kCombat : nullptr);
         g_applying = false;
         g_hits_in++;
     } else if (type == net::MSG_UFO_DAMAGE && is_guest()) {
+        if (g_leader_fix) r.u8(); // the victim (us)
         float dmg = r.f32();
         int t = (int)r.u32();
         float dir[3] = {r.f32(), r.f32(), r.f32()};
@@ -849,7 +985,12 @@ std::string status()
     snprintf(sc, sizeof sc, "space puppet scale: fix=%d sized=%u replaced=%u game=%.3f own=%.3f from=%08X\n",
              g_puppet_scale_fix ? 1 : 0, g_scale_puppet_calls, g_scale_replaced, g_scale_game, g_scale_own,
              (unsigned)g_scale_caller);
-    return status_ships() + sc;
+    char ld[200]; // BUG-9197
+    snprintf(ld, sizeof ld, "fleet leader: fix=%d place=%08X leader=%d me_lead=%d mirroring=%d of=%d relayed=%u led=%u "
+             "handovers=%u kept=%u\n", g_leader_fix ? 1 : 0, my_place(), (int)(int8_t)leader_of(my_place()),
+             i_lead() ? 1 : 0, mirroring() ? 1 : 0, (int)(int8_t)g_mirror_leader, g_relayed, g_led_ticks, g_handovers,
+             g_kept_on_handover);
+    return status_ships() + sc + ld;
 }
 
 static std::string status_ships()
@@ -1002,7 +1143,12 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "spawn") { // spawn <type> [own]: a ship without an empire (pirate) next to
         // us, or with our own empire's political id (`own`: type 3 = an escort ship of ours, BUG-0084)
         uint32_t pol = a.size() >= 3 && a[2] == "own" ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
-        void* u = skg::cdecl_call<void*>(a_SpawnUFO, atoi(a[1].c_str()), &pol, (void*)&F<uint32_t>(me, kModel));
+        // tests (BUG-9197): `spawn <type> like <ship pointer>`: that ship's model (one the partners have too)
+        void* like = a.size() >= 4 && a[2] == "like" ? (void*)(uintptr_t)strtoul(a[3].c_str(), nullptr, 16) : nullptr;
+        if (like && !game::ufo_listed(like))
+            return "no such ship";
+        void* u = skg::cdecl_call<void*>(a_SpawnUFO, atoi(a[1].c_str()), &pol,
+                                         (void*)&F<uint32_t>(like ? like : me, kModel));
         if (!u)
             return "spawn failed";
         net::Vec3 p = pos_of(me);

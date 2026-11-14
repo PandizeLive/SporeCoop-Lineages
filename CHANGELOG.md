@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Space: partners in a system without the host see the same enemy ships and
+  fights: the first player there runs them for everyone (BUG-9197).
 - Party: each partner has a card in the style of the stage they play
   (Cell, Creature, Tribe, Civ, Space) with their picture, name, place, health
   and hunger (Creature) or energy (Space), stacked above the game's own cards

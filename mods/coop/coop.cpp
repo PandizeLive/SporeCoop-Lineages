@@ -8229,6 +8229,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         auto it = g_remotes.find(id);
         return it == g_remotes.end() ? nullptr : it->second.puppet;
     };
+    sqc.place_of = [](uint8_t id) -> uint32_t { // BUG-9197: the leader per place
+        if (id == g_sess.my_id()) return g_mode == modes::kSpace ? g_world : 0u;
+        auto it = g_remotes.find(id);
+        if (it == g_remotes.end() || it->second.buf.empty()) return 0;
+        const auto& s = it->second.buf.latest();
+        return s.mode == modes::kSpace ? s.world : 0u;
+    };
     squadron::init(H, M, std::move(sqc));
     spacecoop::Ctx spc;
     spc.sess = &g_sess;
