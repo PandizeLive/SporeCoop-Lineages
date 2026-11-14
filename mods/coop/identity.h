@@ -23,6 +23,12 @@ uint64_t own();
 uint64_t of(uint8_t player);
 // host: the player with this identity in the session now, 0xFF = none
 uint8_t player_of(uint64_t id);
+// BUG-9198: any machine: the identity of `player` as the host shared it (MSG_IDENTITY from the host: the table of the
+// players here), own() for the own game; 0 = not known (an older host, or not arrived yet). of() stays host-only.
+uint64_t known(uint8_t player);
+// BUG-9198: a key for per-player lists that survives a rejoin under another network id or name: "id:<identity>",
+// "name:<name>" while the identity is not known (or with `coop.fix identity.keys off`: always the name)
+std::string key(uint8_t player);
 void tick(double now);
 void on_message(uint8_t from, net::Reader& r);
 void on_player_left(uint8_t player);

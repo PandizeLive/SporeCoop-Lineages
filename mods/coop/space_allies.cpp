@@ -31,6 +31,7 @@
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
+#include "identity.h"
 #include "space_logic.h"
 #include "world.h"
 #include "squadron.h"
@@ -133,7 +134,8 @@ struct Mirror {
     std::map<uint32_t, std::string> skipped; // PlanetID -> why not mirrored
     std::map<uint32_t, uint8_t> raids;       // the owner's raids now: PlanetID -> bombers
 };
-static std::map<std::string, Mirror> g_m;
+static std::map<std::string, Mirror> g_m; // identity::key -> mirror (BUG-9198; the name before)
+static uint32_t g_rekeyed;
 static bool g_ok, g_hold;            // g_hold: no apply (unmirrored for a save, until g_reapply_at)
 static double g_reapply_at, g_next_sync, g_next_raid_scan, g_last_raids_sent;
 static uint32_t g_roster_seen = ~0u;
@@ -1036,7 +1038,19 @@ static void sync_from_rosters()
         std::string name = spaceext::name_of(id);
         if (name.empty() || name == "?")
             continue;
-        Mirror& m = g_m[name];
+        // BUG-9198: one mirror per player identity (a rejoin under another name or network id is the same empire);
+        // the entry made under the name before the identity arrived moves to the identity key
+        const std::string k = identity::key(id);
+        if (!g_m.count(k))
+            for (auto it = g_m.begin(); it != g_m.end(); ++it)
+                if (it->first != k && it->first.rfind("name:", 0) == 0 && it->second.online && it->second.id == id) {
+                    auto node = g_m.extract(it);
+                    node.key() = k;
+                    g_m.insert(std::move(node));
+                    g_rekeyed++;
+                    break;
+                }
+        Mirror& m = g_m[k];
         m.name = name;
         m.id = id;
         m.online = true;
@@ -1045,7 +1059,7 @@ static void sync_from_rosters()
         m.wanted.clear();
         for (auto& c : r->colonies)
             m.wanted.push_back(c.planet);
-        seen.insert(name);
+        seen.insert(k);
     }
     for (auto& [n, m] : g_m)
         if (!seen.count(n) && m.online && m.id != 0xFF) {
@@ -1242,9 +1256,9 @@ static std::string status()
         ap += m.applied, pl += (int)m.planets.size(), st += (int)m.stars.size();
     snprintf(b, sizeof b,
              "allies: mirrors=%d applied=%d stars=%d planets=%d hold=%d saves=%u unmirrors=%u applies=%u growth_blocked=%u "
-             "raids_started=%u raids_won=%u raids_completed=%u",
+             "raids_started=%u raids_won=%u raids_completed=%u rekeyed=%u",
              (int)g_m.size(), ap, st, pl, (int)g_hold, g_saves, g_unmirrors, g_applies, g_growth_blocked,
-             g_raids_started, g_raids_won, g_raids_completed);
+             g_raids_started, g_raids_won, g_raids_completed, g_rekeyed);
     return std::string(b) + (g_last.empty() ? "" : " last='" + g_last + "'");
 }
 
@@ -1376,6 +1390,9 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "detach" && a.size() > 1) { // tests (BUG-0071): mirror <name> becomes a plain empire of this
         // galaxy: no contact, no alliance, its star and colony stay, the mod forgets it
         auto it = g_m.find(a[1]);
+        for (auto j = g_m.begin(); it == g_m.end() && j != g_m.end(); ++j) // by the player's name (BUG-9198 keys)
+            if (j->second.name == a[1])
+                it = j;
         if (it == g_m.end() || !it->second.applied)
             return "no such applied mirror\n";
         set_relation(it->second, false);

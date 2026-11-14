@@ -36,6 +36,7 @@
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
+#include "identity.h"
 #include "sporekit_game.hpp"
 
 using spaceext::Relation;
@@ -134,6 +135,17 @@ static std::vector<std::pair<uint8_t, std::string>> roster()
     return v;
 }
 
+// the host's lists are keyed by the player's identity (BUG-9198: a rejoin under another name or network id keeps its
+// relations and budget), the name while it is not known
+static std::string pkey(uint8_t id) { return identity::key(id); }
+static std::vector<std::pair<uint8_t, std::string>> keyed()
+{
+    auto v = roster();
+    for (auto& [id, k] : v)
+        k = pkey(id);
+    return v;
+}
+
 static std::string rel_name(Relation r, bool ru)
 {
     if (r == Relation::Ally)
@@ -180,7 +192,7 @@ static void host_rebuild()
     // the id-keyed relations of space_ext.h from the name-keyed ones, for the players here now
     spaceext::clear_relations();
     g_props.clear();
-    auto r = roster();
+    auto r = keyed();
     for (size_t i = 0; i < r.size(); i++)
         for (size_t j = i + 1; j < r.size(); j++) {
             auto it = g_rel_names.find(key(r[i].second, r[j].second));
@@ -205,7 +217,7 @@ static void host_broadcast()
     if (!spaceext::is_host())
         return;
     host_rebuild();
-    auto r = roster();
+    auto r = keyed();
     net::Writer w;
     w.u8(spaceext::rivals());
     w.u16(g_split_seq);
@@ -310,7 +322,7 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
     }
     if (!spaceext::rivals())
         return "not in rivals mode";
-    std::string a = spaceext::name_of(origin), b = spaceext::name_of(target);
+    std::string a = pkey(origin), b = pkey(target);
     bool known = false;
     for (auto& [id, nm] : roster())
         known |= id == target;
@@ -555,13 +567,13 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         if (r.ok() && spaceext::rivals()) {
             g_budget[origin] = v;
             if (spaceext::is_host())
-                g_budget_name[spaceext::name_of(origin)] = v;
+                g_budget_name[pkey(origin)] = v;
         }
         break;
     }
     case K_ASK: // a guest (re)joined or loaded the world: its budget, if the host knows it
         if (spaceext::is_host() && spaceext::rivals()) {
-            auto it = g_budget_name.find(spaceext::name_of(origin));
+            auto it = g_budget_name.find(pkey(origin));
             net::Writer w;
             w.u8(origin);
             w.u8(it != g_budget_name.end());
@@ -647,8 +659,8 @@ static void tick(double now)
     if (!spaceext::connected())
         return;
     if (spaceext::is_host()) {
-        auto r = roster();
-        if (r != g_roster || now - g_last_state > 5.0) { // a player joined or left; and a safety net
+        auto r = keyed();
+        if (r != g_roster || now - g_last_state > 5.0) { // a player joined, left or became known; a safety net
             g_roster = r;
             host_broadcast();
         }
@@ -806,6 +818,11 @@ static std::string status()
     s += " props";
     for (auto& p : g_props)
         s += " " + std::to_string(p.from) + ">" + std::to_string(p.to) + (p.kind == P_ALLY ? "ally" : "peace");
+    if (spaceext::is_host()) { // the host's lists, by key (BUG-9198)
+        s += " kept_rel=" + std::to_string(g_rel_names.size()) + " kept_budgets";
+        for (auto& [k, v] : g_budget_name)
+            s += " " + k.substr(0, 11) + ":" + std::to_string(v);
+    }
     char b[320];
     snprintf(b, sizeof b,
              " hits_sent=%u hits_got=%u dmg_got=%.1f pvp_deaths=%u enemy_puppets=%u splits=%u merges=%u puppet_hits=%u"
