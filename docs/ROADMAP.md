@@ -130,7 +130,7 @@ Kept (not about keys): the player species (BUG-9177), the mate offer (BUG-9174: 
 mating (BUG-9175). Tests: a guest rejoining under another network id keeps its key and nest; its family on its game is
 its species with no conversion; an old save's seat nest is taken over once; the host's save loads on a guest.
 
-| 7 | Adventure creatures simulated by the host (BUG-9114). | waiting (needs clicks on the owner's PC or the MSI) |
+| 7 | Adventure creatures simulated by the host (BUG-9114). | in progress 2026-11-14: the host's enemies strike partners (BUG-9200, live PASS/FAIL); open: the guest's unpaired creatures at 0 hp, the guest's hits not exercised; the switch stays off |
 
 The phase details (code spots, formats, messages) are in docs/tickets/BUG-9135-no-own-villages-three-players.md.
 

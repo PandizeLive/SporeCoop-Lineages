@@ -2721,3 +2721,16 @@ BUG-9199, decision 2B A.
 * Decision 2C A (the Galactic Core waits for your own party only): space_finale.cpp waits for the partners in the
   session, which with one party per session (cap 4, every player seated, party.cpp) is the party. No code until
   a session holds several parties (the MMO layer): then missing() and the gift filter by party.
+
+## Adventure sides: the political id of creatures and bodies (2026-11-14, feat/lineages-47)
+<a id="space-adventure-body-side"></a>
+
+BUG-9200 (BUG-9114). Steam QA copy, City Assault, two games.
+* ✔ A scenario creature's side is its cGameData political id (object +0x30, docs/re/civ.md): 1 for the captain,
+  its army (class 1027) and characters (1069), 2 for the enemy defenders (1083); 1152 had 0x580 (not analysed).
+  The host's creatures attack bodies of the other side: a partner body with -1 was picked (npc ai_target) but
+  never struck; with 1 it was struck at once. Marker +0x18 and class +0x1C (-2 for captains) do not decide it.
+* ✔ +0x24 is the object serial (the key of the actor stream); +0xE88 is a per-creature small id (0x201 for the
+  captain, 0x10D.. 0x2103 for others, 0 for the spawned body), not a side.
+* ✔ City Assault at 10 FPS: the allied army ends the mission (play state 5) about 8 minutes after the intro.
+* ~ Guests keep unpaired scenario creatures standing at 0 hp (BUG-9114, open).

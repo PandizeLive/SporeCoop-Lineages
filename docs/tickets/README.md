@@ -814,3 +814,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9197](BUG-9197-space-enemy-ships-run-by-a-leader-per-system-not.md) | fixed | feature | space | 2026-11-14 | unreleased | Space: enemy ships run by a leader per system, not only where the host is |
 | [BUG-9198](BUG-9198-space-rivalry-and-ally-lists-keyed-by-name-a-ren.md) | fixed | bug | space | 2026-11-14 | unreleased | Space rivalry and ally lists keyed by name: a rename or rejoin loses or duplicates them |
 | [BUG-9199](BUG-9199-space-difficulty-scales-by-reserved-seats-not-by.md) | fixed | feature | space | 2026-11-14 | unreleased | Space difficulty scales by reserved seats, not by the party in the system (decision 2B) |
+| [BUG-9200](BUG-9200-adventure-enemies-pick-a-partner-s-body-but-neve.md) | fixed | bug | Adventure | 2026-11-14 | unreleased | Adventure enemies pick a partner's body but never strike it: the body has no political id |

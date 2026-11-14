@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Adventures (test switch adventure.enemies, still off): the host's enemies
+  now attack a partner's body, and the damage reaches that partner (BUG-9200).
 - Space: enemy ships are as strong as the number of players in that system
   (raids: the players online), not the reserved seats (BUG-9199).
 - Space: a partner who rejoins under another name keeps their wars,

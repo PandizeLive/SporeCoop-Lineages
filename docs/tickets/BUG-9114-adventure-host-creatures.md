@@ -52,3 +52,17 @@ trivial for guests. Next: how scenario creatures choose an attack target (the sc
 political target system rather than the behaviour tree's avatar, docs/re/creature.md 14); the body's
 political id; whether the body needs the captain's combatant registration. The guest-hit path (Hit ->
 host) was not exercised before the mission ended. Not tested: two PCs, 3-4 players.
+
+## 2026-11-14 (feat/lineages-47, roadmap 3N A step 3)
+
+* Fixed the strike: BUG-9200 (the body had political id -1; now the captain's). The host's creatures hit a guest's
+  body and the damage reaches the guest (5-8 hits in 40-45 s among the defenders; 0 with the fix off).
+* Still open, why `adventure.enemies` stays off:
+  * The guest keeps scenario creatures the host does not have: 117 unpaired on the guest after ~10 minutes, 81 of
+    them standing at 0 hp (`coop.adventure actors 600` on the guest: `hp=0.0 dead=0 key=00000000`). They have no AI
+    (skipped) and nothing kills or removes them: the guest's own waves (armies spawned from markers) and creatures
+    whose host copy died while unpaired. Next: a guest's unpaired scenario creature is hidden or removed after a
+    grace time, and a paired one whose host copy is gone dies there.
+  * The guest captain's hit on a host creature (Packet Hit -> host) is still not exercised: `coop.adventure hit
+    <class>` on the guest picks the nearest creature of the class, which was a stale 0-hp copy (hits_out 0). Next:
+    the test hit picks a paired creature.
