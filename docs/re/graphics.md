@@ -107,3 +107,31 @@ BUG-0454 / BUG-0371: three host crashes in the creature editor at `RenderWare::R
 * Fix (`game.null_raster_fill`, gamefixes.cpp): Fill on a null raster returns 0, Fill's own failure
   return (Raster_Lock failed, 0x11F047D). Not verified in the game: the lab's GPU never fails a
   texture; the skin may stay without paint for that bake.
+
+## The Pack panel and the health bar, native UI (2026-11-13, feat/lineages-47)
+<a id="graphics-pack-ui"></a>
+
+BUG-9191 (the Party panel).
+* ✔ Layouts (SPUI 0x250FE9A2, group 40464200, Spore_Graphics.package and PatchData.package; Spore_EP1_Data.package
+  has its own): the Pack panel B40BABD4 (window 03D98298, the "Pack" pill 03DAE412 / caption 064A90A0, slots
+  03D98299 / 03D98304 with the portrait window 0614A0C4 30x30, frames 056BD170 / 056CEC38, hidden member parts
+  04F656E8 / 03D99151); slot layouts EFAD77A3, 1A1A60BF, 2D192B78, 7EF4FF02, 7DC28C78, 0EB96844 (per stage, the same
+  ids); the Creature HUD with the health bar 5ED10964 (also 26B068D2). Found with a scan of the packages for the
+  window ids (tools/part_substitutes.py's reader).
+* ✔ The health bar (window 0685A85E, 86x13 at 1024x768): the "+" icon (ImageDrawable), the number (font 727EE727), a
+  clipping window 018AC46E (flags 0x413: 0x400 clips its children) as wide as the health holding the full green pill
+  0665FE90 (StdDrawable), and over it an unnamed window with the edge (StdDrawable). Pixels 1:1: a pill of 58x11, a
+  1-pixel edge (0,35,0), the fill a green gradient (0,252,0) on top to (0,59,0) at the bottom; the energy bar the same
+  in orange.
+* ✔ A StdDrawable's images are pieces of a texture sheet: the image object (vtable 01B60814) holds two pointers
+  (+4, +8) and the piece's corners as floats (+0xC..+0x18), its size at +0x1C / +0x20 (32 x 32 here); no resource key
+  seen in it.
+* ~ Putting a slot layout (EFAD77A3) loaded with sui::load_layout into the main window with every child made visible
+  overflowed the stack twice (test game 8): not used.
+* ✔ A sui label draws no drawable; a window of the game's image kind (UTFWin::IImageDrawable::AddImageWindow) draws a
+  128x128 creation picture scaled into its area. A StdDrawable (the tooltip's, mode 2: cut in thirds) shows nothing of
+  a 128-pixel picture in a 45-pixel window; modes 0, 1, 3, 4 neither (in a label).
+* ~ Sporepedia::ShopperRequest::Show with currentSelection (+0x18) = a creature's key opens the Sporepedia browser
+  (Everything); it did not open that creature's card, also with +0x2A = 1 (the "Close" button then). A partner's
+  creation under its shared key is not in the browser's lists (Lineages Cache lists them under other keys).
+

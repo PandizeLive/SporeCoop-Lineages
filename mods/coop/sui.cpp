@@ -495,6 +495,15 @@ void* std_drawable_with_icon(void* src, void* icon)
     return d;
 }
 
+// the same drawable with another layout mode in every state: `mode` 2 is the tooltip's (cut in thirds, the corners
+// keep their size); the Party panel's portrait takes the whole image into the window (tried live, see coop_ui.cpp)
+void* std_drawable_image(void* image, uint32_t mode)
+{
+    uint8_t* d = (uint8_t*)std_drawable_tooltip(image);
+    if (d) *(uint32_t*)(d + 0x30) = mode;
+    return d;
+}
+
 void* std_drawable_tooltip(void* image)
 {
     // UTFWin::StdDrawable (0x7C bytes, vtable 0x1A85238 at runtime), the class of Spore's own

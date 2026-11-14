@@ -192,6 +192,18 @@ static void test_buffer()
     CHECK(rso2.f32() == 1.5f && rso2.f32() == 2.5f);
     cs = rso2.f32();
     CHECK(cs > 2.09f && cs < 2.1f && rso2.left() == 0);
+    // BUG-9191: the open editor's id, written only while in an editor, after captain_scale (no gate then)
+    s.editor = 0x96B24187;
+    Writer ed;
+    s.write(ed);
+    Reader red(ed.data.data(), ed.size());
+    CHECK(t2.read(red) && t2.editor == 0x96B24187 && t2.gate.visit == 0 && red.left() == 0);
+    CHECK(t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
+    s.editor = 0;
+    Writer ned;
+    s.write(ned);
+    Reader rned(ned.data.data(), ned.size());
+    CHECK(t2.read(rned) && t2.editor == 0 && ned.size() == sc2.size());
     s.captain_scale = 0;
     Reader old_state(w2.data.data(), w2.size());
     CHECK(t2.read(old_state) && !t2.gate.visit && !t2.gate.credit && t2.captain_scale == 0);

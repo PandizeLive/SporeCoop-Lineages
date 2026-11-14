@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- UI: the Party panel replaces the CO-OP player list: each player's name, where
+  they are, their creature's picture and a health bar like the game's own;
+  clicking a picture opens the Sporepedia. A UI Scale setting sits under
+  Borderless in Spore's Settings (BUG-9191).
 - Tribe: a guest whose own village is wiped out no longer gets the game's own
   game-over screen while the party plays on; the host decides (BUG-9183).
 - Tribe: a guest's villagers hunt an animal and party at their fire pit by

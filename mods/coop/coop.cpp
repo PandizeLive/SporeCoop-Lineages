@@ -28,6 +28,7 @@
 #include "coop_ui.h"
 #include "founders.h"
 #include "slotfs.h"
+#include "lineages_graphics.h"
 #include "driver.h"
 #include "game.h"
 #include "dna_sync.h"
@@ -655,11 +656,29 @@ std::vector<syncdbg::Entry> sync_all()
     return v;
 }
 
+// the editor open now (its EditorRequest +0xC, e.g. 96B24187 the spaceship editor), 0 = none: the editor game mode
+// is the mode manager's entry with id 0xDBDBA1 (+0x14..+0x18, entries of 0x18 bytes), its request at +0x1CC
+// (as coop.editor reads it). The Party panel names a partner's editor by it (2026-11-13).
+static uint32_t open_editor_id()
+{
+    static uintptr_t get = H->sym("App::IGameModeManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm || !skg::readable((char*)mm + 0x14, 8)) return 0;
+    auto* b = skg::field<uint32_t*>(mm, 0x14);
+    auto* e = skg::field<uint32_t*>(mm, 0x18);
+    void* ed = nullptr;
+    for (uint32_t* it = b; it && it < e && e - b < 6 * 64 && skg::readable(it, 8); it += 6)
+        if (it[1] == 0xDBDBA1u) ed = (void*)(uintptr_t)it[0];
+    void* req = ed && skg::readable((char*)ed + 0x1CC, 4) ? skg::field<void*>(ed, 0x1CC) : nullptr;
+    return req && skg::readable(req, 0x10) ? skg::field<uint32_t>(req, 0xC) : 0;
+}
+
 net::PlayerState local_state()
 {
     net::PlayerState st;
     st.mode = g_state_mode_override && H->time_seconds() < g_state_mode_until ? g_state_mode_override : g_mode;
     st.world = g_world;
+    if (st.mode == modes::kEditor || st.mode == modes::kEdit) st.editor = open_editor_id();
     if (void* local = local_now())
         g_adapter->fill(local, st);
     if (st.mode == modes::kScenario && (st.flags & net::PF_IN_WORLD))
@@ -4559,6 +4578,111 @@ static void draw_downed_hud(int sw, int sh)
                          cell ? cellsync::own_revive() : creature_rescue::own_revive(), H->time_seconds());
 }
 
+// ---- the Party panel (the owner's mockup 2026-11-13, coop_ui::set_party_hud) ----
+static bool g_party_panel = true;
+COOP_FIX("ui.party_panel", "BUG-9191", g_party_panel,
+         "ui: the Party panel (name plates, creature cards, health) instead of the CO-OP player list");
+static const char* editor_name(uint32_t editor)
+{
+    switch (editor) {
+    case 0x96B24187u: return "Ship Editor";
+    case 0x99E92F05u: return "Building Editor";
+    case 0x7D433FADu: return "Vehicle Editor";
+    case 0x156276D1u: return "Outfitter";
+    case 0x465C50BAu: return "Creature Editor";
+    default: return "Editor";
+    }
+}
+static std::string party_place(uint32_t mode, uint32_t editor)
+{
+    if (mode == modes::kEditor || mode == modes::kEdit) return editor_name(editor);
+    return mode ? modes::mode_name(mode) : "";
+}
+// the UI scale setting (Settings, under Borderless; lineages-graphics.ini ui_scale), read again every 2 s
+static float ui_scale()
+{
+    static double next = 0;
+    static float value = 1.f;
+    const double now = H->time_seconds();
+    if (now >= next) {
+        next = now + 2;
+        value = lineages_graphics::read_ui_scale(slotfs::widen(H->mods_dir()) + L"\\" + lineages_graphics::file_name) / 100.f;
+    }
+    return value;
+}
+void open_sporepedia_of(uint8_t player); // below (the portrait's click)
+static bool update_party_panel(bool labels)
+{
+    std::vector<coop_ui::PartyRow> rows;
+    for (auto& p : g_sess.players()) {
+        coop_ui::PartyRow r;
+        r.player = p.id;
+        r.name = p.name;
+        r.me = p.id == g_sess.my_id();
+        net::PlayerState st;
+        bool have = false;
+        if (r.me) {
+            st = local_state();
+            have = true;
+        } else if (auto it = g_remotes.find(p.id); it != g_remotes.end() && !it->second.buf.empty()) {
+            st = it->second.buf.latest();
+            have = true;
+        }
+        if (have) {
+            r.place = party_place(st.mode, st.editor);
+            if (st.max_health > 0 && std::isfinite(st.health)) r.health = std::clamp(st.health / st.max_health, 0.f, 1.f);
+        }
+        // the creature's picture, sent by its owner (creations.cpp kPortrait) under its shared key
+        r.portrait = creations::portrait_of(p.id);
+        r.portrait_group = creations::portrait_group();
+        rows.push_back(std::move(r));
+    }
+    (void)labels;
+    // not over the Sporepedia, the pause menu or a caption: the game time stands then (busy kPaused / kInputLock)
+    const bool show = !(game_busy() & (busy::kPaused | busy::kInputLock));
+    return coop_ui::set_party_hud(show, rows, ui_scale(), open_sporepedia_of);
+}
+
+// a portrait click: that player's creature in the game's own Sporepedia (BUG-9191). The game's Sporepedia browser
+// launch (SP::cSPUIAssetBrowser::AdvancedLaunch, ModAPI Sporepedia::ShopperRequest::Show, cdecl(request&)) with the
+// creature as the request's current selection (+0x18, ModAPI's currentSelection, the dev name mInitialKey); the
+// request (0x48 bytes) made by the game's own constructor (thiscall, the GlobalTemplate shopper) and taken down by its
+// destructor. Prologues checked at runtime 2026-11-13 (Show 0xD6A900: sub esp,40 ... [esp+54]; the constructor
+// 0xD64AC0 writes the SDK's defaults). Outside the frame (UI).
+static uint32_t g_sporepedia_opened, g_sporepedia_failed;
+static std::vector<std::pair<uint32_t, uint8_t>> g_sporepedia_bytes; // tests: request bytes (offset, value) to set
+void open_sporepedia_of(uint8_t player)
+{
+    const creations::Key k = player == g_sess.my_id() ? creations::mine(creations::kCreature).key
+                                                       : creations::player_key(player, creations::kCreature);
+    H->log(M, SK_INFO, "ui: Party portrait of player %u clicked: creature %08X/%08X/%08X", player, k.instance, k.type, k.group);
+    if (!k.instance) {
+        feed(g_sess.name_of(player) + "'s creature is not here yet.");
+        return;
+    }
+    static uint32_t key[3];
+    key[0] = k.instance;
+    key[1] = k.type ? k.type : 0x2B978C46u;
+    key[2] = k.group ? k.group : 0x40626200u;
+    H->run_outside_frame([](void*) {
+        static uintptr_t ctor = H->sym("SporepediaRequest_ctor"), dtor = H->sym("SporepediaRequest_dtor"),
+                         show = H->sym("Sporepedia::ShopperRequest::Show");
+        if (!ctor || !dtor || !show) {
+            ++g_sporepedia_failed;
+            return;
+        }
+        alignas(8) uint8_t req[0x60] = {};
+        skg::thiscall<void*>(ctor, req);
+        memcpy(req + 0x18, key, sizeof key);
+        for (auto [off, v] : g_sporepedia_bytes)
+            if (off < 0x48) req[off] = v;
+        skg::cdecl_call<void>(show, (void*)req);
+        skg::thiscall<void>(dtor, req);
+        ++g_sporepedia_opened;
+        H->log(M, SK_INFO, "ui: the Sporepedia asked to show %08X/%08X/%08X", key[0], key[1], key[2]);
+    }, nullptr);
+}
+
 void on_overlay(void*, int, void*)
 {
     static bool s_downed_parts;
@@ -4747,13 +4871,19 @@ void on_overlay(void*, int, void*)
     // (g_menu_up is only refreshed in a game: in the main menu the window's own flag counts)
     bool covered = coop_ui::is_open() || (!labels && g_local);
     if (head.empty() || (covered && g_status_block_fix)) {
+        coop_ui::set_party_hud(false, {}, ui_scale(), nullptr);
         g_status_block = {0, 0, 0, 0};
         notify::set_top_min(0);
         return;
     }
-    int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = utf8::overlay_width(head);
-    H->overlay_text(x, y, 0xFFFFD040, head.c_str());
-    y += 22;
+    // the Party panel (the owner's mockup 2026-11-13) in place of the header line and the player list; the stage's own
+    // lines (village food, performance, teamplay) stay at the top right. Without the panel's images: the text list.
+    const bool party = g_party_panel && g_sess.connected() && update_party_panel(labels);
+    int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = party ? 0 : utf8::overlay_width(head);
+    if (!party) {
+        H->overlay_text(x, y, 0xFFFFD040, head.c_str());
+        y += 22;
+    }
     if (g_mode == modes::kTribe && g_sess.connected()) {
         std::string food = tribe::village_food_line();
         if (!food.empty()) {
@@ -4775,7 +4905,7 @@ void on_overlay(void*, int, void*)
             y += 20;
         }
     }
-    for (auto& p : g_sess.players()) {
+    for (auto& p : party ? std::vector<net::PlayerInfo>{} : g_sess.players()) {
         std::string line = (p.id == g_sess.my_id() ? "> " : "  ") + p.name;
         auto it = g_remotes.find(p.id);
         if (p.id != g_sess.my_id() && it != g_remotes.end() && !it->second.buf.empty()) {
@@ -7659,6 +7789,18 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            world::request_autosave();
                            return 0;
                        }, nullptr, MT);
+    H->command_add(M, "coop.sporepedia", "coop.sporepedia <player> [off=val ...] - tests (BUG-9191): the Sporepedia on that player's creature, request bytes set",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc < 2) return 1;
+                       g_sporepedia_bytes.clear();
+                       for (int i = 2; i < argc; ++i) {
+                           unsigned off = 0, v = 0;
+                           if (sscanf(argv[i], "%x=%x", &off, &v) == 2) g_sporepedia_bytes.push_back({off, (uint8_t)v});
+                       }
+                       open_sporepedia_of((uint8_t)atoi(argv[1]));
+                       H->out_printf(out, "asked (%zu bytes set)", g_sporepedia_bytes.size());
+                       return 0;
+                   }, nullptr, 0);
     H->command_add(M, "coop.editor", "coop.editor - tests (BUG-0368): the open editor's request and the parts its palette shows locked",
                    [](void*, int, const char* const*, SkOut* out) {
                        // the editor game mode: the mode manager's list (+0x14..+0x18, entries of 0x18 bytes

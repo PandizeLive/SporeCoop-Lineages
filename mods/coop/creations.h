@@ -56,6 +56,10 @@ extern bool g_leave_fix;
 
 // the creation of a player, usable on this machine ({} = none / not received yet)
 Key player_key(uint8_t player, Kind k);
+// BUG-9191: a player's creature picture for the Party panel: registered here (png 0x2F7D0004) under portrait_of(player)
+// in portrait_group(); 0 = not received (yet)
+uint32_t portrait_group();
+uint32_t portrait_of(uint8_t player);
 // this profile's SporeCoop folder (next to EditorSaves.package), "" while the game has not opened it yet
 std::wstring coop_dir();
 // cSpeciesProfile* of a player's creature, nullptr if none

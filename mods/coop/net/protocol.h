@@ -438,6 +438,7 @@ struct PlayerState {
     uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
     AdventureGate gate;   // optional Duo extension for a single move-to objective (Lineages)
     float captain_scale = 0; // Lineages (Adventure, BUG-9113): the captain's own scale; 0 = not sent
+    uint32_t editor = 0;     // Lineages (the Party panel, 2026-11-13): the editor open now (EditorRequest+0xC); 0 = none
     // BUG-0519: the sender's Cell world scale (G+0x514C) the pos / vel / size are in; 0 = not in Cell
     // or an older sender (the field is appended: older readers stop before it)
     float scale = 0;
@@ -459,6 +460,7 @@ struct PlayerState {
         w.f32(scale);
         w.f32(agl);
         w.f32(captain_scale); // Lineages: after the 0.7.8 fields (every Lineages peer has the same build)
+        if (editor) w.u32(editor); // Lineages (BUG-9191): only while in an editor (no gate then): 4 bytes after captain_scale
         if (gate.visit || gate.credit) {
             w.u32(gate.visit); w.u32(gate.act); w.u32(gate.target); w.u32(gate.credit);
         }
@@ -480,6 +482,7 @@ struct PlayerState {
             float s = r.f32();
             captain_scale = s > 0.01f && s < 100.f ? s : 0.f; // a creature's scale; anything else is not one
         }
+        editor = r.ok() && (r.left() == 4 || r.left() == 20) ? r.u32() : 0;
         gate = {};
         if (r.ok() && r.left() == 16)
             gate = {r.u32(), r.u32(), r.u32(), r.u32()};

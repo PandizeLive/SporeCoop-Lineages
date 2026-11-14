@@ -109,6 +109,7 @@ void* std_drawable_with_icon(void* src, void* icon);
 // a new StdDrawable drawing `image` stretched like Spore's tooltip background (the native
 // tooltip drawable's class and layout values, read at runtime 2026-11-10)
 void* std_drawable_tooltip(void* image);
+void* std_drawable_image(void* image, uint32_t mode); // the tooltip drawable with another layout mode
 // a new StdDrawable with the layout of `src` (a StdDrawable: the game's button) and `n` images of ours for its states
 // (images[0..3]: normal, disabled, highlighted, active); null if `src` is no StdDrawable or an image is missing
 void* std_drawable_states(void* src, void* const* images, int n);

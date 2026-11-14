@@ -1992,7 +1992,7 @@ static void refresh_graphics_options()
     constexpr uint32_t kGraphicPanel = 0x0437A968;
     constexpr uint32_t kAccept = 0x043B7A18;
     constexpr uint32_t kDefaults = 0x05CACA50;
-    constexpr uint32_t kControls[] = {0xC00F0110, 0xC00F0111, 0xC00F0112, 0xC00F0113};
+    constexpr uint32_t kControls[] = {0xC00F0110, 0xC00F0111, 0xC00F0112, 0xC00F0113, 0xC00F0114};
     static Win last_open = nullptr;
     Win settings = sui::find(sui::main_window(), kSettings);
     Win panel = settings ? sui::find(settings, kGraphicPanel) : nullptr;
@@ -2010,6 +2010,7 @@ static void refresh_graphics_options()
     }
     Win fps = sui::find(settings, kControls[1]);
     Win borderless = sui::find(settings, kControls[2]);
+    Win ui_scale = sui::find(settings, kControls[4]); // BUG-9191: the mod's HUD size
     const auto file = slotfs::widen(H->mods_dir()) + L"\\" + lineages_graphics::file_name;
     if (!fps && panel && visible(panel)) {
         Win defaults = sui::find(panel, kDefaults);
@@ -2022,10 +2023,22 @@ static void refresh_graphics_options()
         borderless = sui::button_like(settings, defaults, {76, 431, 263, 467}, "");
         Win hint = sui::label(settings, {77, 472, 268, 500}, "Borderless uses windowed mode.", font, kDim,
                               sui::kAlignLeft);
-        Win windows[] = {label, fps, borderless, hint};
-        for (int i = 0; i < 4; ++i)
+        ui_scale = sui::button_like(settings, defaults, {76, 505, 263, 541}, "");
+        Win windows[] = {label, fps, borderless, hint, ui_scale};
+        for (int i = 0; i < 5; ++i)
             if (windows[i]) sui::set_ids(windows[i], kControls[i], g_settings_tabs_fix ? kControls[i] : 0);
         if (!fps || !borderless) return;
+        if (ui_scale)
+            sui::add_handler(ui_scale, [](Win button, const sui::Msg& msg) { // 75 .. 150 %, round
+                if (!sui::is_click(msg)) return false;
+                static const int kSteps[] = {75, 90, 100, 110, 125, 150};
+                const int now = atoi(sui::caption(button).c_str() + std::min<size_t>(10, sui::caption(button).size()));
+                int next = kSteps[0];
+                for (size_t i = 0; i < std::size(kSteps); ++i)
+                    if (kSteps[i] == now) { next = kSteps[(i + 1) % std::size(kSteps)]; break; }
+                sui::set_caption(button, "UI Scale: " + std::to_string(next) + "%");
+                return true;
+            });
         sui::add_handler(fps, [](Win, const sui::Msg& msg) {
             return msg.type == sui::kMsgTextChanged;
         });
@@ -2034,8 +2047,14 @@ static void refresh_graphics_options()
             sui::set_caption(button, sui::caption(button) == "Borderless: On" ? "Borderless: Off" : "Borderless: On");
             return true;
         });
-        sui::add_handler(accept, [fps, borderless, file](Win, const sui::Msg& msg) {
+        sui::add_handler(accept, [fps, borderless, ui_scale, file](Win, const sui::Msg& msg) {
             if (!sui::is_click(msg)) return false;
+            if (ui_scale) { // its own key: saved apart from the frame cap and the window (read again within 2 s)
+                const std::string c = sui::caption(ui_scale);
+                const int percent = atoi(c.c_str() + std::min<size_t>(10, c.size()));
+                if (percent && percent != lineages_graphics::read_ui_scale(file))
+                    lineages_graphics::write_ui_scale(file, percent);
+            }
             const auto input = sui::edit_text(fps);
             char* end = nullptr;
             const long value = strtol(input.c_str(), &end, 10);
@@ -2080,6 +2099,7 @@ static void refresh_graphics_options()
         const auto saved = lineages_graphics::read(file);
         sui::set_edit_text(fps, saved.fps ? std::to_string(saved.fps) : "");
         sui::set_caption(borderless, saved.borderless ? "Borderless: On" : "Borderless: Off");
+        if (ui_scale) sui::set_caption(ui_scale, "UI Scale: " + std::to_string(lineages_graphics::read_ui_scale(file)) + "%");
         last_open = settings;
     }
     for (uint32_t id : kControls)
@@ -2107,8 +2127,10 @@ void init(const SkHost* host, SkMod* mod, Api api)
     g_ok = sui::init(H, M);
     std::string lang = load_str("ui", "lang", "auto");
     g_ru = lang == "ru" || (lang == "auto" && PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN);
-    if (g_ok)
+    if (g_ok) {
         sui::register_commands();
+        register_party_commands();
+    }
 }
 
 void open(bool on)
@@ -2576,8 +2598,277 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
     return g_dh.give != nullptr || show; // the first frame: the parts are being made
 }
 
+// ---------------- the Party panel (the owner's mockup 2026-11-13) ----------------
+// images: data/ui/lineages_party_{header,plate,plate_me,card}.png (tools/party_ui_assets.py, the mockup's colours).
+// Layout in the mockup's pixels (1280x960, scale 1): the header pill 91x35 at the right edge (15 from it), the cards
+// 53x53 under it (40 below the header's top, one per 58), each name plate 170x35 left of its card (9 below the card's
+// top, its right end under the card), the name and the place in the plate's part left of the card.
+constexpr int kPartyRows = 8;
+constexpr uint32_t kPartyTitle = 0xFFD4DCE2;
+// the health bar as the game builds its own (the Creature HUD, layout 5ED10964, read 2026-11-13: the empty pill, a
+// clipping window (flag 0x400) as wide as the health holding the full green pill, the edge on top); the images are
+// the native bar's pixels (tools/party_ui_assets.py)
+constexpr uint32_t kFlagClip = 0x400;
+static uint32_t g_portrait_mode = 0; // the layout mode of the portrait's drawable (std_drawable_image); coop.partymode
+struct PartyRowWin {
+    Win plate = nullptr, plate_me = nullptr, name = nullptr, place = nullptr, card = nullptr, portrait = nullptr,
+        bar_back = nullptr, bar_clip = nullptr, bar_fill = nullptr, bar_ring = nullptr;
+    uint32_t shown_portrait = 0;
+};
+static struct {
+    Win root = nullptr, header = nullptr, title = nullptr;
+    PartyRowWin rows[kPartyRows];
+    bool failed = false;
+    Rect area{};
+} g_ph;
+static std::vector<PartyRow> g_ph_want, g_ph_shown;
+static bool g_ph_want_show, g_ph_shown_show, g_ph_queued;
+static float g_ph_want_scale = 1, g_ph_shown_scale = 0;
+static int g_ph_sw, g_ph_sh, g_ph_shown_sw, g_ph_shown_sh;
+static void (*g_ph_click)(uint8_t);
+static uint32_t g_ph_portraits_missing;
+
+static Win party_image_window(Win root, const char* stem)
+{
+    void* img = sui::image(sui::fnv(stem), 0x2F7D0004, sui::fnv("sporecoop"));
+    void* look = img ? sui::std_drawable_tooltip(img) : nullptr;
+    if (img) sui::release(img);
+    if (!look) return nullptr;
+    Win w = sui::button_like(root, D.like_button, {0, 0, 10, 10}, "");
+    if (!w) return nullptr;
+    sui::set_drawable(w, look);
+    sui::set_label_color(w, 0);
+    return w;
+}
+
+static bool ph_build()
+{
+    if (g_ph.root) return true;
+    if (g_ph.failed) return false;
+    if (!D.root) {
+        build_dialog();
+        if (D.root) sui::set_visible(D.root, g_want_open);
+    }
+    Win main = sui::main_window();
+    if (!D.like_button || !main) { g_ph.failed = true; return false; }
+    if (!sui::has_image(sui::fnv("lineages_party_card"), sui::fnv("sporecoop"))) {
+        H->log(M, SK_WARN, "ui: the Party panel's images are not in this game's SporeCoop.package (an older one): the text list");
+        g_ph.failed = true;
+        return false;
+    }
+    g_ph.root = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (!g_ph.root) { g_ph.failed = true; return false; }
+    Win root = g_ph.root;
+    sui::set_flag(root, sui::kFlagIgnoreMouse, false); // the cards take the clicks
+    std::vector<Win> order;
+    g_ph.header = party_image_window(root, "lineages_party_header");
+    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), D.font_body, kPartyTitle, sui::kAlignCenter);
+    order.push_back(g_ph.header);
+    order.push_back(g_ph.title);
+    for (int i = 0; i < kPartyRows; ++i) {
+        auto& r = g_ph.rows[i];
+        r.plate = party_image_window(root, "lineages_party_plate");
+        r.plate_me = party_image_window(root, "lineages_party_plate_me");
+        r.name = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        r.place = sui::label(root, {0, 0, 10, 10}, "", D.font_button ? D.font_button : D.font_body, kWhite,
+                             sui::kAlignCenter);
+        r.card = party_image_window(root, "lineages_party_card");
+        // r.portrait: the game's own image window, made for each picture (ph_apply)
+        r.bar_back = party_image_window(root, "lineages_party_bar_back");
+        r.bar_clip = sui::label(root, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+        r.bar_fill = r.bar_clip ? party_image_window(r.bar_clip, "lineages_party_bar_fill") : nullptr;
+        r.bar_ring = party_image_window(root, "lineages_party_bar_ring");
+        if (r.bar_clip) sui::set_flag(r.bar_clip, kFlagClip, true);
+        for (Win w : {r.plate, r.plate_me, r.name, r.place, r.bar_back, r.bar_clip, r.bar_fill, r.bar_ring})
+            if (w) sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+        if (r.card)
+            sui::add_handler(r.card, [i](Win, const sui::Msg& m) {
+                if (!sui::is_click(m)) return false;
+                if (g_ph_click && i < (int)g_ph_shown.size()) g_ph_click(g_ph_shown[i].player);
+                return true;
+            });
+        for (Win w : {r.plate, r.plate_me, r.name, r.place, r.card, r.bar_back, r.bar_clip, r.bar_ring})
+            order.push_back(w);
+    }
+    for (Win w : order) // back to front, once
+        if (w) {
+            sui::add_ref(w);
+            sui::bring_to_front(root, w);
+            sui::set_visible(w, false);
+        }
+    sui::add_ref(root);
+    sui::set_visible(root, false);
+    H->log(M, SK_INFO, "ui: the Party panel is made (%d rows)", kPartyRows);
+    return true;
+}
+
+static void ph_apply(void*)
+{
+    g_ph_queued = false;
+    const auto want = g_ph_want;
+    const bool show = g_ph_want_show && !want.empty();
+    const float s = g_ph_want_scale;
+    const int sw = g_ph_sw, sh = g_ph_sh;
+    if (!ph_build()) return;
+    Win main = sui::main_window();
+    auto px = [s](float v) { return (float)std::lround(v * s); };
+    const float right = sw - px(15), top = std::round(sh * 0.3625f);
+    const int n = std::min<int>((int)want.size(), kPartyRows);
+    const Rect all{right - px(178), top, right, top + px(40) + px(58) * (float)std::max(n, 1)};
+    if (show && main) {
+        sui::set_area(g_ph.root, all);
+        if (sui::parent(g_ph.root) != main) sui::add_child(main, g_ph.root);
+        sui::bring_to_front(main, g_ph.root);
+    }
+    sui::set_visible(g_ph.root, show);
+    g_ph.area = show ? all : Rect{};
+    auto place = [&](Win w, bool on, Rect r) {
+        if (!w) return;
+        if (on) sui::set_area(w, {r.x1 - all.x1, r.y1 - all.y1, r.x2 - all.x1, r.y2 - all.y1});
+        sui::set_visible(w, on);
+    };
+    place(g_ph.header, show, {right - px(91), top, right, top + px(35)});
+    place(g_ph.title, show, {right - px(91), top + px(4), right, top + px(31)});
+    for (int i = 0; i < kPartyRows; ++i) {
+        auto& r = g_ph.rows[i];
+        const bool on = show && i < n;
+        const PartyRow row = on ? want[i] : PartyRow{};
+        const float cy = top + px(40) + px(58) * (float)i, cx1 = right - px(53);
+        const Rect card{cx1, cy, right, cy + px(53)};
+        const Rect plate{right - px(178), cy + px(9), right - px(8), cy + px(44)};
+        place(r.plate, on && !row.me, plate);
+        place(r.plate_me, on && row.me, plate);
+        place(r.name, on, {plate.x1 + px(6), plate.y1 + px(1), cx1 - px(2), plate.y1 + px(20)});
+        place(r.place, on, {plate.x1 + px(6), plate.y1 + px(19), cx1 - px(2), plate.y2 - px(1)});
+        if (on) {
+            sui::set_caption(r.name, row.name);
+            sui::set_caption(r.place, row.place.empty() ? "" : "[" + row.place + "]");
+        }
+        place(r.card, on, card);
+        // the portrait: the creature's Sporepedia picture (128x128) drawn into the card's parchment
+        // the picture: an image window of the game's own (IImageDrawable::AddImageWindow: the picture as it is, scaled
+        // to the window; a StdDrawable cuts it in thirds, nothing showed in a 45-pixel card) made again for a new one,
+        // in front of the card and under the bar (a picture not here yet: asked again, set_party_hud)
+        if (on && row.portrait != r.shown_portrait && row.portrait &&
+            sui::has_image(row.portrait, row.portrait_group)) {
+            if (r.portrait) {
+                sui::set_visible(r.portrait, false);
+                sui::remove_child(g_ph.root, r.portrait);
+                r.portrait = nullptr;
+            }
+            r.portrait = sui::image_window(g_ph.root, row.portrait, row.portrait_group, 0, 0);
+            if (r.portrait) {
+                sui::set_flag(r.portrait, sui::kFlagIgnoreMouse, true);
+                for (Win w : {r.bar_back, r.bar_clip, r.bar_ring}) // the bar stays over the picture
+                    if (w) sui::bring_to_front(g_ph.root, w);
+                r.shown_portrait = row.portrait;
+            }
+        } else if (on && row.portrait && !r.shown_portrait && g_ph_portraits_missing++ < 8) {
+            H->log(M, SK_INFO, "ui: Party panel: no picture %08X/%08X here for %s", row.portrait, row.portrait_group,
+                   row.name.c_str());
+        }
+        place(r.portrait, on && r.shown_portrait, {cx1 + px(4), cy + px(3), right - px(4), cy + px(43)});
+        const bool bar = on && row.health >= 0;
+        const Rect b{cx1 + px(3), cy + px(41), right - px(3), cy + px(52)};
+        const float filled = std::round((b.x2 - b.x1) * std::clamp(row.health, 0.f, 1.f));
+        place(r.bar_back, bar, b);
+        place(r.bar_clip, bar && filled > 0, {b.x1, b.y1, b.x1 + filled, b.y2});
+        if (r.bar_fill) { // the full pill inside the clipping window (its own coordinates)
+            sui::set_area(r.bar_fill, {0, 0, b.x2 - b.x1, b.y2 - b.y1});
+            sui::set_visible(r.bar_fill, bar);
+        }
+        place(r.bar_ring, bar, b);
+    }
+    g_ph_shown = want;
+    g_ph_shown_show = show;
+    g_ph_shown_scale = s;
+    g_ph_shown_sw = sw;
+    g_ph_shown_sh = sh;
+}
+
+bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, void (*on_portrait)(uint8_t))
+{
+    if (!g_ok || g_ph.failed) return false;
+    g_ph_click = on_portrait;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    bool same = show == g_ph_shown_show && rows == g_ph_shown && scale == g_ph_shown_scale &&
+                sw == g_ph_shown_sw && sh == g_ph_shown_sh;
+    static double s_retry_at = 0; // a picture that was not here yet: asked again every 2 s
+    if (same && show && H->time_seconds() >= s_retry_at)
+        for (size_t i = 0; i < rows.size() && i < (size_t)kPartyRows; ++i)
+            if (rows[i].portrait && g_ph.rows[i].shown_portrait != rows[i].portrait) {
+                same = false;
+                s_retry_at = H->time_seconds() + 2;
+                break;
+            }
+    if (!same && !g_ph_queued) {
+        g_ph_want = rows;
+        g_ph_want_show = show;
+        g_ph_want_scale = std::clamp(scale, 0.5f, 2.f);
+        g_ph_sw = sw;
+        g_ph_sh = sh;
+        g_ph_queued = true;
+        H->run_outside_frame(ph_apply, nullptr);
+    }
+    return !g_ph.failed;
+}
+
+Rect party_hud_area() { return g_ph_shown_show ? g_ph.area : Rect{}; }
+
+// tests (BUG-9191): `coop.partymode <n>`: the portrait drawable's layout mode, the pictures made again
+void register_party_commands()
+{
+    H->command_add(M, "coop.partymode", "coop.partymode <n> - tests: the Party portraits' drawable layout mode",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1) g_portrait_mode = (uint32_t)strtoul(argv[1], nullptr, 0);
+                       for (auto& r : g_ph.rows) r.shown_portrait = 0;
+                       g_ph_shown.clear();
+                       H->out_printf(out, "portrait mode %u", g_portrait_mode);
+                       return 0;
+                   }, nullptr, SK_CMD_OUTSIDE_FRAME);
+    // tests (BUG-9191, the native Pack card): `coop.layoutshow <instance hex> [x y] [group hex]`: the game's layout
+    // shown at x, y with every window visible (looked at by screenshot), `coop.layoutshow off` takes it away
+    H->command_add(M, "coop.layoutshow", "coop.layoutshow <inst> [x y] [group] | off - tests: a native layout on screen",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       static Win shown = nullptr;
+                       Win main = sui::main_window();
+                       if (shown && main) {
+                           sui::set_visible(shown, false);
+                           sui::remove_child(main, shown);
+                           shown = nullptr;
+                       }
+                       if (argc < 2 || !strcmp(argv[1], "off")) return 0;
+                       const uint32_t group = argc > 4 ? (uint32_t)strtoul(argv[4], nullptr, 16) : 0x40464200u;
+                       Win w = sui::load_layout((uint32_t)strtoul(argv[1], nullptr, 16), group);
+                       if (!w || !main) { H->out_printf(out, "load failed"); return 1; }
+                       // (depth-limited: a recursive walk of a layout overflowed the stack, game 8 2026-11-13)
+                       std::function<void(Win, int)> all = [&](Win x, int depth) {
+                           sui::set_visible(x, true);
+                           if (depth < 5)
+                               for (Win c : sui::children(x)) if (c != x) all(c, depth + 1);
+                       };
+                       all(w, 0);
+                       const Rect a = sui::area(w);
+                       const float x = argc > 3 ? (float)atof(argv[2]) : 500, y = argc > 3 ? (float)atof(argv[3]) : 300;
+                       sui::set_area(w, {x, y, x + a.w(), y + a.h()});
+                       sui::add_child(main, w);
+                       sui::bring_to_front(main, w);
+                       shown = w;
+                       H->out_printf(out, "%s", sui::dump(w, 4, false).c_str());
+                       return 0;
+                   }, nullptr, SK_CMD_OUTSIDE_FRAME);
+}
+
 void shutdown()
 {
+    if (Win w = g_ph.root) {
+        sui::set_visible(w, false);
+        if (Win p = sui::parent(w)) sui::remove_child(p, w);
+    }
+    g_ph = {};
+    g_ph_shown.clear();
+    g_ph_shown_show = false;
     if (Win w = g_dh.root) { // BUG-9156: the root takes its parts with it
         sui::set_visible(w, false);
         if (Win p = sui::parent(w)) sui::remove_child(p, w);

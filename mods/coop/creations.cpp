@@ -60,6 +60,11 @@ constexpr int kPrioModel = 3000;
 // and a species of the host's world that is one of the host's own creations (owner 0, id = the crt
 // instance): the guest uses it under a key of its own (see creations.h)
 constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
+// BUG-9191: a player's creature picture (its Sporepedia png) for the Party panel: its own transfer (the creation's
+// shared key is a hash of the creature bundle: a picture inside it would change every key), registered under the
+// creature's shared key in a group of the mod's own (not a creation group: it is no asset in anybody's Sporepedia)
+constexpr uint8_t kPortrait = 6;
+constexpr uint32_t kPngType = 0x2F7D0004;
 static bool g_own_species_fix = true; // off: a guest drops the host's own creations (before 0.7.2.4, tests)
 COOP_FIX("creations.own_species", "BUG-0017", g_own_species_fix, "creations: a guest registers the host's own creations of its world (nest species)");
 
@@ -1594,6 +1599,82 @@ static bool unpack(const std::vector<uint8_t>& d, Bundle& b)
         b.recs.push_back(std::move(rec));
     }
     return r.ok();
+}
+
+static bool g_portraits = true;
+COOP_FIX("ui.party_portraits", "BUG-9191", g_portraits,
+         "ui: every player's creature picture goes to the others for the Party panel's cards");
+static std::map<uint8_t, std::pair<uint32_t, std::vector<uint8_t>>> g_portrait_store; // host: owner -> (key, data)
+static std::map<uint8_t, uint32_t> g_portrait_of;   // every game: whose picture is registered under which instance
+static uint32_t g_portrait_sent_key;                  // own: the key last sent
+static double g_portrait_next;
+static uint32_t g_portraits_in, g_portraits_out;
+uint32_t portrait_group()
+{
+    static const uint32_t g = fnv("sporecoop-portrait", 18);
+    return g;
+}
+uint32_t portrait_of(uint8_t player)
+{
+    auto it = g_portrait_of.find(player);
+    return it == g_portrait_of.end() ? 0 : it->second;
+}
+static void send_bundle(int to, uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data);
+static void* package_for(std::wstring path, const std::vector<dbpf::Record>& recs, int priority, std::wstring* used);
+static uint32_t* player_species_slot();
+// the picture of player `owner`'s creature (the message: u32 instance, then the png) under that instance in the
+// mod's portrait group
+static void apply_portrait(uint8_t owner, const std::vector<uint8_t>& data)
+{
+    if (data.size() < 12 || data.size() > (1u << 20) || data[5] != 'P' || data[6] != 'N' || data[7] != 'G' || !find_paths())
+        return;
+    const uint32_t inst = data[0] | data[1] << 8 | data[2] << 16 | (uint32_t)data[3] << 24;
+    dbpf::Record r;
+    r.key = {inst, kPngType, portrait_group()};
+    r.data.assign(data.begin() + 4, data.end());
+    std::wstring path = g_dir + L"\\portrait_" + std::to_wstring(inst) + L".package";
+    const bool ok = inst && package_for(path, {r}, kPrioWorld, nullptr) != nullptr;
+    if (ok) {
+        g_portraits_in++;
+        g_portrait_of[owner] = inst;
+    }
+    H->log(M, ok ? SK_INFO : SK_WARN, "creations: player %u's creature picture (%zu bytes) %s under %08X (BUG-9191)", owner,
+           r.data.size(), ok ? "registered" : "could not be registered", inst);
+}
+// this player's creature picture to the others, once per creature: the plain thumbnail (group+1) or the Sporepedia
+// card (the model group) from My Creations, under the creature's key on every game (its shared key; the host that
+// plays its world's species has none: that species' key, which every game of its world knows)
+static void portrait_tick(double now)
+{
+    if (!g_portraits || !g_es_ok || now < g_portrait_next) return;
+    g_portrait_next = now + 3;
+    const uint8_t me = C.sess->my_id();
+    Key src = mine(kCreature).key;
+    uint32_t inst = player_key(me, kCreature).instance;
+    if (!src.instance && is_host())
+        if (uint32_t* ps = player_species_slot()) {
+            src = {ps[0], kInfo[kCreature].type, kInfo[kCreature].group};
+            inst = ps[0];
+        }
+    if (!src.instance || !inst || inst == g_portrait_sent_key) return;
+    std::vector<uint8_t> png;
+    for (uint32_t group : {src.group + 1, src.group}) {
+        for (auto& e : g_es.entries())
+            if (e.key.instance == src.instance && e.key.type == kPngType && e.key.group == group && g_es.read(e, png)) break;
+        if (!png.empty()) break;
+    }
+    if (png.empty()) return;
+    g_portrait_sent_key = inst;
+    std::vector<uint8_t> data = {(uint8_t)inst, (uint8_t)(inst >> 8), (uint8_t)(inst >> 16), (uint8_t)(inst >> 24)};
+    data.insert(data.end(), png.begin(), png.end());
+    apply_portrait(me, data); // the own card too
+    const uint32_t id = fnv(data.data(), data.size());
+    if (is_host()) {
+        g_portrait_store[me] = {id, data};
+        send_bundle(-1, me, (Kind)kPortrait, id, data);
+    } else
+        send_bundle(0, me, (Kind)kPortrait, id, data);
+    g_portraits_out++;
 }
 
 static bool make_bundle(Kind k, const Key& key, Bundle& b)
@@ -3607,6 +3688,7 @@ void tick(double now)
     }
     commit_native_captain(now);
     refresh_campaign_creature();
+    portrait_tick(now); // BUG-9191
     if (landfall_tick(now)) return;
     if (adopt_after_editor(now))
         return;
@@ -3636,7 +3718,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if ((kind == kWorldSpecies || kind == kOwnSpecies) && (is_host() || from != 0))
         return;
-    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies) || total > (8u << 20) ||
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kPortrait) || total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
     if (!is_host() && from != 0)
@@ -3670,6 +3752,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (p.id != 0 && p.id != owner)
                 send_bundle(p.id, owner, (Kind)kind, id, data);
     }
+    if (kind == kPortrait) {
+        if (is_host()) g_portrait_store[owner] = {id, data};
+        apply_portrait(owner, data);
+        return;
+    }
     apply(owner, (Kind)kind, id, data);
 }
 
@@ -3679,8 +3766,11 @@ void on_player_join(uint8_t id)
         return;
     g_own_sent.erase(id); // a new guest under this id: it has none of our creations yet
     for (auto& [ok, data] : g_store)
-        if (ok.first != id)
+        if (ok.first != id && ok.second != kPortrait)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
+    for (auto& [owner, p] : g_portrait_store) // (a picture travels with its creature's id, not its own hash)
+        if (owner != id)
+            send_bundle(id, owner, (Kind)kPortrait, p.first, p.second);
 }
 
 bool g_leave_fix = true;
@@ -3696,6 +3786,8 @@ void on_player_leave(uint8_t id)
     };
     owned(g_store);
     owned(g_rx);
+    g_portrait_store.erase(id);
+    g_portrait_of.erase(id);
     // its packages stay registered (cheap, as on_session_end): its puppet is gone with it, and a
     // package of the same content is found again by path if that player comes back
     owned(g_applied);
@@ -3704,6 +3796,9 @@ void on_player_leave(uint8_t id)
 
 void on_session_end()
 {
+    g_portrait_of.clear(); // BUG-9191: sent again in the next session
+    g_portrait_store.clear();
+    g_portrait_sent_key = 0;
     g_launch_entry.clear();
     g_launch_path.clear();
     g_pending_launch.clear();

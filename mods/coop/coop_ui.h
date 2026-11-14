@@ -118,6 +118,23 @@ void shutdown(); // mod unload: hide our windows
 // on_click(-1 previous, +1 next, 0 give up). True when the native parts exist (else the caller draws its own).
 bool set_downed_hud(bool show, bool box, const std::string& name, const sui::Rect& give, const sui::Rect& box_area,
                     void (*on_click)(int));
+// The Party panel (the owner's mockup 2026-11-13, images/partymockup.psd, after the game's Pack cards): a "Party"
+// header and, per player, a name plate (the own one with a gold edge) with the name and where they are, and a framed
+// card with their creature's Sporepedia picture and a health bar. A card click calls on_portrait(player). Called every
+// frame; the change runs outside the frame. `scale`: the UI scale (1 = the mockup's size at 1280x960). True when the
+// native parts exist (else the caller draws its text list).
+struct PartyRow {
+    uint8_t player = 0xFF;
+    std::string name, place;
+    bool me = false;
+    float health = -1; // 0..1, below 0: no bar
+    uint32_t portrait = 0, portrait_group = 0; // the creature's png (0x2F7D0004) key, 0 = none
+    bool operator==(const PartyRow&) const = default;
+};
+bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, void (*on_portrait)(uint8_t player));
+// the panel's screen rect while it is shown (empty when not)
+sui::Rect party_hud_area();
+void register_party_commands();
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
 extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the first three games only (BUG-0183)
