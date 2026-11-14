@@ -2157,6 +2157,119 @@ static bool build_graphic_page(Win settings, Win panel, const uint32_t* ids, Win
     return fps && borderless;
 }
 
+// ---- decision 3J (the owner 2026-11-14): the Screen Size list, one entry per resolution at its highest refresh rate,
+// without the "@ NNHz" text ("So let's default to the highest hz available in the resolution to reduce the size. We'll
+// also hide the Hz text in the resolution list. The player can cap their FPS to whatever they need"). The list
+// (combo 0x046170A1) is Spore's own popup: one button per display mode, 20 px apart, the selected one beside the combo.
+// Spore saves the chosen mode as its place in the mode list (Preferences.prop "OptionScreenSize 21"), so the list
+// itself stays: a shorter mode list from Direct3D would move every player's saved place. It picks the button under the
+// pointer (checked 2026-11-14: a moved "1280 x 1024" saved 1280 x 1024 @ 360Hz), so the list is drawn short: the other
+// refresh rates hidden, the kept buttons moved together (by size), shown (also those Spore scrolled out of its list)
+// and renamed. The current resolution keeps its current entry. While the list is open the Screen Size box comes to
+// the front (our Frame Rate field and the Interface box drew over it). Old (`coop.fix ui.resolution_list off`):
+// Spore's list as it is.
+static bool g_resolution_list = true;
+COOP_FIX("ui.resolution_list", "BUG-9191", g_resolution_list,
+         "ui: the Screen Size list shows each resolution once (its highest refresh rate) without the Hz");
+
+struct ResMove {
+    Win w;
+};
+static std::vector<ResMove> g_res_moves; // the kept buttons while the list is open
+
+static void tidy_resolution_list(Win panel, Win combo, Win screen_box, const std::vector<Win>& ours)
+{
+    struct Item {
+        Win w;
+        int width, height, hz;
+    };
+    static Win s_combo = nullptr;
+    static std::vector<Item> s_items;
+    static bool s_open = false;
+    if (!g_resolution_list || !combo || !screen_box) {
+        g_res_moves.clear();
+        return;
+    }
+    if (combo != s_combo) { // a new dialog: its buttons and their modes, read while the captions are Spore's
+        s_combo = combo;
+        s_items.clear();
+        s_open = false;
+        g_res_moves.clear();
+        for (Win c : sui::children(combo)) {
+            int w = 0, h = 0, hz = 0;
+            if (sui::as_button(c) && sscanf(sui::caption(c).c_str(), " %d x %d @ %d", &w, &h, &hz) == 3)
+                s_items.push_back({c, w, h, hz});
+        }
+    }
+    if (s_items.empty()) return;
+    bool open = false;
+    for (const Item& it : s_items) open = open || sui::visible(it.w);
+    if (open && !s_open) {
+        // just opened (Spore laid the buttons out): the selected one sits beside the combo (place 0)
+        const Item* sel = nullptr;
+        for (const Item& it : s_items)
+            if (sui::visible(it.w) && std::fabs(sui::area(it.w).y1) < 1) sel = &it;
+        std::vector<const Item*> keep;
+        for (const Item& it : s_items) {
+            bool k;
+            if (sel && it.width == sel->width && it.height == sel->height)
+                k = &it == sel; // the current resolution: its current entry
+            else {
+                k = true;
+                for (const Item& o : s_items)
+                    if (o.width == it.width && o.height == it.height && (o.hz > it.hz || (o.hz == it.hz && &o < &it)))
+                        k = false;
+            }
+            if (k) keep.push_back(&it);
+            else sui::set_visible(it.w, false);
+        }
+        std::sort(keep.begin(), keep.end(), [](const Item* l, const Item* r) {
+            return l->width != r->width ? l->width < r->width : l->height < r->height;
+        });
+        int cur = 0;
+        for (size_t i = 0; i < keep.size(); i++)
+            if (keep[i] == sel) cur = (int)i;
+        constexpr float kStep = 20;
+        const float top = -cur * kStep;
+        g_res_moves.clear();
+        sui::Rect row{0, 0, sui::area(combo).w(), kStep}; // a laid-out button's columns (Spore's own)
+        if (sel) row = sui::area(sel->w);
+        for (size_t i = 0; i < keep.size(); i++) {
+            Win w = keep[i]->w;
+            const auto a = row; // (one Spore scrolled out was never laid out: [10 10 85 30])
+            const float y = top + (float)i * kStep;
+            sui::set_area(w, {a.x1, y, a.x2, y + kStep});
+            sui::set_visible(w, true);
+            g_res_moves.push_back({w});
+            const std::string c = sui::caption(w);
+            const size_t at = c.find(" @");
+            if (at != std::string::npos) sui::set_caption(w, c.substr(0, at));
+        }
+        for (Win c : sui::children(combo)) // the list's background: the visible plain window as tall as the list
+            if (!sui::as_button(c) && sui::visible(c) && sui::area(c).h() > kStep * 2) {
+                const auto a = sui::area(c);
+                sui::set_area(c, {a.x1, top, a.x2, top + (float)keep.size() * kStep});
+            }
+        sui::bring_to_front(panel, screen_box);
+    } else if (open) { // Spore may show the hidden ones again (and hide a kept one it scrolled out)
+        for (const Item& it : s_items) {
+            bool kept = false;
+            for (const ResMove& m : g_res_moves) kept = kept || m.w == it.w;
+            if (sui::visible(it.w) != kept) sui::set_visible(it.w, kept);
+        }
+    } else if (s_open) { // closed: our Frame Rate field over the Screen Size box again
+        g_res_moves.clear();
+        for (Win w : ours)
+            if (w) sui::bring_to_front(sui::parent(w), w);
+    }
+    { // the combo's caption without the Hz
+        const std::string c = sui::caption(combo);
+        const size_t at = c.find(" @");
+        if (at != std::string::npos) sui::set_caption(combo, c.substr(0, at));
+    }
+    s_open = open;
+}
+
 static void refresh_graphics_options()
 {
     constexpr uint32_t kSettings = 0x043DE590;
@@ -2293,6 +2406,12 @@ static void refresh_graphics_options()
             if (g_settings_tabs_fix && visible(panel) && !(sui::flags(control) & sui::kFlagEnabled))
                 sui::set_enabled(control, true); // BUG-9120: the tab switch disabled it with its page
         }
+    if (sui::as_slider(ui_scale) && panel) { // 3J: the resolution list
+        Win combo = sui::find(panel, 0x046170A1);
+        tidy_resolution_list(panel, combo, combo ? sui::parent(combo) : nullptr,
+                             {sui::find(settings, 0xC00F0119), fps, sui::find(settings, 0xC00F011A),
+                              sui::find(settings, kControls[0])});
+    }
     if (sui::as_slider(ui_scale)) { // the value beside the slider, rounded to 5 %
         const std::string shown = std::to_string(ui_percent(ui_scale)) + "%";
         Win value = sui::find(settings, kIfaceValue);
@@ -3101,7 +3220,9 @@ static bool ns_takes_mouse_at(Win w, float x, float y, bool& own, int depth = 0)
         if (!sui::visible(c)) continue;
         const sui::Rect r = sui::screen_rect(c);
         const bool inside = x >= r.x1 && x < r.x2 && y >= r.y1 && y < r.y2;
-        if (inside && !(sui::flags(c) & sui::kFlagIgnoreMouse)) {
+        const sui::Rect screen = sui::area(sui::main_window());
+        const bool layer = r.w() >= screen.w() * 0.9f || r.h() >= screen.h() * 0.9f; // a container, not a control
+        if (inside && !layer && !(sui::flags(c) & sui::kFlagIgnoreMouse)) {
             bool deeper = false;
             if (ns_takes_mouse_at(c, x, y, deeper, depth + 1)) own = deeper; // the deepest one decides
             own = own || sui::has_own_transform(c);
@@ -3133,7 +3254,14 @@ static bool ns_map_of(Win w, NsMap& m)
     m.oy = own.y1;
     return true;
 }
+static bool ns_remap_scale(unsigned message, int& x, int& y);
+// every mouse message: to the scaled pieces' unscaled places
 static bool ns_remap(unsigned message, int& x, int& y)
+{
+    return ns_remap_scale(message, x, y);
+}
+
+static bool ns_remap_scale(unsigned message, int& x, int& y)
 {
     static Win s_capture = nullptr;
     static NsMap s_capture_t;
@@ -3171,7 +3299,8 @@ static bool ns_remap(unsigned message, int& x, int& y)
         const float ux = (x - t.tx) / t.sx + t.ox, uy = (y - t.ty) / t.sy + t.oy;
         const sui::Rect e = ns_xform(*it).extent;
         bool own = false;
-        if (ux < e.x1 || ux >= e.x2 || uy < e.y1 || uy >= e.y2 || !ns_takes_mouse_at(*it, ux, uy, own)) continue;
+        // (any window of the piece under the point: its popups reach past its extent, the resolution list below Settings)
+        if (!ns_takes_mouse_at(*it, ux, uy, own)) continue;
         if (own) { // the game maps this one itself: the point as it is
             if (down) H->log(M, SK_INFO, "ui: press %d,%d on piece %08X: a window with its own transform, not moved", x, y,
                              sui::control_id(*it));
@@ -3200,10 +3329,10 @@ static void native_scale_tick()
     float want = 1.f;
     if (g_native_scale)
         want = lineages_graphics::read_ui_scale(slotfs::widen(H->mods_dir()) + L"\\" + lineages_graphics::file_name) / 100.f;
+    mouse::set_remap(ns_remap); // (the short resolution list needs it at 100 % too)
     if (want == 1.f && g_ns_factor == 1.f) return; // 100 %: nothing to attach
     Win main = sui::main_window();
     if (!main) return;
-    mouse::set_remap(ns_remap);
     std::vector<Win> pieces;
     ns_pieces(main, sui::area(main), pieces);
     for (Win p : pieces) {

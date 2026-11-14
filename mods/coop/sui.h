@@ -122,6 +122,12 @@ bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty);
 // the window has a transform of its own (its local transform, Window +0xC0, type at +0x100, is not the identity: the
 // game's InflateEffect buttons while they grow); the game hit-tests such a window through its full transform
 bool has_own_transform(Win w);
+// a native combo box (UTFWin IComboBox, cast 0x2F5528D9; ModAPI's order): its values, the selected one, changes
+void* as_combo(Win w);
+std::vector<std::string> combo_values(Win w); // UTF-8
+int combo_selected(Win w);
+void combo_select(Win w, int index);
+void combo_set_values(Win w, const std::vector<std::string>& values);
 std::string edit_text(Win edit);
 void set_edit_text(Win edit, const std::string& text);
 

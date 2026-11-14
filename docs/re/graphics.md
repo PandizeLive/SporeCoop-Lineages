@@ -179,5 +179,15 @@ BUG-9191 (the Party panel).
   go through its transform, but not the controls' own mouse use. Windows with a transform of their own (InflateEffect
   menu buttons) are hit-tested through the full transform. coop_ui ns_remap moves the mouse message's point to the
   piece's unscaled place unless the window under it has its own transform.
+* ✔ The Screen Size control 0x046170A1 is a button (caption "1366 x  768 @  60Hz"), not a combo box (IComboBox cast
+  fails); its list is a popup of one hidden button per display mode (children of the control, [10 10 85 30] until laid
+  out), laid out 20 px apart around the selected one (place 0, beside the control) over a plain background window,
+  with scroll arrows: Spore shows only as many as fit (27 of 32 at 1280x960) and never lays out the others. A pick is
+  **the button under the pointer** (a moved button picked its own mode). Spore saves the chosen mode as its place in
+  the mode list: Preferences.prop "OptionScreenSize 21" (a text line), so the Direct3D mode list must stay whole (a
+  filtered GetAdapterModeCount / EnumAdapterModes made an Accept with no current entry save another mode).
+* ✔ The renderer's device settings (Steam/GOG 2024 runtime 0x17A2444; 0x1712444 + the image shift): +8 width, +0xC
+  height, +0x10 refresh, +0x14 format, +0x24 fullscreen; in a window they hold the window (1280x960 @ 60), not the
+  Settings list's mode.
 
 

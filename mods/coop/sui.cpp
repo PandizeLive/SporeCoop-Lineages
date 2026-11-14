@@ -439,6 +439,51 @@ void invalidate_transform(Win w)
     if (w) vcall<int>(w, 0x98 / 4);
 }
 
+void* as_combo(Win w) { return w ? vcall<void*>(w, 0x0C / 4, 0x2F5528D9u) : nullptr; }
+
+std::vector<std::string> combo_values(Win w)
+{
+    std::vector<std::string> out;
+    void* c = as_combo(w);
+    if (!c) return out;
+    const int n = vcall<int>(c, 0x3C / 4);
+    for (int i = 0; i < n && i < 512; i++) {
+        // GetValue returns an eastl::string16 by value (a hidden result pointer first); its buffer is the game's
+        // allocator's and stays (a few bytes per call, only while the Settings dialog is built)
+        uint32_t buf[8] = {};
+        vcall<void*>(c, 0x34 / 4, (void*)buf, i);
+        const char16_t* b = (const char16_t*)(uintptr_t)buf[0];
+        const char16_t* e = (const char16_t*)(uintptr_t)buf[1];
+        if (b && e >= b && e - b < 256 && !IsBadReadPtr(b, (e - b) * 2))
+            out.push_back(utf8(std::u16string(b, e).c_str()));
+        else
+            out.emplace_back();
+    }
+    return out;
+}
+
+int combo_selected(Win w)
+{
+    void* c = as_combo(w);
+    return c ? vcall<int>(c, 0x40 / 4) : -1;
+}
+
+void combo_select(Win w, int index)
+{
+    if (void* c = as_combo(w)) vcall<void>(c, 0x44 / 4, index, true);
+}
+
+void combo_set_values(Win w, const std::vector<std::string>& values)
+{
+    void* c = as_combo(w);
+    if (!c) return;
+    vcall<void>(c, 0x2C / 4); // ClearValues
+    for (auto& v : values) {
+        const std::u16string u = utf16(v);
+        vcall<void>(c, 0x20 / 4, u.c_str()); // AddValue
+    }
+}
+
 bool has_own_transform(Win w)
 {
     const uint8_t* p = (const uint8_t*)w;
@@ -816,6 +861,18 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
                       font(w));
         for (uint32_t i = 0; i < 8; i++)
             H->out_printf(out, " %08X", vcall<uint32_t>(b, 0x48 / 4, i));
+        return 0;
+    }
+    if (sub == "combo" && argc > 2) { // combo <win> [sel <i>]: a combo box's values (tests)
+        Win w = arg_win(argv[2], out);
+        if (!as_combo(w)) {
+            H->out_printf(out, "not a combo box");
+            return 1;
+        }
+        if (argc > 4 && !strcmp(argv[3], "sel")) combo_select(w, atoi(argv[4]));
+        const auto v = combo_values(w);
+        H->out_printf(out, "%zu values, selected %d\n", v.size(), combo_selected(w));
+        for (size_t i = 0; i < v.size(); i++) H->out_printf(out, "%zu '%s'\n", i, v[i].c_str());
         return 0;
     }
     if (sub == "slider" && argc > 2) { // slider <win>: its values and drawable (tests)
