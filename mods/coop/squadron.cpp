@@ -113,6 +113,36 @@ static uint8_t leader_of(uint32_t place)
     return best;
 }
 static bool is_host();
+
+// BUG-9199, decision 2B A (the owner 2026-11-12): Space difficulty is per party, the party in that system (or the raided
+// colony's party), not the reserved seats. With one party per session (today), that is the players in this place for
+// ship health and damage, the players online for raids. A player alone in a system meets the game's own ships.
+static bool g_party_diff_fix = true;
+static int g_test_difficulty = -1; // tests (coop.fleet difficulty <percent>): memory only, never saved; -1 = the save's
+COOP_FIX("space.party_difficulty", "BUG-9199", g_party_diff_fix,
+         "space: enemy health, damage and raid size scale with the players in that system (online for raids), not "
+         "the reserved seats");
+founders::CampaignRules party_rules(bool here)
+{
+    auto r = world::rules_for_current();
+    if (g_test_difficulty >= 0) {
+        r.difficulty_percent = (uint16_t)g_test_difficulty;
+        r.model = 1;
+    }
+    if (!g_party_diff_fix)
+        return r;
+    unsigned n = 1;
+    if (C.sess && C.sess->connected()) {
+        const uint32_t at = here ? my_place() : 0;
+        n = 0;
+        for (auto& pl : C.sess->players())
+            if (!at || place_of(pl.id) == at)
+                n++;
+    }
+    r.seats = (uint8_t)std::clamp(n, 1u, (unsigned)founders::kMaxSeats);
+    return r;
+}
+
 // this game runs the NPC ships of its place and sends them
 static bool i_lead()
 {
@@ -187,7 +217,7 @@ static bool enemy_ship(void* u, uint32_t own_pol)
 static void scale_local_ships(const std::vector<void*>& live)
 {
     if (g_save_depth) return;
-    const auto rules = world::rules_for_current();
+    const auto rules = party_rules(true); // BUG-9199
     if (rules.enemy_health_percent() == 100 && g_ship_scales.empty()) return;
     const auto own_pol = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
     for (auto& item : g_ship_scales) item.second.seen = false;
@@ -243,7 +273,7 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
         // Verify membership before reading offsets specific to a UFO.
         if ((is_host() || !mirroring()) && game::ufo_listed(source) &&
             enemy_ship(source,skg::cdecl_call<uint32_t>(a_PlayerEmpireID)))
-            dmg *= world::rules_for_current().enemy_damage_percent() / 100.f;
+            dmg *= party_rules(true).enemy_damage_percent() / 100.f; // BUG-9199
     }
     if (in_space() && (uint8_t*)combat - kCombat == player_ufo()) // rescue: a lethal hit may only disable us
         dmg = spacecoop::filter_own_damage((uint8_t*)combat - kCombat, dmg, type);
@@ -990,7 +1020,12 @@ std::string status()
              "handovers=%u kept=%u\n", g_leader_fix ? 1 : 0, my_place(), (int)(int8_t)leader_of(my_place()),
              i_lead() ? 1 : 0, mirroring() ? 1 : 0, (int)(int8_t)g_mirror_leader, g_relayed, g_led_ticks, g_handovers,
              g_kept_on_handover);
-    return status_ships() + sc + ld;
+    const auto pr = party_rules(true), all = world::rules_for_current(); // BUG-9199 (reserved: the save's seats)
+    char df[160];
+    snprintf(df, sizeof df, "space difficulty: fix=%d seats_here=%u reserved=%u enemy_hp=%u%% enemy_dmg=%u%% raid_extra=%u\n",
+             g_party_diff_fix ? 1 : 0, pr.seats, all.seats, pr.enemy_health_percent(), pr.enemy_damage_percent(),
+             party_rules(false).extra_total(1));
+    return status_ships() + sc + ld + df;
 }
 
 static std::string status_ships()
@@ -1143,6 +1178,8 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "spawn") { // spawn <type> [own]: a ship without an empire (pirate) next to
         // us, or with our own empire's political id (`own`: type 3 = an escort ship of ours, BUG-0084)
         uint32_t pol = a.size() >= 3 && a[2] == "own" ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
+        if (a.size() >= 4 && a[2] == "pol") // tests (BUG-9199): `spawn <type> pol <hex>`: a ship of that empire
+            pol = (uint32_t)strtoul(a[3].c_str(), nullptr, 16);
         // tests (BUG-9197): `spawn <type> like <ship pointer>`: that ship's model (one the partners have too)
         void* like = a.size() >= 4 && a[2] == "like" ? (void*)(uintptr_t)strtoul(a[3].c_str(), nullptr, 16) : nullptr;
         if (like && !game::ufo_listed(like))
@@ -1169,6 +1206,10 @@ std::string debug(const std::vector<std::string>& a)
         h_TakeDamage((uint8_t*)pup + kCombat, a.size() > 3 ? (float)atof(a[3].c_str()) : 5.f,
                      F<uint32_t>(it->second, kPol), 0, dir, (uint8_t*)it->second + kCombat);
         return "hit sent";
+    }
+    if (a.size() >= 2 && a[0] == "difficulty") { // tests (BUG-9199): the difficulty percent, memory only (-1: the save's)
+        g_test_difficulty = std::clamp(atoi(a[1].c_str()), -1, (int)founders::kMaxDifficultyPercent);
+        return "difficulty " + std::to_string(g_test_difficulty);
     }
     if (a.size() >= 2 && a[0] == "fakemodel") { // tests (BUG-0323): 1 = send made-up model instances
         g_fake_model = a[1] != "0";                // 2 <hex instance> (BUG-0469): send that model instance

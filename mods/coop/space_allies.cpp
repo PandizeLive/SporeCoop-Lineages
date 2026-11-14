@@ -81,7 +81,8 @@ static void SK_CDECL h_BuildRaidFleet(void* fleet, int* bombers, int* raiders, i
     auto* mission = static_cast<uint8_t*>(fleet) - 0x238;
     if (F<uint32_t>(mission,0x78) != 0xA4B0A2DF || !F<uint8_t>(mission,0x215)) return;
     // One raider per extra seat at 100% difficulty; new campaigns scale it (BUG-9100).
-    const unsigned extra = std::min(world::rules_for_current().extra_total(1), 12u);
+    // BUG-9199: the raided colony's party (the players online), not the reserved seats
+    const unsigned extra = std::min(squadron::party_rules(false).extra_total(1), 12u);
     auto end = F<uint8_t*>(fleet,4);
     if (!extra || !end || !F<uint8_t*>(fleet,0)) return;
     g_base_ships = unsigned(end - F<uint8_t*>(fleet,0)) / 0x20;
@@ -1409,6 +1410,16 @@ static std::string debug(const std::vector<std::string>& a)
             forget(m);
         g_m.clear();
         return status();
+    }
+    if (a[0] == "enemies") { // tests (BUG-9199): the political ids of the own empire's enemies
+        void* e = player_empire();
+        if (!e)
+            return "no empire\n";
+        std::string o = "enemies";
+        for (void* x : ptr_vec((uint8_t*)e + 0x5C))
+            if (readable(x, 0x88))
+                o += " " + hex(F<uint32_t>(x, 0x84));
+        return o + "\n";
     }
     if (a[0] == "empire" && a.size() > 1) {
         void* e = empire_of((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
