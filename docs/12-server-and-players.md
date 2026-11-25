@@ -2206,4 +2206,17 @@ CORRECTION (2026-11-24, feat/lineages-alpha) to #server-update-check: "Y (or no 
   that machine; the read-me says so.
 * A 71-dev server behaves as 71-dev (ask, yes after 30 seconds) until its first update.
 * Released in 0.7.14.1-lineages72-dev (owner 2026-11-24: "Release").
+* Published 2026-11-24 about 20:22 as "Lineages 72-dev" (cfca0e1a; the five files' SHA-256 on GitHub equal
+  SHA256SUMS.txt). Before: the setup with `/server` into a dummy game folder, the start file's check ("up to date"),
+  a stripped 72-dev game connected to that server and hosted and loaded a Cell save.
+* ✔ The real update, the one thing 71-dev could not show (#server-update-check "Not run"): the server installed
+  from the real 71-dev setup, started by its own start file after 72-dev was published: "Lineages
+  0.7.14.1-lineages72-dev is out (this server: 0.7.14.1-lineages71-dev)", 71-dev's question answered Y by itself,
+  "downloading the galaxy server 0.7.14.1-lineages72-dev", "the galaxy server is now 0.7.14.1-lineages72-dev", the
+  new start file took over and the server ran. Its galaxy_server.exe and galaxy_update.exe have the SHA-256 of a
+  fresh 72-dev install, the start file asks "N by itself in 10 seconds", the host's settings file is as it was.
+* A QA game on 71-dev answers `coop.update`: `available running=0.7.14.1-lineages71-dev
+  latest=0.7.14.1-lineages72-dev`.
+* Not run with real releases: the new rule's two branches (there is no release newer than 72-dev to be offered);
+  they ran on the stand-in release (docs/tickets/BUG-9379-*).
 
